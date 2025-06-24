@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="./vendor/phpunit/phpunit/phpunit.xsd"
+         bootstrap="vendor/autoload.php"
+         colors="true"
+         cacheDirectory=".phpunit.cache">
+    <testsuites>
+        <testsuite name="Unit">
+            <directory suffix="Test.php">./tests/Unit</directory>
+        </testsuite>
+        <testsuite name="Integration">
+            <directory suffix="Test.php">./tests/Integration</directory>
+        </testsuite>
+    </testsuites>
+
+    <coverage/>
+
+    <php>
+        <!-- Define environment variables for testing, especially for database connection -->
+        <!-- Example for a separate test database -->
+        <!-- <env name="DB_HOST_TEST" value="localhost"/> -->
+        <!-- <env name="DB_DATABASE_TEST" value="crm_apoio19_test"/> -->
+        <!-- <env name="DB_USERNAME_TEST" value="test_user"/> -->
+        <!-- <env name="DB_PASSWORD_TEST" value="test_password"/> -->
+        <!-- Use the main DB connection for now, but ideally use a separate test DB -->
+        <env name="APP_ENV" value="testing"/>
+        <env name="JWT_SECRET" value="seu_segredo_jwt_super_secreto_para_testes"/>
+        <env name="JWT_EXPIRATION" value="3600"/>
+        <!-- Add other necessary env vars -->
+    </php>
+
+    <source>
+        <include>
+            <directory suffix=".php">./src</directory>
+        </include>
+    </source>
+</phpunit>
+
