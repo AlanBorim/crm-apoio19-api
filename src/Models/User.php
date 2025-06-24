@@ -26,7 +26,7 @@ class User
     {
         try {
             $pdo = Database::getInstance();
-            $stmt = $pdo->prepare("SELECT * FROM usuarios WHERE email = :email LIMIT 1");
+            $stmt = $pdo->prepare("SELECT * FROM users WHERE email = :email LIMIT 1");
             $stmt->bindParam(":email", $email);
             $stmt->execute();
             $userData = $stmt->fetch();
@@ -34,13 +34,13 @@ class User
             if ($userData) {
                 $user = new self();
                 $user->id = (int)$userData["id"];
-                $user->nome = $userData["nome"];
+                $user->nome = $userData["name"];
                 $user->email = $userData["email"];
-                $user->senha_hash = $userData["senha_hash"];
-                $user->funcao  = $userData["funcao"];
-                $user->ativo = $userData["ativo"];
-                $user->criado_em = $userData["criado_em"];
-                $user->atualizado_em = $userData["atualizado_em"];
+                $user->senha_hash = $userData["password"];
+                $user->funcao  = $userData["role"];
+                $user->ativo = $userData["active"];
+                $user->criado_em = $userData["created_at"];
+                $user->atualizado_em = $userData["updated_at"];
                 return $user;
             }
         } catch (\PDOException $e) {
