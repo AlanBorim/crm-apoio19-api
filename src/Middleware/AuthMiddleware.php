@@ -24,7 +24,22 @@ class AuthMiddleware
      */
     public function handle(array $headers, array $allowedRoles = []): ?object
     {
+
         $token = $headers["Authorization"] ?? $headers["authorization"] ?? null;
+
+        if (!$headers) {
+            http_response_code(401);
+            echo json_encode(["erro" => "Cabeçalho de autorização ausente"]);
+            exit;
+        }
+
+        if (!preg_match('/Bearer\s(\S+)/', $token , $matches)) {
+            http_response_code(401);
+            echo json_encode(["erro" => "Formato do token inválido"]);
+            exit;
+        }
+
+        $token = $matches[1]; // apenas o token JWT sem o "Bearer"
 
         if (!$token) {
             // No token provided
@@ -55,7 +70,6 @@ class AuthMiddleware
 
         // Authentication and Authorization successful
         // Return the decoded user data (or just the data part)
-        return $decodedPayload->data; 
+        return $decodedPayload;
     }
 }
-

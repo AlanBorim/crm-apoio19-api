@@ -67,7 +67,7 @@ class AuthController
             if ($token) {
                 http_response_code(200);
                 AuditLogService::log("login_sucesso", $user->id, "usuario", $user->id, "Login bem-sucedido.", $ipAddress);
-                return ["token" => $token, "user" => ["id" => $user->id, "nome" => $user->nome, "email" => $user->email, "funcao" => $user->funcao]];
+                return ["token" => $token, "user" => ["id" => $user->id, "nome" => $user->nome, "email" => $user->email, "role" => $user->funcao]];
             } else {
                 http_response_code(500);
                  AuditLogService::log("login_erro_jwt", $user->id, "usuario", $user->id, "Falha ao gerar token JWT.", $ipAddress);

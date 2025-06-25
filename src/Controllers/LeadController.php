@@ -3,40 +3,41 @@
 namespace Apoio19\Crm\Controllers;
 
 use Apoio19\Crm\Models\Lead;
-use Apoio19\Crm\Models\HistoricoInteracoes; // Assuming this model exists
+use Apoio19\Crm\Models\HistoricoInteracoes;
 use Apoio19\Crm\Middleware\AuthMiddleware;
-use Apoio19\Crm\Services\NotificationService; // Import NotificationService
+use Apoio19\Crm\Services\NotificationService;
 use League\Csv\Reader;
 use League\Csv\Statement;
 
-// Placeholder for Request/Response handling
+/**
+ * Controlador para gerenciamento de leads
+ */
 class LeadController
 {
     private AuthMiddleware $authMiddleware;
-    private NotificationService $notificationService; // Add NotificationService instance
+    private NotificationService $notificationService;
 
     public function __construct()
     {
         $this->authMiddleware = new AuthMiddleware();
-        $this->notificationService = new NotificationService(); // Instantiate NotificationService
+        $this->notificationService = new NotificationService();
     }
 
     /**
-     * List leads based on filters.
+     * Listar leads com filtros
      *
-     * @param array $headers Request headers.
-     * @param array $queryParams Filters (e.g., status, responsavel_id, origem).
-     * @return array JSON response.
+     * @param array $headers Cabeçalhos da requisição
+     * @param array $queryParams Filtros (status, responsavel_id, origem, etc.)
+     * @return array Resposta JSON
      */
     public function index(array $headers, array $queryParams = []): array
     {
         $userData = $this->authMiddleware->handle($headers);
         if (!$userData) {
-            http_response_code(401);
-            return ["error" => "Autenticação do CRM necessária."];
+            return $this->errorResponse(401, "Autenticação necessária.");
         }
 
-        // Basic filtering example
+        // Construir filtros
         $filters = [];
         if (isset($queryParams["status"])) {
             $filters["status"] = $queryParams["status"];
@@ -47,237 +48,237 @@ class LeadController
         if (isset($queryParams["origem"])) {
             $filters["origem"] = $queryParams["origem"];
         }
-        // Add role-based filtering if necessary
-        // if ($userData->role !== "Admin") {
-        //     $filters["responsavel_id"] = $userData->userId;
-        // }
 
-        $leads = Lead::findBy($filters);
-        http_response_code(200);
-        return ["data" => $leads];
+        // Filtro baseado em role (usuários não-admin só veem seus leads)
+        if ($userData->role !== "Admin") {
+            $filters["responsavel_id"] = $userData->userId;
+        }
+
+        try {
+            echo "Listando leads com filtros: " . json_encode($filters) . "\n";
+            // $leads = Lead::findBy($filters);
+            // return $this->successResponse($leads);
+        } catch (\Exception $e) {
+            return $this->errorResponse(500, "Erro ao buscar leads.", $e->getMessage());
+        }
     }
 
     /**
-     * Create a new lead.
+     * Criar novo lead
      *
-     * @param array $headers Request headers.
-     * @param array $requestData Lead data (nome, email, telefone, etc.).
-     * @return array JSON response.
+     * @param array $headers Cabeçalhos da requisição
+     * @param array $requestData Dados do lead
+     * @return array Resposta JSON
      */
     public function store(array $headers, array $requestData): array
     {
         $userData = $this->authMiddleware->handle($headers, ["Admin", "Comercial"]);
         if (!$userData) {
-            http_response_code(401);
-            return ["error" => "Autenticação necessária ou permissão insuficiente."];
+            return $this->errorResponse(401, "Autenticação necessária ou permissão insuficiente.");
         }
 
-        if (empty($requestData["nome"])) {
-            http_response_code(400);
-            return ["error" => "O nome do lead é obrigatório."];
+        // Validação básica
+        $validation = $this->validateLeadData($requestData);
+        if (!$validation['valid']) {
+            return $this->errorResponse(400, $validation['message']);
         }
-        // Add more validation
 
-        // Set creator/responsible if not provided?
+        // Definir responsável padrão se não fornecido
         $requestData["responsavel_id"] = $requestData["responsavel_id"] ?? $userData->userId;
+        $requestData["criado_por"] = $userData->userId;
+        $requestData["data_criacao"] = date('Y-m-d H:i:s');
 
-        $leadId = Lead::create($requestData);
-
-        if ($leadId) {
-            $newLead = Lead::findById($leadId);
-            // Log history
-            HistoricoInteracoes::logAction($leadId, null, $userData->userId, "Lead Criado", "Lead criado no sistema.");
-
-            // --- Notification ---
-            if ($newLead && $newLead->responsavel_id && $newLead->responsavel_id !== $userData->userId) { // Notify assignee if different from creator
-                $this->notificationService->createNotification(
-                    "novo_lead_atribuido",
-                    "Novo Lead Atribuído: " . $newLead->nome,
-                    "Você foi atribuído(a) ao novo lead: \"{$newLead->nome}\" criado por {$userData->userName}.", // Assuming userName is available
-                    [$newLead->responsavel_id],
-                    "/leads/" . $leadId, // Example link
-                    "lead",
-                    $leadId,
-                    true // Send email
+        try {
+            $leadId = Lead::create($requestData);
+            
+            if ($leadId) {
+                $newLead = Lead::findById($leadId);
+                
+                // Registrar histórico
+                HistoricoInteracoes::logAction(
+                    $leadId, 
+                    null, 
+                    $userData->userId, 
+                    "Lead Criado", 
+                    "Lead criado no sistema."
                 );
-            }
-            // --- End Notification ---
 
-            http_response_code(201);
-            return ["message" => "Lead criado com sucesso.", "lead" => $newLead];
-        } else {
-            http_response_code(500);
-            return ["error" => "Falha ao criar lead."];
+                // Notificar responsável se diferente do criador
+                if ($newLead && $newLead->responsavel_id && $newLead->responsavel_id !== $userData->userId) {
+                    $this->notifyLeadAssignment($newLead, $userData, "novo_lead_atribuido");
+                }
+
+                return $this->successResponse($newLead, "Lead criado com sucesso.", 201);
+            } else {
+                return $this->errorResponse(500, "Falha ao criar lead.");
+            }
+        } catch (\Exception $e) {
+            return $this->errorResponse(500, "Erro interno ao criar lead.", $e->getMessage());
         }
     }
 
     /**
-     * Get details of a specific lead.
+     * Exibir detalhes de um lead específico
      *
-     * @param array $headers Request headers.
-     * @param int $leadId Lead ID.
-     * @return array JSON response.
+     * @param array $headers Cabeçalhos da requisição
+     * @param int $leadId ID do lead
+     * @return array Resposta JSON
      */
     public function show(array $headers, int $leadId): array
     {
         $userData = $this->authMiddleware->handle($headers);
         if (!$userData) {
-            http_response_code(401);
-            return ["error" => "Autenticação do CRM necessária."];
+            return $this->errorResponse(401, "Autenticação necessária.");
         }
 
-        $lead = Lead::findById($leadId);
-        if (!$lead) {
-            http_response_code(404);
-            return ["error" => "Lead não encontrado."];
+        try {
+            $lead = Lead::findById($leadId);
+            if (!$lead) {
+                return $this->errorResponse(404, "Lead não encontrado.");
+            }
+
+            // Verificar autorização
+            if ($userData->role !== "Admin" && $lead->responsavel_id !== $userData->userId) {
+                return $this->errorResponse(403, "Acesso negado a este lead.");
+            }
+
+            $history = HistoricoInteracoes::findByLeadId($leadId);
+
+            return $this->successResponse([
+                "lead" => $lead,
+                "historico" => $history
+            ]);
+        } catch (\Exception $e) {
+            return $this->errorResponse(500, "Erro ao buscar lead.", $e->getMessage());
         }
-
-        // Authorization check
-        // if ($userData->role !== "Admin" && $lead->responsavel_id !== $userData->userId) {
-        //     http_response_code(403);
-        //     return ["error" => "Acesso negado a este lead."];
-        // }
-
-        $history = HistoricoInteracoes::findByLeadId($leadId);
-
-        http_response_code(200);
-        return ["data" => ["lead" => $lead, "historico" => $history]];
     }
 
     /**
-     * Update an existing lead.
+     * Atualizar lead existente
      *
-     * @param array $headers Request headers.
-     * @param int $leadId Lead ID.
-     * @param array $requestData Data to update.
-     * @return array JSON response.
+     * @param array $headers Cabeçalhos da requisição
+     * @param int $leadId ID do lead
+     * @param array $requestData Dados para atualização
+     * @return array Resposta JSON
      */
     public function update(array $headers, int $leadId, array $requestData): array
     {
         $userData = $this->authMiddleware->handle($headers, ["Admin", "Comercial"]);
         if (!$userData) {
-            http_response_code(401);
-            return ["error" => "Autenticação necessária ou permissão insuficiente."];
+            return $this->errorResponse(401, "Autenticação necessária ou permissão insuficiente.");
         }
-
-        $lead = Lead::findById($leadId);
-        if (!$lead) {
-            http_response_code(404);
-            return ["error" => "Lead não encontrado para atualização."];
-        }
-
-        // Authorization check
-        // if ($userData->role !== "Admin" && $lead->responsavel_id !== $userData->userId) {
-        //     http_response_code(403);
-        //     return ["error" => "Você não tem permissão para atualizar este lead."];
-        // }
 
         if (empty($requestData)) {
-            http_response_code(400);
-            return ["error" => "Nenhum dado fornecido para atualização."];
+            return $this->errorResponse(400, "Nenhum dado fornecido para atualização.");
         }
 
-        // --- Notification Check (Before Update) ---
-        $oldAssigneeId = $lead->responsavel_id;
-        $newAssigneeId = isset($requestData["responsavel_id"]) ? (int)$requestData["responsavel_id"] : $oldAssigneeId;
-        $notifyAssignee = ($newAssigneeId !== $oldAssigneeId && $newAssigneeId !== null && $newAssigneeId !== $userData->userId);
-        // --- End Notification Check ---
-
-        if (Lead::update($leadId, $requestData)) {
-            $updatedLead = Lead::findById($leadId);
-            // Log history
-            $logDetails = "Lead atualizado.";
-            if (isset($requestData["status"]) && $requestData["status"] !== $lead->status) {
-                $logDetails = "Status do lead alterado para " . $requestData["status"] . ".";
+        try {
+            $lead = Lead::findById($leadId);
+            if (!$lead) {
+                return $this->errorResponse(404, "Lead não encontrado.");
             }
-            if (isset($requestData["responsavel_id"]) && $requestData["responsavel_id"] !== $lead->responsavel_id) {
-                 $logDetails = "Responsável pelo lead alterado."; // Improve log message later
-            }
-            HistoricoInteracoes::logAction($leadId, null, $userData->userId, "Lead Atualizado", $logDetails);
 
-            // --- Notification (After Update) ---
-            if ($notifyAssignee && $updatedLead) {
-                 $this->notificationService->createNotification(
-                    "lead_atribuido",
-                    "Lead Atribuído a Você: " . $updatedLead->nome,
-                    "O lead \"{$updatedLead->nome}\" foi atribuído a você por {$userData->userName}.", // Assuming userName is available
-                    [$newAssigneeId],
-                    "/leads/" . $leadId, // Example link
-                    "lead",
-                    $leadId,
-                    true // Send email
+            // Verificar autorização
+            if ($userData->role !== "Admin" && $lead->responsavel_id !== $userData->userId) {
+                return $this->errorResponse(403, "Você não tem permissão para atualizar este lead.");
+            }
+
+            // Verificar mudança de responsável para notificação
+            $oldAssigneeId = $lead->responsavel_id;
+            $newAssigneeId = isset($requestData["responsavel_id"]) ? (int)$requestData["responsavel_id"] : $oldAssigneeId;
+            $notifyAssignee = ($newAssigneeId !== $oldAssigneeId && $newAssigneeId !== null && $newAssigneeId !== $userData->userId);
+
+            $requestData["atualizado_por"] = $userData->userId;
+            $requestData["data_atualizacao"] = date('Y-m-d H:i:s');
+
+            if (Lead::update($leadId, $requestData)) {
+                $updatedLead = Lead::findById($leadId);
+                
+                // Registrar histórico
+                $logDetails = $this->generateUpdateLogDetails($requestData, $lead);
+                HistoricoInteracoes::logAction(
+                    $leadId, 
+                    null, 
+                    $userData->userId, 
+                    "Lead Atualizado", 
+                    $logDetails
                 );
-            }
-            // TODO: Add notification for status changes if needed (e.g., lead qualified)
-            // --- End Notification ---
 
-            http_response_code(200);
-            return ["message" => "Lead atualizado com sucesso.", "lead" => $updatedLead];
-        } else {
-            http_response_code(500);
-            return ["error" => "Falha ao atualizar lead."];
+                // Notificar novo responsável
+                if ($notifyAssignee && $updatedLead) {
+                    $this->notifyLeadAssignment($updatedLead, $userData, "lead_atribuido");
+                }
+
+                return $this->successResponse($updatedLead, "Lead atualizado com sucesso.");
+            } else {
+                return $this->errorResponse(500, "Falha ao atualizar lead.");
+            }
+        } catch (\Exception $e) {
+            return $this->errorResponse(500, "Erro interno ao atualizar lead.", $e->getMessage());
         }
     }
 
     /**
-     * Delete a lead.
+     * Excluir lead
      *
-     * @param array $headers Request headers.
-     * @param int $leadId Lead ID.
-     * @return array JSON response.
+     * @param array $headers Cabeçalhos da requisição
+     * @param int $leadId ID do lead
+     * @return array Resposta JSON
      */
     public function destroy(array $headers, int $leadId): array
     {
-        $userData = $this->authMiddleware->handle($headers, ["Admin"]); // Only Admins can delete?
+        $userData = $this->authMiddleware->handle($headers, ["Admin"]);
         if (!$userData) {
-            http_response_code(401);
-            return ["error" => "Autenticação necessária ou permissão insuficiente."];
+            return $this->errorResponse(401, "Autenticação necessária ou permissão insuficiente.");
         }
 
-        $lead = Lead::findById($leadId);
-        if (!$lead) {
-            http_response_code(404);
-            return ["error" => "Lead não encontrado para exclusão."];
-        }
+        try {
+            $lead = Lead::findById($leadId);
+            if (!$lead) {
+                return $this->errorResponse(404, "Lead não encontrado.");
+            }
 
-        // Consider implications: delete associated history? proposals? tasks?
-        // Current setup uses ON DELETE SET NULL or CASCADE where appropriate.
+            if (Lead::delete($leadId)) {
+                // Registrar histórico antes da exclusão
+                HistoricoInteracoes::logAction(
+                    $leadId, 
+                    null, 
+                    $userData->userId, 
+                    "Lead Excluído", 
+                    "Lead excluído do sistema."
+                );
 
-        if (Lead::delete($leadId)) {
-            // Log history (optional, as lead is gone)
-            // HistoricoInteracoes::logAction($leadId, null, $userData->userId, "Lead Excluído", "Lead ID {$leadId} excluído.");
-            http_response_code(200); // Or 204
-            return ["message" => "Lead excluído com sucesso."];
-        } else {
-            http_response_code(500);
-            return ["error" => "Falha ao excluir lead."];
+                return $this->successResponse(null, "Lead excluído com sucesso.");
+            } else {
+                return $this->errorResponse(500, "Falha ao excluir lead.");
+            }
+        } catch (\Exception $e) {
+            return $this->errorResponse(500, "Erro interno ao excluir lead.", $e->getMessage());
         }
     }
 
     /**
-     * Import leads from a CSV file.
+     * Importar leads de arquivo CSV
      *
-     * @param array $headers Request headers.
-     * @param string $csvFilePath Absolute path to the uploaded CSV file.
-     * @param array $fieldMapping Associative array mapping CSV columns to DB fields (e.g., ["Nome Completo" => "nome", "Email Principal" => "email"]).
-     * @param int|null $defaultResponsavelId Optional default assignee ID for imported leads.
-     * @return array JSON response.
+     * @param array $headers Cabeçalhos da requisição
+     * @param string $csvFilePath Caminho do arquivo CSV
+     * @param array $fieldMapping Mapeamento de campos CSV para BD
+     * @param int|null $defaultResponsavelId ID do responsável padrão
+     * @return array Resposta JSON
      */
     public function importCsv(array $headers, string $csvFilePath, array $fieldMapping, ?int $defaultResponsavelId = null): array
     {
         $userData = $this->authMiddleware->handle($headers, ["Admin", "Comercial"]);
         if (!$userData) {
-            http_response_code(401);
-            return ["error" => "Autenticação necessária ou permissão insuficiente."];
+            return $this->errorResponse(401, "Autenticação necessária ou permissão insuficiente.");
         }
 
         if (!file_exists($csvFilePath) || !is_readable($csvFilePath)) {
-            http_response_code(400);
-            return ["error" => "Arquivo CSV não encontrado ou ilegível."];
+            return $this->errorResponse(400, "Arquivo CSV não encontrado ou ilegível.");
         }
-        if (empty($fieldMapping) || !isset($fieldMapping["nome"])) { // Assuming 'nome' is the minimum required field from mapping
-             http_response_code(400);
-            return ["error" => "Mapeamento de campos inválido ou campo obrigatório 'nome' ausente."];
+
+        if (empty($fieldMapping) || !isset($fieldMapping["nome"])) {
+            return $this->errorResponse(400, "Mapeamento de campos inválido ou campo 'nome' ausente.");
         }
 
         $importedCount = 0;
@@ -286,75 +287,294 @@ class LeadController
 
         try {
             $csv = Reader::createFromPath($csvFilePath, 'r');
-            $csv->setHeaderOffset(0); // Assumes first row is header
+            $csv->setHeaderOffset(0);
             $stmt = Statement::create();
             $records = $stmt->process($csv);
 
             foreach ($records as $record) {
                 $leadData = [];
+                
+                // Mapear campos do CSV
                 foreach ($fieldMapping as $csvHeader => $dbField) {
                     if (isset($record[$csvHeader])) {
-                        // Basic sanitization/trimming
                         $leadData[$dbField] = trim($record[$csvHeader]);
                     }
                 }
 
-                // Ensure required fields are present after mapping
+                // Validar dados mínimos
                 if (empty($leadData["nome"])) {
                     $errorCount++;
-                    $errors[] = "Registro ignorado: campo 'nome' ausente ou vazio no CSV/mapeamento.";
+                    $errors[] = "Registro ignorado: campo 'nome' ausente ou vazio.";
                     continue;
                 }
 
-                // Set default assignee if provided and not mapped
+                // Definir responsável padrão
                 if ($defaultResponsavelId !== null && !isset($leadData["responsavel_id"])) {
                     $leadData["responsavel_id"] = $defaultResponsavelId;
                 }
-                
-                // Set creator (optional, could be the importer)
-                // $leadData["criador_id"] = $userData->userId;
 
-                // Attempt to create the lead
+                $leadData["criado_por"] = $userData->userId;
+                $leadData["data_criacao"] = date('Y-m-d H:i:s');
+
+                // Tentar criar o lead
                 $leadId = Lead::create($leadData);
                 if ($leadId) {
                     $importedCount++;
-                    // Log history for imported lead
-                    HistoricoInteracoes::logAction($leadId, null, $userData->userId, "Lead Importado", "Lead importado via CSV.");
-                    // Optionally notify assignee if assigned during import
+                    
+                    // Registrar histórico
+                    HistoricoInteracoes::logAction(
+                        $leadId, 
+                        null, 
+                        $userData->userId, 
+                        "Lead Importado", 
+                        "Lead importado via CSV."
+                    );
+
+                    // Notificar responsável se diferente do importador
                     if (isset($leadData["responsavel_id"]) && $leadData["responsavel_id"] !== $userData->userId) {
-                         $newLead = Lead::findById($leadId);
-                         if ($newLead) {
-                             $this->notificationService->createNotification(
-                                "lead_importado_atribuido",
-                                "Lead Importado Atribuído: " . $newLead->nome,
-                                "O lead importado \"{$newLead->nome}\" foi atribuído a você.",
-                                [$leadData["responsavel_id"]],
-                                "/leads/" . $leadId,
-                                "lead",
-                                $leadId,
-                                true
-                            );
-                         }
+                        $newLead = Lead::findById($leadId);
+                        if ($newLead) {
+                            $this->notifyLeadAssignment($newLead, $userData, "lead_importado_atribuido");
+                        }
                     }
                 } else {
                     $errorCount++;
-                    $errors[] = "Falha ao importar registro: " . ($leadData["nome"] ?? "(sem nome)"); // Add more details if possible
+                    $errors[] = "Falha ao importar: " . ($leadData["nome"] ?? "(sem nome)");
                 }
             }
 
-            http_response_code(200);
-            return [
-                "message" => "Importação CSV concluída.",
+            return $this->successResponse([
                 "imported_count" => $importedCount,
                 "error_count" => $errorCount,
                 "errors" => $errors
-            ];
+            ], "Importação CSV concluída.");
 
         } catch (\Exception $e) {
-            error_log("Erro durante importação CSV de leads: " . $e->getMessage());
-            http_response_code(500);
-            return ["error" => "Erro interno durante a importação CSV.", "details" => $e->getMessage()];
+            error_log("Erro durante importação CSV: " . $e->getMessage());
+            return $this->errorResponse(500, "Erro interno durante importação CSV.", $e->getMessage());
         }
+    }
+
+    /**
+     * Atualização em lote de status
+     */
+    public function batchUpdateStatus(array $headers, array $requestData): array
+    {
+        $userData = $this->authMiddleware->handle($headers, ["Admin", "Comercial"]);
+        if (!$userData) {
+            return $this->errorResponse(401, "Autenticação necessária ou permissão insuficiente.");
+        }
+
+        $ids = $requestData["ids"] ?? [];
+        $status = $requestData["status"] ?? null;
+
+        if (empty($ids) || !$status) {
+            return $this->errorResponse(400, "IDs e novo status são obrigatórios.");
+        }
+
+        $updatedCount = 0;
+        foreach ($ids as $id) {
+            try {
+                $lead = Lead::findById($id);
+                if (!$lead) continue;
+
+                // Verificar autorização
+                if ($userData->role !== "Admin" && $lead->responsavel_id !== $userData->userId) {
+                    continue;
+                }
+
+                if (Lead::update($id, ["status" => $status])) {
+                    $updatedCount++;
+                    HistoricoInteracoes::logAction(
+                        $id, 
+                        null, 
+                        $userData->userId, 
+                        "Status Atualizado", 
+                        "Status alterado para '$status' em lote."
+                    );
+                }
+            } catch (\Exception $e) {
+                error_log("Erro ao atualizar lead $id: " . $e->getMessage());
+            }
+        }
+
+        return $this->successResponse([
+            "updated_count" => $updatedCount,
+            "total_requested" => count($ids)
+        ], "Atualização em lote concluída.");
+    }
+
+    /**
+     * Atribuição em lote de responsável
+     */
+    public function batchAssignResponsible(array $headers, array $requestData): array
+    {
+        $userData = $this->authMiddleware->handle($headers, ["Admin"]);
+        if (!$userData) {
+            return $this->errorResponse(401, "Autenticação necessária ou permissão insuficiente.");
+        }
+
+        $ids = $requestData["ids"] ?? [];
+        $responsavelId = $requestData["responsavel_id"] ?? null;
+
+        if (empty($ids) || !$responsavelId) {
+            return $this->errorResponse(400, "IDs e ID do responsável são obrigatórios.");
+        }
+
+        $updatedCount = 0;
+        foreach ($ids as $id) {
+            try {
+                $lead = Lead::findById($id);
+                if (!$lead) continue;
+
+                if (Lead::update($id, ["responsavel_id" => $responsavelId])) {
+                    $updatedCount++;
+                    HistoricoInteracoes::logAction(
+                        $id, 
+                        null, 
+                        $userData->userId, 
+                        "Responsável Atribuído", 
+                        "Lead atribuído ao usuário ID $responsavelId em lote."
+                    );
+                }
+            } catch (\Exception $e) {
+                error_log("Erro ao atribuir lead $id: " . $e->getMessage());
+            }
+        }
+
+        return $this->successResponse([
+            "updated_count" => $updatedCount,
+            "total_requested" => count($ids)
+        ], "Atribuição em lote concluída.");
+    }
+
+    /**
+     * Exclusão em lote
+     */
+    public function batchDelete(array $headers, array $requestData): array
+    {
+        $userData = $this->authMiddleware->handle($headers, ["Admin"]);
+        if (!$userData) {
+            return $this->errorResponse(401, "Autenticação necessária ou permissão insuficiente.");
+        }
+
+        $ids = $requestData["ids"] ?? [];
+        if (empty($ids)) {
+            return $this->errorResponse(400, "IDs obrigatórios.");
+        }
+
+        $deletedCount = 0;
+        foreach ($ids as $id) {
+            try {
+                $lead = Lead::findById($id);
+                if (!$lead) continue;
+
+                if (Lead::delete($id)) {
+                    $deletedCount++;
+                    HistoricoInteracoes::logAction(
+                        $id, 
+                        null, 
+                        $userData->userId, 
+                        "Lead Excluído", 
+                        "Lead excluído em lote."
+                    );
+                }
+            } catch (\Exception $e) {
+                error_log("Erro ao excluir lead $id: " . $e->getMessage());
+            }
+        }
+
+        return $this->successResponse([
+            "deleted_count" => $deletedCount,
+            "total_requested" => count($ids)
+        ], "Exclusão em lote concluída.");
+    }
+
+    // Métodos auxiliares privados
+
+    /**
+     * Validar dados do lead
+     */
+    private function validateLeadData(array $data): array
+    {
+        if (empty($data["nome"])) {
+            return ["valid" => false, "message" => "O nome do lead é obrigatório."];
+        }
+
+        if (isset($data["email"]) && !empty($data["email"]) && !filter_var($data["email"], FILTER_VALIDATE_EMAIL)) {
+            return ["valid" => false, "message" => "Email inválido."];
+        }
+
+        return ["valid" => true, "message" => ""];
+    }
+
+    /**
+     * Gerar detalhes do log de atualização
+     */
+    private function generateUpdateLogDetails(array $requestData, $lead): string
+    {
+        $details = [];
+        
+        if (isset($requestData["status"]) && $requestData["status"] !== $lead->status) {
+            $details[] = "Status alterado para " . $requestData["status"];
+        }
+        
+        if (isset($requestData["responsavel_id"]) && $requestData["responsavel_id"] !== $lead->responsavel_id) {
+            $details[] = "Responsável alterado";
+        }
+
+        return empty($details) ? "Lead atualizado." : implode(", ", $details) . ".";
+    }
+
+    /**
+     * Notificar atribuição de lead
+     */
+    private function notifyLeadAssignment($lead, $userData, string $type): void
+    {
+        try {
+            $this->notificationService->createNotification(
+                $type,
+                "Lead Atribuído: " . $lead->nome,
+                "O lead \"{$lead->nome}\" foi atribuído a você por {$userData->userName}.",
+                [$lead->responsavel_id],
+                "/leads/" . $lead->id,
+                "lead",
+                $lead->id,
+                true
+            );
+        } catch (\Exception $e) {
+            error_log("Erro ao enviar notificação: " . $e->getMessage());
+        }
+    }
+
+    /**
+     * Resposta de sucesso padronizada
+     */
+    private function successResponse($data = null, string $message = "Operação realizada com sucesso.", int $code = 200): array
+    {
+        http_response_code($code);
+        $response = ["success" => true, "message" => $message];
+        
+        if ($data !== null) {
+            $response["data"] = $data;
+        }
+        
+        return $response;
+    }
+
+    /**
+     * Resposta de erro padronizada
+     */
+    private function errorResponse(int $code, string $message, string $details = null): array
+    {
+        http_response_code($code);
+        $response = ["success" => false, "error" => $message];
+        
+        if ($details !== null) {
+            $response["details"] = $details;
+        }
+        
+        return $response;
     }
 }
 

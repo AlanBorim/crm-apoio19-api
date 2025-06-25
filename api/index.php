@@ -63,6 +63,8 @@ $requestMethod = $_SERVER["REQUEST_METHOD"];
 
 // --- Roteamento Simples ---
 use Apoio19\Crm\Controllers\AuthController;
+use Apoio19\Crm\Controllers\LeadController;
+
 
 // Rota de Login
 if ($requestPath === '/login' && $requestMethod === 'POST') {
@@ -82,7 +84,7 @@ if ($requestPath === '/login' && $requestMethod === 'POST') {
         // Passar os dados de entrada para o método login
         $response = $authController->login($input);
 
-	// Garante que o controller retorne um array
+        // Garante que o controller retorne um array
         if (is_array($response)) {
             echo json_encode($response);
         } else {
@@ -94,9 +96,53 @@ if ($requestPath === '/login' && $requestMethod === 'POST') {
     } catch (\Throwable $th) {
         error_log("Erro no AuthController->login: " . $th->getMessage() . "\n" . $th->getTraceAsString());
         http_response_code(500);
-        echo json_encode(["error" => "Erro interno ao processar o login.","status" => $th->getMessage() . "\n" . $th->getTraceAsString()]);
+        echo json_encode(["error" => "Erro interno ao processar o login.", "status" => $th->getMessage() . "\n" . $th->getTraceAsString()]);
         exit;
     }
+}
+// Rota de Leads 
+if ($requestPath === '/leads' && $requestMethod === 'GET') {
+
+    try {
+
+        $headers = getallheaders();
+        $leadsController = new LeadController();
+
+        // Executa o método e valida a resposta
+        $response = $leadsController->index($headers);
+
+        if (is_array($response)) {
+            http_response_code(200);
+            echo json_encode($response);
+        } else {
+            // Resposta inesperada
+            http_response_code(500);
+            echo json_encode([
+                "error" => "Erro interno. Resposta inesperada do servidor.",
+                "detalhes" => $response
+            ]);
+        }
+    } catch (\InvalidArgumentException $e) {
+        http_response_code(400); // Bad Request
+        echo json_encode([
+            "error" => "Parâmetros inválidos.",
+            "detalhes" => $e->getMessage()
+        ]);
+    } catch (\PDOException $e) {
+        http_response_code(500); // Erro de banco de dados
+        echo json_encode([
+            "error" => "Erro ao acessar o banco de dados.",
+            "detalhes" => $e->getMessage()
+        ]);
+    } catch (\Exception $e) {
+        http_response_code(500); // Erro genérico
+        echo json_encode([
+            "error" => "Erro interno no servidor.",
+            "detalhes" => $e->getMessage()
+        ]);
+    }
+
+    exit;
 }
 
 // --- Adicione outras rotas aqui ---
