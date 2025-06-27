@@ -9,18 +9,19 @@ use \PDOException;
 class Lead
 {
     public int $id;
-    public string $nome;
-    public ?string $empresa_nome;
+    public string $name;
+    public ?string $company;
     public ?string $email;
-    public ?string $telefone;
-    public ?string $origem;
-    public ?string $interesse;
-    public ?string $data_contato;
-    public string $qualificacao;
-    public ?int $responsavel_id;
+    public ?string $phone;
+    public ?string $source;
+    public ?string $interest;
+    public string $status;
+    public ?string $stage;
+    public ?int $assigned_to; 
+    public ?int $responsavel_id = null;
     public ?int $contato_id;
     public ?int $empresa_id;
-    public string $criado_em;
+    public string $created_at;
     public string $atualizado_em;
 
     // Constants for qualification status
@@ -69,7 +70,7 @@ class Lead
         try {
             $pdo = Database::getInstance();
             // Add ORDER BY for consistent results
-            $stmt = $pdo->prepare("SELECT * FROM leads ORDER BY criado_em DESC LIMIT :limit OFFSET :offset");
+            $stmt = $pdo->prepare("SELECT * FROM leads ORDER BY created_at DESC LIMIT :limit OFFSET :offset");
             $stmt->bindValue(":limit", $limit, PDO::PARAM_INT);
             $stmt->bindValue(":offset", $offset, PDO::PARAM_INT);
             $stmt->execute();
@@ -121,14 +122,16 @@ class Lead
             // Bind values using bindValue (avoids reference issues with mocks)
             foreach ($data as $key => $value) {
                 $paramType = PDO::PARAM_STR;
-                if ($key === 'responsavel_id') {
+                if ($key === 'assigned_to') {
                     $paramType = PDO::PARAM_INT;
                 }
+                
                 // Add other type checks if necessary (e.g., for dates, booleans)
                 $stmt->bindValue(":{$key}", $value, $paramType);
             }
 
             if ($stmt->execute()) {
+                
                 return (int)$pdo->lastInsertId();
             }
         } catch (PDOException $e) {
@@ -264,20 +267,19 @@ class Lead
     {
         $lead = new self();
         $lead->id = (int)$data["id"];
-        $lead->nome = $data["nome"];
-        $lead->empresa_nome = $data["empresa_nome"] ?? null;
+        $lead->name = $data["name"];
+        $lead->company = $data["company"] ?? null;
         $lead->email = $data["email"] ?? null;
-        $lead->telefone = $data["telefone"] ?? null;
-        $lead->origem = $data["origem"] ?? null;
-        $lead->interesse = $data["interesse"] ?? null;
-        $lead->data_contato = $data["data_contato"] ?? null;
+        $lead->phone = $data["phone"] ?? null;
+        $lead->source = $data["source"] ?? null;
+        $lead->interest = $data["interest"] ?? null;
         // Ensure qualificacao has a default if null/missing from DB data, matching the property type hint
-        $lead->qualificacao = $data["qualificacao"] ?? self::QUALIFICACAO_FRIO; 
-        $lead->responsavel_id = isset($data["responsavel_id"]) ? (int)$data["responsavel_id"] : null;
+        $lead->status = $data["status"] ?? self::QUALIFICACAO_FRIO; 
+        $lead->stage = $data["stage"]; 
+        $lead->assigned_to = isset($data["assigned_to"]) ? (int)$data["assigned_to"] : null;
         $lead->contato_id = isset($data["contato_id"]) ? (int)$data["contato_id"] : null;
         $lead->empresa_id = isset($data["empresa_id"]) ? (int)$data["empresa_id"] : null;
-        $lead->criado_em = $data["criado_em"] ?? date('Y-m-d H:i:s'); // Provide default
-        $lead->atualizado_em = $data["atualizado_em"] ?? date('Y-m-d H:i:s'); // Provide default
+        $lead->created_at = $data["created_at"] ?? date('Y-m-d H:i:s'); // Provide default
         return $lead;
     }
 }

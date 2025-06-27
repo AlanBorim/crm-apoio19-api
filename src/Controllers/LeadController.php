@@ -33,31 +33,20 @@ class LeadController
     public function index(array $headers, array $queryParams = []): array
     {
         $userData = $this->authMiddleware->handle($headers);
+
         if (!$userData) {
             return $this->errorResponse(401, "Autenticação necessária.");
         }
 
-        // Construir filtros
-        $filters = [];
-        if (isset($queryParams["status"])) {
-            $filters["status"] = $queryParams["status"];
-        }
-        if (isset($queryParams["responsavel_id"])) {
-            $filters["responsavel_id"] = (int)$queryParams["responsavel_id"];
-        }
-        if (isset($queryParams["origem"])) {
-            $filters["origem"] = $queryParams["origem"];
-        }
-
-        // Filtro baseado em role (usuários não-admin só veem seus leads)
-        if ($userData->role !== "Admin") {
-            $filters["responsavel_id"] = $userData->userId;
-        }
-
         try {
-            echo "Listando leads com filtros: " . json_encode($filters) . "\n";
-            // $leads = Lead::findBy($filters);
-            // return $this->successResponse($leads);
+
+            $leads = Lead::findAll();
+
+            if (!$leads) {
+                return $this->successResponse([], "Nenhum lead encontrado.");
+            }
+
+            return $this->successResponse($leads);
         } catch (\Exception $e) {
             return $this->errorResponse(500, "Erro ao buscar leads.", $e->getMessage());
         }
@@ -72,7 +61,8 @@ class LeadController
      */
     public function store(array $headers, array $requestData): array
     {
-        $userData = $this->authMiddleware->handle($headers, ["Admin", "Comercial"]);
+        $userData = $this->authMiddleware->handle($headers, ["admin", "comercial"]);
+
         if (!$userData) {
             return $this->errorResponse(401, "Autenticação necessária ou permissão insuficiente.");
         }
@@ -84,22 +74,21 @@ class LeadController
         }
 
         // Definir responsável padrão se não fornecido
-        $requestData["responsavel_id"] = $requestData["responsavel_id"] ?? $userData->userId;
-        $requestData["criado_por"] = $userData->userId;
-        $requestData["data_criacao"] = date('Y-m-d H:i:s');
+        $requestData["assigned_to"] = $requestData["assigned_to"] ?? $userData->userId;
+        $requestData["created_at"] = date('Y-m-d H:i:s');
 
         try {
             $leadId = Lead::create($requestData);
-            
+
             if ($leadId) {
                 $newLead = Lead::findById($leadId);
-                
+
                 // Registrar histórico
                 HistoricoInteracoes::logAction(
-                    $leadId, 
-                    null, 
-                    $userData->userId, 
-                    "Lead Criado", 
+                    $leadId,
+                    null,
+                    $userData->userId,
+                    "Lead Criado",
                     "Lead criado no sistema."
                 );
 
@@ -193,14 +182,14 @@ class LeadController
 
             if (Lead::update($leadId, $requestData)) {
                 $updatedLead = Lead::findById($leadId);
-                
+
                 // Registrar histórico
                 $logDetails = $this->generateUpdateLogDetails($requestData, $lead);
                 HistoricoInteracoes::logAction(
-                    $leadId, 
-                    null, 
-                    $userData->userId, 
-                    "Lead Atualizado", 
+                    $leadId,
+                    null,
+                    $userData->userId,
+                    "Lead Atualizado",
                     $logDetails
                 );
 
@@ -241,10 +230,10 @@ class LeadController
             if (Lead::delete($leadId)) {
                 // Registrar histórico antes da exclusão
                 HistoricoInteracoes::logAction(
-                    $leadId, 
-                    null, 
-                    $userData->userId, 
-                    "Lead Excluído", 
+                    $leadId,
+                    null,
+                    $userData->userId,
+                    "Lead Excluído",
                     "Lead excluído do sistema."
                 );
 
@@ -293,7 +282,7 @@ class LeadController
 
             foreach ($records as $record) {
                 $leadData = [];
-                
+
                 // Mapear campos do CSV
                 foreach ($fieldMapping as $csvHeader => $dbField) {
                     if (isset($record[$csvHeader])) {
@@ -320,13 +309,13 @@ class LeadController
                 $leadId = Lead::create($leadData);
                 if ($leadId) {
                     $importedCount++;
-                    
+
                     // Registrar histórico
                     HistoricoInteracoes::logAction(
-                        $leadId, 
-                        null, 
-                        $userData->userId, 
-                        "Lead Importado", 
+                        $leadId,
+                        null,
+                        $userData->userId,
+                        "Lead Importado",
                         "Lead importado via CSV."
                     );
 
@@ -348,7 +337,6 @@ class LeadController
                 "error_count" => $errorCount,
                 "errors" => $errors
             ], "Importação CSV concluída.");
-
         } catch (\Exception $e) {
             error_log("Erro durante importação CSV: " . $e->getMessage());
             return $this->errorResponse(500, "Erro interno durante importação CSV.", $e->getMessage());
@@ -386,10 +374,10 @@ class LeadController
                 if (Lead::update($id, ["status" => $status])) {
                     $updatedCount++;
                     HistoricoInteracoes::logAction(
-                        $id, 
-                        null, 
-                        $userData->userId, 
-                        "Status Atualizado", 
+                        $id,
+                        null,
+                        $userData->userId,
+                        "Status Atualizado",
                         "Status alterado para '$status' em lote."
                     );
                 }
@@ -430,10 +418,10 @@ class LeadController
                 if (Lead::update($id, ["responsavel_id" => $responsavelId])) {
                     $updatedCount++;
                     HistoricoInteracoes::logAction(
-                        $id, 
-                        null, 
-                        $userData->userId, 
-                        "Responsável Atribuído", 
+                        $id,
+                        null,
+                        $userData->userId,
+                        "Responsável Atribuído",
                         "Lead atribuído ao usuário ID $responsavelId em lote."
                     );
                 }
@@ -472,10 +460,10 @@ class LeadController
                 if (Lead::delete($id)) {
                     $deletedCount++;
                     HistoricoInteracoes::logAction(
-                        $id, 
-                        null, 
-                        $userData->userId, 
-                        "Lead Excluído", 
+                        $id,
+                        null,
+                        $userData->userId,
+                        "Lead Excluído",
                         "Lead excluído em lote."
                     );
                 }
@@ -497,7 +485,7 @@ class LeadController
      */
     private function validateLeadData(array $data): array
     {
-        if (empty($data["nome"])) {
+        if (empty($data["name"])) {
             return ["valid" => false, "message" => "O nome do lead é obrigatório."];
         }
 
@@ -514,11 +502,11 @@ class LeadController
     private function generateUpdateLogDetails(array $requestData, $lead): string
     {
         $details = [];
-        
+
         if (isset($requestData["status"]) && $requestData["status"] !== $lead->status) {
             $details[] = "Status alterado para " . $requestData["status"];
         }
-        
+
         if (isset($requestData["responsavel_id"]) && $requestData["responsavel_id"] !== $lead->responsavel_id) {
             $details[] = "Responsável alterado";
         }
@@ -554,11 +542,11 @@ class LeadController
     {
         http_response_code($code);
         $response = ["success" => true, "message" => $message];
-        
+
         if ($data !== null) {
             $response["data"] = $data;
         }
-        
+
         return $response;
     }
 
@@ -569,12 +557,11 @@ class LeadController
     {
         http_response_code($code);
         $response = ["success" => false, "error" => $message];
-        
+
         if ($details !== null) {
             $response["details"] = $details;
         }
-        
+
         return $response;
     }
 }
-

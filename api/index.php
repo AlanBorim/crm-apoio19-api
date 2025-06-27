@@ -100,7 +100,7 @@ if ($requestPath === '/login' && $requestMethod === 'POST') {
         exit;
     }
 }
-// Rota de Leads 
+// Rota de Leads GET
 if ($requestPath === '/leads' && $requestMethod === 'GET') {
 
     try {
@@ -142,6 +142,41 @@ if ($requestPath === '/leads' && $requestMethod === 'GET') {
         ]);
     }
 
+    exit;
+}
+
+if ($requestPath === '/leads' && $requestMethod === 'POST') {
+    
+    try {
+        // Ler o corpo da requisição JSON
+        $input = json_decode(file_get_contents('php://input'), true);
+
+        // Verificar se o JSON foi decodificado corretamente
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            http_response_code(400); // Bad Request
+            echo json_encode(["error" => "JSON inválido no corpo da requisição."]);
+            exit;
+        }
+
+        $headers = getallheaders();
+        $leadsController = new LeadController();
+        
+        // Passar os dados de entrada para o método store
+        $response = $leadsController->store($headers, $input);
+
+        // Garante que o controller retorne um array
+        if (is_array($response)) {
+            http_response_code(201); // Created
+            echo json_encode($response);
+        } else {
+            http_response_code(500);
+            echo json_encode(["error" => "Erro interno. Resposta inesperada do servidor."]);
+        }
+    } catch (\Throwable $th) {
+        error_log("Erro no LeadController->store: " . $th->getMessage() . "\n" . $th->getTraceAsString());
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno ao processar a criação do lead.", "status" => $th->getMessage() . "\n" . $th->getTraceAsString()]);
+    }
     exit;
 }
 

@@ -59,7 +59,7 @@ class AuthMiddleware
 
         // Check role permissions if required
         if (!empty($allowedRoles)) {
-            $userRole = $decodedPayload->data->role ?? null;
+            $userRole = $decodedPayload->role ?? null;
             if (!$userRole || !in_array($userRole, $allowedRoles)) {
                 // User does not have the required role
                 error_log("Middleware: Acesso negado. Role necessária: " . implode(", ", $allowedRoles) . ", Role do usuário: " . ($userRole ?? 'Nenhuma'));
