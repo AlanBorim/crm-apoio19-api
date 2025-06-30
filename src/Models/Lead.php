@@ -17,7 +17,7 @@ class Lead
     public ?string $interest;
     public string $status;
     public ?string $stage;
-    public ?int $assigned_to; 
+    public ?int $assigned_to;
     public ?int $responsavel_id = null;
     public ?int $contato_id;
     public ?int $empresa_id;
@@ -46,7 +46,7 @@ class Lead
             $stmt->bindValue(":id", $id, PDO::PARAM_INT);
             $stmt->execute();
             // Fetch using the default mode set in Database class (FETCH_ASSOC)
-            $leadData = $stmt->fetch(); 
+            $leadData = $stmt->fetch();
 
             if ($leadData) {
                 return self::hydrate($leadData);
@@ -84,7 +84,7 @@ class Lead
         }
         return $leads;
     }
-    
+
     /**
      * Get total count of leads.
      *
@@ -114,7 +114,7 @@ class Lead
         $fields = implode(", ", array_keys($data));
         $placeholders = ":" . implode(", :", array_keys($data));
         $sql = "INSERT INTO leads ({$fields}) VALUES ({$placeholders})";
-        
+
         try {
             $pdo = Database::getInstance();
             $stmt = $pdo->prepare($sql);
@@ -125,13 +125,13 @@ class Lead
                 if ($key === 'assigned_to') {
                     $paramType = PDO::PARAM_INT;
                 }
-                
+
                 // Add other type checks if necessary (e.g., for dates, booleans)
                 $stmt->bindValue(":{$key}", $value, $paramType);
             }
 
             if ($stmt->execute()) {
-                
+
                 return (int)$pdo->lastInsertId();
             }
         } catch (PDOException $e) {
@@ -157,12 +157,12 @@ class Lead
             if (in_array($key, ['nome', 'empresa_nome', 'email', 'telefone', 'origem', 'interesse', 'data_contato', 'qualificacao', 'responsavel_id', 'contato_id', 'empresa_id'])) {
                 $fields[] = "`{$key}` = :{$key}";
                 $paramType = PDO::PARAM_STR;
-                 if ($key === 'responsavel_id' || $key === 'contato_id' || $key === 'empresa_id') {
-                     $paramType = PDO::PARAM_INT;
-                     $value = empty($value) ? null : (int)$value;
-                 }
-                 // Add other type checks if necessary
-                 $params[":{$key}"] = $value; // Store value for execute
+                if ($key === 'responsavel_id' || $key === 'contato_id' || $key === 'empresa_id') {
+                    $paramType = PDO::PARAM_INT;
+                    $value = empty($value) ? null : (int)$value;
+                }
+                // Add other type checks if necessary
+                $params[":{$key}"] = $value; // Store value for execute
             }
         }
 
@@ -176,7 +176,7 @@ class Lead
             $pdo = Database::getInstance();
             $stmt = $pdo->prepare($sql);
             // Execute with the parameter array directly (works well with bindValue logic)
-            return $stmt->execute($params); 
+            return $stmt->execute($params);
         } catch (PDOException $e) {
             error_log("Erro ao atualizar lead ID {$id}: " . $e->getMessage());
         }
@@ -203,7 +203,7 @@ class Lead
         }
         return false;
     }
-    
+
     /**
      * Add an interaction history record for this lead.
      *
@@ -258,6 +258,52 @@ class Lead
     }
 
     /**
+     * Get leads by status.
+     *
+     * @param string $status
+     * @return array
+     */
+    public static function getStats(): array
+    {
+        $stats = [];
+        try {
+            $pdo = Database::getInstance();
+            // Total de leads
+            $stmtTotal = $pdo->query("SELECT COUNT(*) FROM leads");
+            $total = (int) $stmtTotal->fetchColumn();
+
+            // Leads de hoje
+            $stmtToday = $pdo->prepare("SELECT COUNT(*) FROM leads WHERE DATE(created_at) = CURDATE()");
+            $stmtToday->execute();
+            $today = (int) $stmtToday->fetchColumn();
+
+            // Leads de ontem
+            $stmtYesterday = $pdo->prepare("SELECT COUNT(*) FROM leads WHERE DATE(created_at) = CURDATE() - INTERVAL 1 DAY");
+            $stmtYesterday->execute();
+            $yesterday = (int) $stmtYesterday->fetchColumn();
+
+            // Crescimento absoluto
+            $growth = $today - $yesterday;
+
+            // Crescimento percentual (com 1 casa decimal), ou null se não há base para cálculo
+            $growthPercent = $yesterday > 0 ? round(($growth / $yesterday) * 100, 1) : '0.0';
+
+            return [
+                "total" => $total,
+                "today" => $today,
+                "growth" => $growth,
+                "growth_percent" => $growthPercent
+            ];
+        } catch (PDOException $e) {
+            error_log("Erro ao buscar estatísticas de leads: " . $e->getMessage());
+        }
+        return $stats;
+    }
+
+
+
+
+    /**
      * Hydrate a Lead object from database data.
      *
      * @param array $data
@@ -274,8 +320,8 @@ class Lead
         $lead->source = $data["source"] ?? null;
         $lead->interest = $data["interest"] ?? null;
         // Ensure qualificacao has a default if null/missing from DB data, matching the property type hint
-        $lead->status = $data["status"] ?? self::QUALIFICACAO_FRIO; 
-        $lead->stage = $data["stage"]; 
+        $lead->status = $data["status"] ?? self::QUALIFICACAO_FRIO;
+        $lead->stage = $data["stage"];
         $lead->assigned_to = isset($data["assigned_to"]) ? (int)$data["assigned_to"] : null;
         $lead->contato_id = isset($data["contato_id"]) ? (int)$data["contato_id"] : null;
         $lead->empresa_id = isset($data["empresa_id"]) ? (int)$data["empresa_id"] : null;
@@ -283,4 +329,3 @@ class Lead
         return $lead;
     }
 }
-

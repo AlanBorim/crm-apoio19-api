@@ -478,6 +478,32 @@ class LeadController
         ], "Exclusão em lote concluída.");
     }
 
+    /**
+     * Obter estatísticas de leads
+     *
+     * @param array $headers Cabeçalhos da requisição
+     * @return array Resposta JSON com estatísticas
+     */
+    public function stats(array $headers): array
+    {
+        $userData = $this->authMiddleware->handle($headers);
+        if (!$userData) {
+            return $this->errorResponse(401, "Autenticação necessária.");
+        }   
+
+        try {
+            $stats = Lead::getStats();
+
+            if (!$stats) {
+                return $this->successResponse([], "Nenhum dado de estatísticas encontrado.");
+            }
+
+            return $this->successResponse($stats);
+        } catch (\Exception $e) {
+            return $this->errorResponse(500, "Erro ao buscar estatísticas de leads.", $e->getMessage());
+        }
+    }
+    
     // Métodos auxiliares privados
 
     /**

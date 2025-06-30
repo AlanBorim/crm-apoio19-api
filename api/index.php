@@ -145,6 +145,49 @@ if ($requestPath === '/leads' && $requestMethod === 'GET') {
     exit;
 }
 
+if ($requestPath === '/leads/stats' && $requestMethod === 'GET') {
+
+    try {
+        $headers = getallheaders();
+        $leadsController = new LeadController();
+
+        $response = $leadsController->stats($headers);
+
+        if (is_array($response)) {
+            http_response_code(200);
+            echo json_encode($response);
+        } else {
+            http_response_code(500);
+            echo json_encode([
+                "error" => "Erro interno. Resposta inesperada do servidor.",
+                "detalhes" => $response
+            ]);
+        }
+    } catch (\InvalidArgumentException $e) {
+        http_response_code(400);
+        echo json_encode([
+            "error" => "Parâmetros inválidos.",
+            "detalhes" => $e->getMessage()
+        ]);
+    } catch (\PDOException $e) {
+        http_response_code(500);
+        echo json_encode([
+            "error" => "Erro ao acessar o banco de dados.",
+            "detalhes" => $e->getMessage()
+        ]);
+    } catch (\Exception $e) {
+        http_response_code(500);
+        echo json_encode([
+            "error" => "Erro interno no servidor.",
+            "detalhes" => $e->getMessage()
+        ]);
+    }
+
+    exit;
+}
+
+
+// Rotas POST
 if ($requestPath === '/leads' && $requestMethod === 'POST') {
     
     try {
