@@ -100,6 +100,15 @@ if ($requestPath === '/login' && $requestMethod === 'POST') {
         exit;
     }
 }
+
+// Rota de Refresh Token
+if ($requestPath === '/refresh' && $requestMethod === 'POST') {
+    
+    $controller = new AuthController();
+    echo json_encode($controller->refresh());
+    exit;
+}
+
 // Rota de Leads GET
 if ($requestPath === '/leads' && $requestMethod === 'GET') {
 

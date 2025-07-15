@@ -24,9 +24,9 @@ class AuthService
     public function __construct(?array $config = null)
     {
         if ($config === null) {
-            $configPath = __DIR__ . 
+            $configPath = __DIR__ .
 
-'/../../config/jwt.php
+                '/../../config/jwt.php
 
 ';
             if (file_exists($configPath)) {
@@ -120,12 +120,39 @@ class AuthService
             error_log("Erro na validação do JWT: Signature verification failed");
             return false;
         } catch (UnexpectedValueException $e) {
-             error_log("Erro na validação do JWT: " . $e->getMessage()); // Catches wrong number of segments, etc.
-             return false;
+            error_log("Erro na validação do JWT: " . $e->getMessage()); // Catches wrong number of segments, etc.
+            return false;
         } catch (\Exception $e) {
             error_log("Erro inesperado na validação do JWT: " . $e->getMessage());
             return false;
         }
     }
-}
 
+    public function generateRefreshToken($userId, $email): string
+    {
+        $payload = [
+            "sub" => $userId,
+            "email" => $email,
+            "iat" => time(),
+            "exp" => time() + (60 * 60 * 24 * 7) // 7 dias
+        ];
+
+        return JWT::encode($payload, $_ENV['JWT_SECRET'], 'HS256');
+    }
+
+    public function validateRefreshToken(string $token): ?array
+    {
+        try {
+            $decoded = JWT::decode($token, new Key($this->secretKey, $this->algo));
+            
+            return [
+                "id" => $decoded->data->sub ? $decoded->data->sub : $decoded->data->userId,
+                "email" => $decoded->data->email,
+                "role" => $decoded->data->role,
+                "nome" => $decoded->data->userName
+            ];
+        } catch (\Exception $e) {
+            return null;
+        }
+    }
+}

@@ -19,19 +19,21 @@ class Lead
     public ?string $stage;
     public ?int $assigned_to;
     public ?int $responsavel_id = null;
+    public ?string $cep;
+    public ?string $city;
+    public ?string $state;  
+    public ?string $address;
+    public int $value = 0; // Default to 0 if not set
+    public ?string $last_contact;
+    public ?string $next_contact;
+    public ?string $position; // Added position field
+    public ?string $temperature; // Added temperature field
     public ?int $contato_id;
     public ?int $empresa_id;
     public string $created_at;
     public string $atualizado_em;
 
-    // Constants for qualification status
-    const QUALIFICACAO_FRIO = 'frio';
-    const QUALIFICACAO_MORNO = 'morno';
-    const QUALIFICACAO_QUENTE = 'quente';
-    const QUALIFICACAO_PERDIDO = 'perdido';
-    const QUALIFICACAO_GANHO = 'ganho';
-
-    /**
+     /**
      * Find a lead by ID.
      *
      * @param int $id
@@ -75,7 +77,7 @@ class Lead
             $stmt->bindValue(":offset", $offset, PDO::PARAM_INT);
             $stmt->execute();
             $results = $stmt->fetchAll();
-
+            
             foreach ($results as $leadData) {
                 $leads[] = self::hydrate($leadData);
             }
@@ -316,15 +318,22 @@ class Lead
         $lead->name = $data["name"];
         $lead->company = $data["company"] ?? null;
         $lead->email = $data["email"] ?? null;
+        $lead->position = $data["position"] ?? null;
         $lead->phone = $data["phone"] ?? null;
         $lead->source = $data["source"] ?? null;
         $lead->interest = $data["interest"] ?? null;
+        $lead->temperature = $data["temperature"] ?? null;
         // Ensure qualificacao has a default if null/missing from DB data, matching the property type hint
-        $lead->status = $data["status"] ?? self::QUALIFICACAO_FRIO;
         $lead->stage = $data["stage"];
         $lead->assigned_to = isset($data["assigned_to"]) ? (int)$data["assigned_to"] : null;
-        $lead->contato_id = isset($data["contato_id"]) ? (int)$data["contato_id"] : null;
-        $lead->empresa_id = isset($data["empresa_id"]) ? (int)$data["empresa_id"] : null;
+        $lead->cep = $data["cep"] ?? null;
+        $lead->city = $data["city"] ?? null;
+        $lead->state = $data["state"] ?? null;
+        $lead->address = $data["address"] ?? null;
+        $lead->value = isset($data["value"]) ? (int)$data["value"] : 0; // Default to 0 if not set
+        $lead->last_contact = $data["last_contact"] ?? null;
+        $lead->next_contact = $data["next_contact"] ?? null;
+        // Use current time as default for created_at if not provided
         $lead->created_at = $data["created_at"] ?? date('Y-m-d H:i:s'); // Provide default
         return $lead;
     }
