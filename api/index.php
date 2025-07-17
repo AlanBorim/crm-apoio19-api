@@ -1,7 +1,19 @@
 <?php
 
+// Define o cabeçalho de resposta como JSON
+header("Content-Type: application/json");
 // Define o diretório base da aplicação
 define("BASE_PATH", dirname(__DIR__));
+
+// --- Roteamento Simples ---
+use Apoio19\Crm\Controllers\AuthController;
+use Apoio19\Crm\Controllers\LeadController;
+use Apoio19\Crm\Controllers\NotificationController;
+
+// --- Lógica de Extração de Caminho Corrigida ---
+$requestUri = $_SERVER['REQUEST_URI']; // ex: /api/login?param=1
+$basePath = '/api';
+
 
 // Carrega o autoload do Composer
 // Certifique-se de que o caminho para vendor/autoload.php está correto
@@ -28,13 +40,6 @@ try {
     // Não interrompa a execução, mas logue o erro
 }
 
-// Define o cabeçalho de resposta como JSON
-header("Content-Type: application/json");
-
-// --- Lógica de Extração de Caminho Corrigida ---
-$requestUri = $_SERVER['REQUEST_URI']; // ex: /api/login?param=1
-$basePath = '/api';
-
 // Remove query string se presente
 if (($pos = strpos($requestUri, '?')) !== false) {
     $requestUri = substr($requestUri, 0, $pos);
@@ -60,11 +65,6 @@ if (strpos($requestUri, $basePath) === 0) {
 // -----------------------------------------------
 
 $requestMethod = $_SERVER["REQUEST_METHOD"];
-
-// --- Roteamento Simples ---
-use Apoio19\Crm\Controllers\AuthController;
-use Apoio19\Crm\Controllers\LeadController;
-
 
 // Rota de Login
 if ($requestPath === '/login' && $requestMethod === 'POST') {
@@ -195,7 +195,6 @@ if ($requestPath === '/leads/stats' && $requestMethod === 'GET') {
     exit;
 }
 
-
 // Rotas POST
 if ($requestPath === '/leads' && $requestMethod === 'POST') {
     
@@ -231,6 +230,108 @@ if ($requestPath === '/leads' && $requestMethod === 'POST') {
     }
     exit;
 }
+
+if ($requestPath === '/notifications' && $requestMethod === 'POST') {
+    
+    try {   
+        // Ler o corpo da requisição JSON
+        $input = json_decode(file_get_contents('php://input'), true);
+
+        // Verificar se o JSON foi decodificado corretamente
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            http_response_code(400); // Bad Request
+            echo json_encode(["error" => "JSON inválido no corpo da requisição."]);
+            exit;
+        }
+
+        $headers = getallheaders();
+        $notificationController = new NotificationController();
+        // Passar os dados de entrada para o método store
+        $response = $notificationController->store($headers, $input);
+        // Garante que o controller retorne um array
+        if (is_array($response)) {
+            http_response_code(201); // Created
+            echo json_encode($response);
+        } else {
+            http_response_code(500);
+            echo json_encode(["error" => "Erro interno. Resposta inesperada do servidor."]);
+        }
+        exit;
+    } catch (\Throwable $th) {
+        error_log("Erro ao decodificar JSON: " . $th->getMessage());
+        http_response_code(400);
+        echo json_encode(["error" => "JSON inválido no corpo da requisição."]);
+        exit;
+    }
+        
+}
+
+if ($requestPath === '/notifications' && $requestMethod === 'GET') {
+    try {
+        $headers = getallheaders();
+        $notificationController = new NotificationController();
+
+        // Executa o método e valida a resposta
+        $response = $notificationController->index($headers);
+
+        if (is_array($response)) {
+            http_response_code(200);
+            echo json_encode($response);
+        } else {
+            // Resposta inesperada
+            http_response_code(500);
+            echo json_encode([
+                "error" => "Erro interno. Resposta inesperada do servidor.",
+                "detalhes" => $response
+            ]);
+        }
+    } catch (\InvalidArgumentException $e) {
+        http_response_code(400); // Bad Request
+        echo json_encode([
+            "error" => "Parâmetros inválidos.",
+            "detalhes" => $e->getMessage()
+        ]);
+    } catch (\PDOException $e) {
+        http_response_code(500); // Erro de banco de dados
+        echo json_encode([
+            "error" => "Erro ao acessar o banco de dados.",
+            "detalhes" => $e->getMessage()
+        ]);
+    } catch (\Exception $e) {
+        http_response_code(500); // Erro genérico
+        echo json_encode([
+            "error" => "Erro interno no servidor.",
+            "detalhes" => $e->getMessage()
+        ]);
+    }
+
+    exit;
+}
+
+if ($requestPath === '/notifications/unread' && $requestMethod === 'GET') {
+}
+
+if ($requestPath === '/notifications/unread-count' && $requestMethod === 'GET') {
+}
+
+if ($requestPath === '/notifications/stats' && $requestMethod === 'GET') {
+}
+
+if ($requestPath === '/notifications/{id}/read' && $requestMethod === 'PATCH') {
+}
+
+if ($requestPath === '/notifications/{id}/unread' && $requestMethod === 'PATCH') {
+}
+
+if ($requestPath === '/notifications/mark-all-read' && $requestMethod === 'PATCH') {
+}
+
+if ($requestPath === '/notifications/{id}' && $requestMethod === 'DELETE') {
+}
+
+if ($requestPath === '/notifications/all' && $requestMethod === 'DELETE') {
+}
+
 
 // --- Adicione outras rotas aqui ---
 // Exemplo:
