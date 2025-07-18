@@ -127,16 +127,17 @@ class LeadController
             }
 
             // Verificar autorização
-            if ($userData->role !== "Admin" && $lead->responsavel_id !== $userData->userId) {
+            if ($userData->role !== "admin" && $lead->responsavel_id !== $userData->userId) {
                 return $this->errorResponse(403, "Acesso negado a este lead.");
             }
 
-            $history = HistoricoInteracoes::findByLeadId($leadId);
+            return $this->successResponse(["lead" => $lead]);
+            // $history = HistoricoInteracoes::findByLeadId($leadId);
 
-            return $this->successResponse([
-                "lead" => $lead,
-                "historico" => $history
-            ]);
+            // return $this->successResponse([
+            //     "lead" => $lead,
+            //     "historico" => $history
+            // ]);
         } catch (\Exception $e) {
             return $this->errorResponse(500, "Erro ao buscar lead.", $e->getMessage());
         }

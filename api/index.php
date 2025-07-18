@@ -1,5 +1,7 @@
 <?php
-
+ini_set('display_errors', 1);
+ini_set('display_startup_errors', 1);
+error_reporting(E_ALL);
 // Define o cabeçalho de resposta como JSON
 header("Content-Type: application/json");
 // Define o diretório base da aplicação
@@ -9,6 +11,7 @@ define("BASE_PATH", dirname(__DIR__));
 use Apoio19\Crm\Controllers\AuthController;
 use Apoio19\Crm\Controllers\LeadController;
 use Apoio19\Crm\Controllers\NotificationController;
+use Apoio19\Crm\Controllers\HistoryController;
 
 // --- Lógica de Extração de Caminho Corrigida ---
 $requestUri = $_SERVER['REQUEST_URI']; // ex: /api/login?param=1
@@ -109,7 +112,7 @@ if ($requestPath === '/refresh' && $requestMethod === 'POST') {
     exit;
 }
 
-// Rota de Leads GET
+// Rotas de Leads 
 if ($requestPath === '/leads' && $requestMethod === 'GET') {
 
     try {
@@ -195,7 +198,6 @@ if ($requestPath === '/leads/stats' && $requestMethod === 'GET') {
     exit;
 }
 
-// Rotas POST
 if ($requestPath === '/leads' && $requestMethod === 'POST') {
     
     try {
@@ -231,6 +233,132 @@ if ($requestPath === '/leads' && $requestMethod === 'POST') {
     exit;
 }
 
+if (preg_match('#^/leads/(\d+)$#', $requestPath, $matches) && $requestMethod === 'GET') {
+    $leadId = $matches[1];
+    
+    try {
+        $headers = getallheaders();
+        $leadsController = new LeadController();
+
+        // Executa o método e valida a resposta
+        $response = $leadsController->show($headers, $leadId);
+
+        if (is_array($response)) {
+            http_response_code(200);
+            echo json_encode($response);
+        } else {
+            // Resposta inesperada
+            http_response_code(500);
+            echo json_encode([
+                "error" => "Erro interno. Resposta inesperada do servidor.",
+                "detalhes" => $response
+            ]);
+        }
+    } catch (\InvalidArgumentException $e) {
+        http_response_code(400); // Bad Request
+        echo json_encode([
+            "error" => "Parâmetros inválidos.",
+            "detalhes" => $e->getMessage()
+        ]);
+    } catch (\PDOException $e) {
+        http_response_code(500); // Erro de banco de dados
+        echo json_encode([
+            "error" => "Erro ao acessar o banco de dados.",
+            "detalhes" => $e->getMessage()
+        ]);
+    } catch (\Exception $e) {
+        http_response_code(500); // Erro genérico
+        echo json_encode([
+            "error" => "Erro interno no servidor.",
+            "detalhes" => $e->getMessage()
+        ]);
+    }
+
+    exit;
+}
+
+// Rotas de Histórico de Interações
+if ($requestPath === '/history' && $requestMethod === 'POST') {
+    
+    try {
+        // Ler o corpo da requisição JSON
+        $input = json_decode(file_get_contents('php://input'), true);
+
+        // Verificar se o JSON foi decodificado corretamente
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            http_response_code(400); // Bad Request
+            echo json_encode(["error" => "JSON inválido no corpo da requisição."]);
+            exit;
+        }
+
+        $headers = getallheaders();
+        $historyController = new HistoryController();
+        
+        // Passar os dados de entrada para o método logAction
+        $response = $historyController->logAction($headers, $input);
+
+        // Garante que o controller retorne um array
+        if (is_array($response)) {
+            http_response_code(201); // Created
+            echo json_encode($response);
+        } else {
+            http_response_code(500);
+            echo json_encode(["error" => "Erro interno. Resposta inesperada do servidor."]);
+        }
+    } catch (\Throwable $th) {
+        error_log("Erro no LeadController->logAction: " . $th->getMessage() . "\n" . $th->getTraceAsString());
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno ao processar o histórico de interações.", "status" => $th->getMessage() . "\n" . $th->getTraceAsString()]);
+    }
+    exit;
+
+}
+
+if (preg_match('#^/history/(\d+)$#', $requestPath, $matches) && $requestMethod === 'GET') {
+    $leadId = $matches[1];
+
+    try {
+        $headers = getallheaders();
+        $historyController = new HistoryController();
+
+        // Executa o método e valida a resposta
+        $response = $historyController->getHistory($headers, $leadId);
+
+        if (is_array($response)) {
+            http_response_code(200);
+            echo json_encode($response);
+        } else {
+            // Resposta inesperada
+            http_response_code(500);
+            echo json_encode([
+                "error" => "Erro interno. Resposta inesperada do servidor.",
+                "detalhes" => $response
+            ]);
+        }
+    } catch (\InvalidArgumentException $e) {
+        http_response_code(400); // Bad Request
+        echo json_encode([
+            "error" => "Parâmetros inválidos.",
+            "detalhes" => $e->getMessage()
+        ]);
+    } catch (\PDOException $e) {
+        http_response_code(500); // Erro de banco de dados
+        echo json_encode([
+            "error" => "Erro ao acessar o banco de dados.",
+            "detalhes" => $e->getMessage()
+        ]);
+    } catch (\Exception $e) {
+        http_response_code(500); // Erro genérico
+        echo json_encode([
+            "error" => "Erro interno no servidor.",
+            "detalhes" => $e->getMessage()
+        ]);
+    }
+
+    exit;
+}
+
+// Rotas de Notificações
 if ($requestPath === '/notifications' && $requestMethod === 'POST') {
     
     try {   
@@ -268,11 +396,12 @@ if ($requestPath === '/notifications' && $requestMethod === 'POST') {
 
 if ($requestPath === '/notifications' && $requestMethod === 'GET') {
     try {
+
         $headers = getallheaders();
-        $notificationController = new NotificationController();
+        $leadsController = new LeadController();
 
         // Executa o método e valida a resposta
-        $response = $notificationController->index($headers);
+        $response = $leadsController->index($headers);
 
         if (is_array($response)) {
             http_response_code(200);

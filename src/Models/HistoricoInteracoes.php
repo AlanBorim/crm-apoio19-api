@@ -15,16 +15,6 @@ class HistoricoInteracoes
     public ?string $observacao;
     public string $data;
 
-    public function __construct(array $data)
-    {
-        $this->lead_id     = (int)($data['lead_id'] ?? 0);
-        $this->contato_id  = isset($data['contato_id']) ? (int)$data['contato_id'] : null;
-        $this->usuario_id  = (int)($data['usuario_id'] ?? 0);
-        $this->acao        = $data['acao'] ?? '';
-        $this->observacao  = $data['observacao'] ?? null;
-        $this->data        = $data['data'] ?? date('Y-m-d H:i:s');
-    }
-
     public static function logAction(int $leadId, ?int $contatoId, int $usuarioId, string $acao, ?string $observacao = null): bool
     {
         try {
@@ -48,6 +38,46 @@ class HistoricoInteracoes
         } catch (PDOException $e) {
             error_log("Erro ao registrar histórico: " . $e->getMessage());
             return false;
+        }
+    }
+
+    public function getHistoryByLeadId(int $leadId): array|bool
+    {
+        try {
+            $db = Database::getInstance();
+
+            $stmt = $db->prepare("
+                SELECT
+                    h.id,
+                    h.lead_id,
+                    h.contato_id,
+                    u.name AS usuario_nome,
+                    h.acao,
+                    h.observacao,
+                    h.data
+                FROM historico_interacoes h
+                INNER JOIN users AS u ON u.id = h.usuario_id
+                WHERE h.lead_id = :lead_id 
+                ORDER BY data DESC
+            ");
+
+            $stmt->execute(['lead_id' => $leadId]);
+            $result = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+
+            if (!$result ) {
+                // Ocorreu um erro ao buscar os dados
+                return false;
+            }
+
+            if (empty($result)) {
+                // A consulta foi bem-sucedida, mas não retornou nenhum registro
+                return [];
+            }
+
+            return $result;
+        } catch (PDOException $e) {
+            error_log("Erro ao obter histórico: " . $e->getMessage());
+            return [];
         }
     }
 }
