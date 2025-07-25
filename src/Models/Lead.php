@@ -155,11 +155,11 @@ class Lead
         $fields = [];
         $params = [":id" => $id];
         foreach ($data as $key => $value) {
-            // Allow updating only specific fields
-            if (in_array($key, ['nome', 'empresa_nome', 'email', 'telefone', 'origem', 'interesse', 'data_contato', 'qualificacao', 'responsavel_id', 'contato_id', 'empresa_id'])) {
+            // Allow updating only specific fields          
+            if (in_array($key, ['name', 'company','address','cep','city','state','position','stage','email', 'phone', 'source', 'interest', 'next_contact', 'temperature', 'assined_to'])) {
                 $fields[] = "`{$key}` = :{$key}";
                 $paramType = PDO::PARAM_STR;
-                if ($key === 'responsavel_id' || $key === 'contato_id' || $key === 'empresa_id') {
+                if ($key === 'assigned_to' || $key === 'value') {
                     $paramType = PDO::PARAM_INT;
                     $value = empty($value) ? null : (int)$value;
                 }

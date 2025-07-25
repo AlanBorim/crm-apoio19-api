@@ -153,7 +153,7 @@ class LeadController
      */
     public function update(array $headers, int $leadId, array $requestData): array
     {
-        $userData = $this->authMiddleware->handle($headers, ["Admin", "Comercial"]);
+        $userData = $this->authMiddleware->handle($headers, ["admin", "comercial"]);
         if (!$userData) {
             return $this->errorResponse(401, "Autenticação necessária ou permissão insuficiente.");
         }
@@ -169,7 +169,7 @@ class LeadController
             }
 
             // Verificar autorização
-            if ($userData->role !== "Admin" && $lead->responsavel_id !== $userData->userId) {
+            if ($userData->role !== "admin" && $lead->responsavel_id !== $userData->userId) {
                 return $this->errorResponse(403, "Você não tem permissão para atualizar este lead.");
             }
 
@@ -182,7 +182,7 @@ class LeadController
             $requestData["data_atualizacao"] = date('Y-m-d H:i:s');
 
             if (Lead::update($leadId, $requestData)) {
-                $updatedLead = Lead::findById($leadId);
+                $updatedLead = Lead::update($leadId, $requestData);
 
                 // Registrar histórico
                 $logDetails = $this->generateUpdateLogDetails($requestData, $lead);

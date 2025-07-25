@@ -106,7 +106,7 @@ if ($requestPath === '/login' && $requestMethod === 'POST') {
 
 // Rota de Refresh Token
 if ($requestPath === '/refresh' && $requestMethod === 'POST') {
-    
+
     $controller = new AuthController();
     echo json_encode($controller->refresh());
     exit;
@@ -156,7 +156,7 @@ if ($requestPath === '/leads' && $requestMethod === 'GET') {
 
     exit;
 }
-
+// Rota de Estatísticas de Leads
 if ($requestPath === '/leads/stats' && $requestMethod === 'GET') {
 
     try {
@@ -197,9 +197,9 @@ if ($requestPath === '/leads/stats' && $requestMethod === 'GET') {
 
     exit;
 }
-
+// Rota de inserção de lead
 if ($requestPath === '/leads' && $requestMethod === 'POST') {
-    
+
     try {
         // Ler o corpo da requisição JSON
         $input = json_decode(file_get_contents('php://input'), true);
@@ -213,7 +213,7 @@ if ($requestPath === '/leads' && $requestMethod === 'POST') {
 
         $headers = getallheaders();
         $leadsController = new LeadController();
-        
+
         // Passar os dados de entrada para o método store
         $response = $leadsController->store($headers, $input);
 
@@ -232,10 +232,10 @@ if ($requestPath === '/leads' && $requestMethod === 'POST') {
     }
     exit;
 }
-
+// Rota de obtenção de um lead específico
 if (preg_match('#^/leads/(\d+)$#', $requestPath, $matches) && $requestMethod === 'GET') {
     $leadId = $matches[1];
-    
+
     try {
         $headers = getallheaders();
         $leadsController = new LeadController();
@@ -276,10 +276,64 @@ if (preg_match('#^/leads/(\d+)$#', $requestPath, $matches) && $requestMethod ===
 
     exit;
 }
+// Rota de atualização de um lead específico
+if (preg_match('#^/leads/(\d+)$#', $requestPath, $matches) && $requestMethod === 'PUT') {
+    $leadId = $matches[1];
+
+    // Ler o corpo da requisição JSON
+    $input = json_decode(file_get_contents('php://input'), true);
+
+    // Verificar se o JSON foi decodificado corretamente
+    if (json_last_error() !== JSON_ERROR_NONE) {
+        http_response_code(400); // Bad Request
+        echo json_encode(["error" => "JSON inválido no corpo da requisição."]);
+        exit;
+    }
+
+    try {
+        $headers = getallheaders();
+        $leadsController = new LeadController();
+
+        // Executa o método e valida a resposta
+        $response = $leadsController->update($headers, $leadId, $input);
+
+        if (is_array($response)) {
+            http_response_code(200);
+            echo json_encode($response);
+        } else {
+            // Resposta inesperada
+            http_response_code(500);
+            echo json_encode([
+                "error" => "Erro interno. Resposta inesperada do servidor.",
+                "detalhes" => $response
+            ]);
+        }
+    } catch (\InvalidArgumentException $e) {
+        http_response_code(400); // Bad Request
+        echo json_encode([
+            "error" => "Parâmetros inválidos.",
+            "detalhes" => $e->getMessage()
+        ]);
+    } catch (\PDOException $e) {
+        http_response_code(500); // Erro de banco de dados
+        echo json_encode([
+            "error" => "Erro ao acessar o banco de dados.",
+            "detalhes" => $e->getMessage()
+        ]);
+    } catch (\Exception $e) {
+        http_response_code(500); // Erro genérico
+        echo json_encode([
+            "error" => "Erro interno no servidor.",
+            "detalhes" => $e->getMessage()
+        ]);
+    }
+
+    exit;
+}
 
 // Rotas de Histórico de Interações
 if ($requestPath === '/history' && $requestMethod === 'POST') {
-    
+
     try {
         // Ler o corpo da requisição JSON
         $input = json_decode(file_get_contents('php://input'), true);
@@ -293,7 +347,7 @@ if ($requestPath === '/history' && $requestMethod === 'POST') {
 
         $headers = getallheaders();
         $historyController = new HistoryController();
-        
+
         // Passar os dados de entrada para o método logAction
         $response = $historyController->logAction($headers, $input);
 
@@ -311,9 +365,8 @@ if ($requestPath === '/history' && $requestMethod === 'POST') {
         echo json_encode(["error" => "Erro interno ao processar o histórico de interações.", "status" => $th->getMessage() . "\n" . $th->getTraceAsString()]);
     }
     exit;
-
 }
-
+// Rota de obtenção do histórico de interações de um lead específico
 if (preg_match('#^/history/(\d+)$#', $requestPath, $matches) && $requestMethod === 'GET') {
     $leadId = $matches[1];
 
@@ -360,8 +413,8 @@ if (preg_match('#^/history/(\d+)$#', $requestPath, $matches) && $requestMethod =
 
 // Rotas de Notificações
 if ($requestPath === '/notifications' && $requestMethod === 'POST') {
-    
-    try {   
+
+    try {
         // Ler o corpo da requisição JSON
         $input = json_decode(file_get_contents('php://input'), true);
 
@@ -391,7 +444,6 @@ if ($requestPath === '/notifications' && $requestMethod === 'POST') {
         echo json_encode(["error" => "JSON inválido no corpo da requisição."]);
         exit;
     }
-        
 }
 
 if ($requestPath === '/notifications' && $requestMethod === 'GET') {
