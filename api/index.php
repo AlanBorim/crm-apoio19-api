@@ -120,14 +120,16 @@ if ($requestPath === '/leads' && $requestMethod === 'GET') {
         $headers = getallheaders();
         $leadsController = new LeadController();
 
-        // Executa o método e valida a resposta
-        $response = $leadsController->index($headers);
+        // Captura todos os parâmetros da query string
+        $queryParams = $_GET;
+
+        // Executa o método com filtros
+        $response = $leadsController->index($headers, $queryParams);
 
         if (is_array($response)) {
             http_response_code(200);
             echo json_encode($response);
         } else {
-            // Resposta inesperada
             http_response_code(500);
             echo json_encode([
                 "error" => "Erro interno. Resposta inesperada do servidor.",

@@ -21,7 +21,7 @@ class Lead
     public ?int $responsavel_id = null;
     public ?string $cep;
     public ?string $city;
-    public ?string $state;  
+    public ?string $state;
     public ?string $address;
     public int $value = 0; // Default to 0 if not set
     public ?string $last_contact;
@@ -33,7 +33,7 @@ class Lead
     public string $created_at;
     public string $atualizado_em;
 
-     /**
+    /**
      * Find a lead by ID.
      *
      * @param int $id
@@ -77,7 +77,7 @@ class Lead
             $stmt->bindValue(":offset", $offset, PDO::PARAM_INT);
             $stmt->execute();
             $results = $stmt->fetchAll();
-            
+
             foreach ($results as $leadData) {
                 $leads[] = self::hydrate($leadData);
             }
@@ -110,7 +110,7 @@ class Lead
      * @param array $data Associative array of lead data.
      * @return int|false The ID of the new lead or false on failure.
      */
-    public static function create(array $data): int|false
+    public static function create(array $data): int|bool
     {
         // Basic validation/sanitization should happen in the controller or service layer
         $fields = implode(", ", array_keys($data));
@@ -156,7 +156,7 @@ class Lead
         $params = [":id" => $id];
         foreach ($data as $key => $value) {
             // Allow updating only specific fields          
-            if (in_array($key, ['name', 'company','address','cep','city','state','position','stage','email', 'phone', 'source', 'interest', 'next_contact', 'temperature', 'assined_to'])) {
+            if (in_array($key, ['name', 'company', 'address', 'cep', 'city', 'state', 'position', 'stage', 'email', 'phone', 'source', 'interest', 'next_contact', 'temperature', 'assined_to', 'value'])) {
                 $fields[] = "`{$key}` = :{$key}";
                 $paramType = PDO::PARAM_STR;
                 if ($key === 'assigned_to' || $key === 'value') {
@@ -302,7 +302,15 @@ class Lead
         return $stats;
     }
 
+    public static function findAllWithWhere(string $where = '', array $params = []): array
+    {
+        $pdo = Database::getInstance();
+        $sql = "SELECT * FROM leads {$where} ORDER BY created_at DESC";
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute($params);
 
+        return $stmt->fetchAll(\PDO::FETCH_ASSOC);
+    }
 
 
     /**

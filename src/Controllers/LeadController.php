@@ -33,18 +33,59 @@ class LeadController
     public function index(array $headers, array $queryParams = []): array
     {
         $userData = $this->authMiddleware->handle($headers);
-
         if (!$userData) {
             return $this->errorResponse(401, "Autenticação necessária.");
         }
 
         try {
+            // Montar condições dinâmicas
+            $conditions = [];
+            $params = [];
 
-            $leads = Lead::findAll();
-
-            if (!$leads) {
-                return $this->successResponse([], "Nenhum lead encontrado.");
+            // Filtro por estágio (stage)
+            if (!empty($queryParams['stage'])) {
+                $conditions[] = "stage = :stage";
+                $params[':stage'] = $queryParams['stage'];
             }
+
+            // Filtro por temperatura
+            if (!empty($queryParams['temperature'])) {
+                $conditions[] = "temperature = :temperature";
+                $params[':temperature'] = $queryParams['temperature'];
+            }
+
+            // Filtro por origem
+            if (!empty($queryParams['source'])) {
+                $conditions[] = "source = :source";
+                $params[':source'] = $queryParams['source'];
+            }
+
+            // Filtro por responsável
+            if (!empty($queryParams['assigned_to'])) {
+                $conditions[] = "assigned_to = :assigned_to";
+                $params[':assigned_to'] = (int)$queryParams['assigned_to'];
+            }
+
+            // Filtro de busca textual (name, company, email)
+            if (!empty($queryParams['search'])) {
+                $search = '%' . $queryParams['search'] . '%';
+                $conditions[] = "(name LIKE :search1 OR company LIKE :search2 OR email LIKE :search3)";
+                $params[':search1'] = $search;
+                $params[':search2'] = $search;
+                $params[':search3'] = $search;
+            }
+
+            // Adicionar restrição de responsável para usuários comuns
+            if ($userData->role !== "admin") {
+                $conditions[] = "assigned_to = :user_id";
+                $params[':user_id'] = $userData->userId;
+            }
+
+            // Construir WHERE
+            $where = $conditions ? "WHERE " . implode(" AND ", $conditions) : "";
+
+            // Buscar leads filtrados
+            $leads = Lead::findAllWithWhere($where, $params);
 
             return $this->successResponse($leads);
         } catch (\Exception $e) {
@@ -190,7 +231,7 @@ class LeadController
                     $leadId,
                     null,
                     $userData->userId,
-                    "Lead Atualizado",
+                    "Lead Atualizado - " . json_encode($requestData, JSON_UNESCAPED_SLASHES),
                     $logDetails
                 );
 
@@ -199,7 +240,7 @@ class LeadController
                     $this->notifyLeadAssignment($updatedLead, $userData, "lead_atribuido");
                 }
 
-                return $this->successResponse($updatedLead, "Lead atualizado com sucesso.");
+                return $this->successResponse($updatedLead, "Lead Atualizado com sucesso - " . json_encode($requestData, JSON_UNESCAPED_UNICODE));
             } else {
                 return $this->errorResponse(500, "Falha ao atualizar lead.");
             }
@@ -490,7 +531,7 @@ class LeadController
         $userData = $this->authMiddleware->handle($headers);
         if (!$userData) {
             return $this->errorResponse(401, "Autenticação necessária.");
-        }   
+        }
 
         try {
             $stats = Lead::getStats();
@@ -504,7 +545,7 @@ class LeadController
             return $this->errorResponse(500, "Erro ao buscar estatísticas de leads.", $e->getMessage());
         }
     }
-    
+
     // Métodos auxiliares privados
 
     /**
