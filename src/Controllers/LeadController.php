@@ -209,8 +209,9 @@ class LeadController
 
         try {
             $lead = Lead::findById($leadId);
-            if (!$lead) {
-                return $this->errorResponse(404, "Lead não encontrado.");
+            
+            if ($lead->active === 0) {
+                return $this->errorResponse(404, "Lead não encontrado ou lead desativado.");
             }
 
             // Verificar autorização

@@ -34,6 +34,7 @@ class Lead
     public string $updated_at;
     public ?string $responsavelNome; // Nullable for optional updates
     public string $atualizado_em;
+    public int $active; // Default to active if not set
 
     /**
      * Find a lead by ID.
@@ -155,6 +156,12 @@ class Lead
      */
     public static function update(int $id, array $data): bool
     {
+        // se o id estiver desativado impede o update
+        $lead = self::findById($id);
+        if (!$lead || $lead->active === 0) {
+            return false;
+        }
+
         // Build the SET part of the SQL query dynamically
         $fields = [];
         $params = [":id" => $id];
@@ -350,6 +357,7 @@ class Lead
         // Use current time as default for created_at if not provided
         $lead->created_at = $data["created_at"] ?? date('Y-m-d H:i:s'); // Provide default
         $lead->updated_at = $data["updated_at"] ?? date('Y-m-d H:i:s'); // Provide default
+        $lead->active = $data["active"] ?? 1; // Default to active if not set
         return $lead;
     }
 }
