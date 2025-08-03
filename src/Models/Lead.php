@@ -31,6 +31,8 @@ class Lead
     public ?int $contato_id;
     public ?int $empresa_id;
     public string $created_at;
+    public string $updated_at;
+    public ?string $responsavelNome; // Nullable for optional updates
     public string $atualizado_em;
 
     /**
@@ -43,7 +45,9 @@ class Lead
     {
         try {
             $pdo = Database::getInstance();
-            $stmt = $pdo->prepare("SELECT * FROM leads WHERE id = :id LIMIT 1");
+            $stmt = $pdo->prepare("SELECT l.*,u.name AS responsavelNome FROM leads l
+                                    INNER JOIN users AS u on u.id = l.assigned_to
+                                    WHERE l.id = :id LIMIT 1");
             // Use bindValue instead of bindParam for consistency and simpler mocking
             $stmt->bindValue(":id", $id, PDO::PARAM_INT);
             $stmt->execute();
@@ -194,11 +198,12 @@ class Lead
     public static function delete(int $id): bool
     {
         // Consider soft deletes instead of hard deletes in a real CRM
-        $sql = "DELETE FROM leads WHERE id = :id";
+        $sql = "UPDATE leads SET active = :active WHERE id = :id";
         try {
             $pdo = Database::getInstance();
             $stmt = $pdo->prepare($sql);
             $stmt->bindValue(":id", $id, PDO::PARAM_INT);
+            $stmt->bindValue(":active", '0', PDO::PARAM_INT);
             return $stmt->execute();
         } catch (PDOException $e) {
             error_log("Erro ao deletar lead ID {$id}: " . $e->getMessage());
@@ -341,8 +346,10 @@ class Lead
         $lead->value = isset($data["value"]) ? (int)$data["value"] : 0; // Default to 0 if not set
         $lead->last_contact = $data["last_contact"] ?? null;
         $lead->next_contact = $data["next_contact"] ?? null;
+        $lead->responsavelNome = $data["responsavelNome"] ?? null;
         // Use current time as default for created_at if not provided
         $lead->created_at = $data["created_at"] ?? date('Y-m-d H:i:s'); // Provide default
+        $lead->updated_at = $data["updated_at"] ?? date('Y-m-d H:i:s'); // Provide default
         return $lead;
     }
 }

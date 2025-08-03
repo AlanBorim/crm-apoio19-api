@@ -81,6 +81,10 @@ class LeadController
                 $params[':user_id'] = $userData->userId;
             }
 
+            //adicionando a parte onde indica que só os leads ativos devem ser retornados
+            $conditions[] = "active = :active";
+            $params[':active'] = '1';
+
             // Construir WHERE
             $where = $conditions ? "WHERE " . implode(" AND ", $conditions) : "";
 
@@ -258,7 +262,7 @@ class LeadController
      */
     public function destroy(array $headers, int $leadId): array
     {
-        $userData = $this->authMiddleware->handle($headers, ["Admin"]);
+        $userData = $this->authMiddleware->handle($headers, ["admin"]);
         if (!$userData) {
             return $this->errorResponse(401, "Autenticação necessária ou permissão insuficiente.");
         }

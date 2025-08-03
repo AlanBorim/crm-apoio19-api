@@ -332,6 +332,49 @@ if (preg_match('#^/leads/(\d+)$#', $requestPath, $matches) && $requestMethod ===
 
     exit;
 }
+// Rota de exclusão de um lead específico
+if (preg_match('#^/leads/(\d+)$#', $requestPath, $matches) && $requestMethod === 'DELETE') {
+    $leadId = $matches[1];
+    
+    try {
+        $headers = getallheaders();
+        $leadsController = new LeadController();
+
+        // Executa o método e valida a resposta
+        $response = $leadsController->destroy($headers, $leadId);
+
+        if (is_array($response)) {
+            http_response_code(200);
+            echo json_encode($response);
+        } else {
+            // Resposta inesperada
+            http_response_code(500);
+            echo json_encode([
+                "error" => "Erro interno. Resposta inesperada do servidor.",
+                "detalhes" => $response
+            ]);
+        }
+    } catch (\InvalidArgumentException $e) {
+        http_response_code(400); // Bad Request
+        echo json_encode([
+            "error" => "Parâmetros inválidos.",
+            "detalhes" => $e->getMessage()
+        ]);
+    } catch (\PDOException $e) {
+        http_response_code(500); // Erro de banco de dados
+        echo json_encode([
+            "error" => "Erro ao acessar o banco de dados.",
+            "detalhes" => $e->getMessage()
+        ]);
+    } catch (\Exception $e) {
+        http_response_code(500); // Erro genérico
+        echo json_encode([
+            "error" => "Erro interno no servidor.",
+            "detalhes" => $e->getMessage()
+        ]);
+    }
+    exit;
+}
 
 // Rotas de Histórico de Interações
 if ($requestPath === '/history' && $requestMethod === 'POST') {
