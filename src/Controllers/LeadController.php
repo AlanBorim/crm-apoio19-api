@@ -609,6 +609,19 @@ class LeadController
     }
 
     /**
+     * Area de settings de leads
+     */
+    public function storeSettings(array $headers, array $requestData): array
+    {
+        $userData = $this->authMiddleware->handle($headers, ["admin", "comercial"]);
+
+        if (!$userData) {
+            return $this->errorResponse(401, "Autenticação necessária ou permissão insuficiente.");
+        }
+
+        return [];
+    }
+    /**
      * Resposta de sucesso padronizada
      */
     private function successResponse($data = null, string $message = "Operação realizada com sucesso.", int $code = 200): array

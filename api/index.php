@@ -335,7 +335,7 @@ if (preg_match('#^/leads/(\d+)$#', $requestPath, $matches) && $requestMethod ===
 // Rota de exclusão de um lead específico
 if (preg_match('#^/leads/(\d+)$#', $requestPath, $matches) && $requestMethod === 'DELETE') {
     $leadId = $matches[1];
-    
+
     try {
         $headers = getallheaders();
         $leadsController = new LeadController();
@@ -495,10 +495,10 @@ if ($requestPath === '/notifications' && $requestMethod === 'GET') {
     try {
 
         $headers = getallheaders();
-        $leadsController = new LeadController();
+        $notificationController = new NotificationController();
 
         // Executa o método e valida a resposta
-        $response = $leadsController->index($headers);
+        $response = $notificationController->index($headers);
 
         if (is_array($response)) {
             http_response_code(200);
@@ -533,32 +533,137 @@ if ($requestPath === '/notifications' && $requestMethod === 'GET') {
 
     exit;
 }
-
-if ($requestPath === '/notifications/unread' && $requestMethod === 'GET') {
-}
-
-if ($requestPath === '/notifications/unread-count' && $requestMethod === 'GET') {
-}
-
-if ($requestPath === '/notifications/stats' && $requestMethod === 'GET') {
-}
-
-if ($requestPath === '/notifications/{id}/read' && $requestMethod === 'PATCH') {
-}
-
-if ($requestPath === '/notifications/{id}/unread' && $requestMethod === 'PATCH') {
-}
-
+//rota de leitura de todas as notificações
 if ($requestPath === '/notifications/mark-all-read' && $requestMethod === 'PATCH') {
+    try {
+        // Lógica para atualizar notificações
+        $headers = getallheaders();
+        $notificationController = new NotificationController();
+
+        // Executa o método e valida a resposta
+        $response = $notificationController->markAllAsRead($headers);
+        if (is_array($response)) {
+            http_response_code(200);
+            echo json_encode($response);
+        } else {
+            // Resposta inesperada
+            http_response_code(500);
+            echo json_encode([
+                "error" => "Erro interno. Resposta inesperada do servidor.",
+                "detalhes" => $response
+            ]);
+        }
+    } catch (\Throwable $th) {
+        error_log("Erro ao marcar todas as notificações como lidas: " . $th->getMessage());
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno ao marcar notificações como lidas"]);
+    }
+    exit;
 }
 
-if ($requestPath === '/notifications/{id}' && $requestMethod === 'DELETE') {
+if (preg_match('#^/notifications/(\d+)/read$#', $requestPath, $matches) && $requestMethod === 'PATCH') {
+    $leadId = $matches[1];
+    
+    try {
+        // Lógica para atualizar uma notificação específica
+        $headers = getallheaders();
+        $notificationController = new NotificationController();
+
+        // Executa o método e valida a resposta
+        $response = $notificationController->markAsRead($headers, $leadId);
+        if (is_array($response)) {
+            http_response_code(200);
+            echo json_encode($response);
+        } else {
+            // Resposta inesperada
+            http_response_code(500);
+            echo json_encode([
+                "error" => "Erro interno. Resposta inesperada do servidor.",
+                "detalhes" => $response
+            ]);
+        }
+    } catch (\Throwable $th) {
+        error_log("Erro ao marcar notificação como lida: " . $th->getMessage());
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno ao marcar notificação como lida"]);
+    }
+    exit;
 }
 
-if ($requestPath === '/notifications/all' && $requestMethod === 'DELETE') {
+if ($requestPath === '/notifications' && $requestMethod === 'DELETE') {
+    
+    try {
+        // Lógica para excluir todas as notificações
+        $headers = getallheaders();
+        $notificationController = new NotificationController();
+
+        // Executa o método e valida a resposta
+        $response = $notificationController->deleteAll($headers);
+        if (is_array($response)) {
+            http_response_code(200);
+            echo json_encode($response);
+        } else {
+            // Resposta inesperada
+            http_response_code(500);
+            echo json_encode([
+                "error" => "Erro interno. Resposta inesperada do servidor.",
+                "detalhes" => $response
+            ]);
+        }
+    } catch (\Throwable $th) {
+        error_log("Erro ao excluir notificações: " . $th->getMessage());
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno ao excluir notificações"]);
+    }
+    exit;
 }
 
+if (preg_match('#^/notifications/(\d+)$#', $requestPath, $matches) && $requestMethod === 'DELETE') {
+    $leadId = $matches[1];
+    try {
+        // Lógica para excluir uma notificação específica
+        $headers = getallheaders();
+        $notificationController = new NotificationController();
 
+        // Executa o método e valida a resposta
+        $response = $notificationController->delete($headers, $leadId);
+        if (is_array($response)) {
+            http_response_code(200);
+            echo json_encode($response);
+        } else {
+            // Resposta inesperada
+            http_response_code(500);
+            echo json_encode([
+                "error" => "Erro interno. Resposta inesperada do servidor.",
+                "detalhes" => $response
+            ]);
+        }
+    } catch (\Throwable $th) {
+        error_log("Erro ao excluir notificação: " . $th->getMessage());
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno ao excluir notificação"]);
+    }
+    exit;
+}
+
+// rotas de configurações
+if ($requestPath === '/leads/settings' && $requestMethod === 'GET') {
+    // Ler o corpo da requisição JSON
+    $input = json_decode(file_get_contents('php://input'), true);
+
+    // Verificar se o JSON foi decodificado corretamente
+    if (json_last_error() !== JSON_ERROR_NONE) {
+        http_response_code(400); // Bad Request
+        echo json_encode(["error" => "JSON inválido no corpo da requisição."]);
+        exit;
+    }
+    $headers = getallheaders();
+    $lead_setting = new LeadController();
+    // Passar os dados de entrada para o método getLeadSettings
+    $response = $lead_setting->storeSettings($headers,$input);
+    var_dump($response);
+    exit;
+}
 // --- Adicione outras rotas aqui ---
 // Exemplo:
 // if ($requestPath === '/leads' && $requestMethod === 'GET') { ... }

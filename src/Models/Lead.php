@@ -324,6 +324,19 @@ class Lead
         return $stmt->fetchAll(\PDO::FETCH_ASSOC);
     }
 
+    public function createLeadSettings(array $data): bool
+    {
+        // Implementar lógica para criar configurações de lead
+        // Exemplo: inserir dados em uma tabela de configurações de leads
+
+        $fields = implode(", ", array_keys($data));
+        $placeholders = ":" . implode(", :", array_keys($data));
+        $sql = "INSERT INTO lead_settings ({$fields}) VALUES ({$placeholders})";
+
+        $pdo = Database::getInstance();
+
+        return true; // Retornar true se a criação for bem-sucedida
+    }
 
     /**
      * Hydrate a Lead object from database data.

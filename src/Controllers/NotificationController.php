@@ -16,7 +16,7 @@ class NotificationController
         $this->authMiddleware = new AuthMiddleware();
     }
 
- /**
+    /**
      * List notifications with pagination and filters
      * GET /notifications
      */
@@ -34,7 +34,7 @@ class NotificationController
         $page = max(1, (int)($queryParams['page'] ?? 1));
         $limit = min(max(1, (int)($queryParams['limit'] ?? 50)), 100);
         $offset = ($page - 1) * $limit;
-        
+
         $type = $queryParams['type'] ?? null;
         $isRead = isset($queryParams['is_read']) ? (int)$queryParams['is_read'] : null;
 
@@ -57,19 +57,19 @@ class NotificationController
         // Query principal
         $sql = "SELECT id, user_id, title, message, type, is_read, created_at 
                 FROM notifications 
-                WHERE {$whereClause}
+                WHERE {$whereClause} AND active = '1'
                 ORDER BY created_at DESC 
                 LIMIT :limit OFFSET :offset";
 
         // Query para contar total
-        $countSql = "SELECT COUNT(*) FROM notifications WHERE {$whereClause}";
+        $countSql = "SELECT COUNT(*) FROM notifications WHERE {$whereClause} AND active = '1'";
 
         // Query para contar não lidas
-        $unreadSql = "SELECT COUNT(*) FROM notifications WHERE user_id = :user_id AND is_read = 0";
+        $unreadSql = "SELECT COUNT(*) FROM notifications WHERE user_id = :user_id AND is_read = 0 AND active = '1'";
 
         try {
             $pdo = Database::getInstance();
-            
+
             // Buscar notificações
             $stmt = $pdo->prepare($sql);
             foreach ($params as $key => $value) {
@@ -110,10 +110,11 @@ class NotificationController
                     "unread_count" => $unreadCount,
                     "current_page" => $page,
                     "per_page" => $limit,
-                    "last_page" => $lastPage
+                    "last_page" => $lastPage,
+                    "sql" => $sql,
+                    "params" => $params
                 ]
             ];
-
         } catch (PDOException $e) {
             error_log("Erro ao buscar notificações: " . $e->getMessage());
             http_response_code(500);
@@ -170,10 +171,10 @@ class NotificationController
             $stmt->bindParam(":title", $title);
             $stmt->bindParam(":message", $message);
             $stmt->bindParam(":type", $type);
-            
+
             if ($stmt->execute()) {
                 $notificationId = (int)$pdo->lastInsertId();
-                
+
                 // Buscar a notificação criada para retornar
                 $selectSql = "SELECT id, user_id, title, message, type, is_read, created_at 
                              FROM notifications WHERE id = :id";
@@ -181,10 +182,10 @@ class NotificationController
                 $selectStmt->bindParam(":id", $notificationId, PDO::PARAM_INT);
                 $selectStmt->execute();
                 $notification = $selectStmt->fetch(PDO::FETCH_ASSOC);
-                
+
                 // Converter is_read para boolean
                 $notification['is_read'] = (bool)$notification['is_read'];
-                
+
                 http_response_code(201);
                 return [
                     "success" => true,
@@ -207,58 +208,6 @@ class NotificationController
             ];
         }
     }
-    
-    
-    
-    
-    /**
-     * List unread notifications for the authenticated user.
-     *
-     * @param array $headers Request headers.
-     * @param array $queryParams Optional query parameters (e.g., limit).
-     * @return array JSON response.
-     */
-    public function listUnread(array $headers, array $queryParams = []): array
-    {
-        $userData = $this->authMiddleware->handle($headers);
-        if (!$userData) {
-            http_response_code(401);
-            return ["error" => "Autenticação do CRM necessária."];
-        }
-
-        $limit = isset($queryParams["limit"]) ? max(1, (int)$queryParams["limit"]) : 20;
-
-        $sql = "SELECT n.id, n.tipo, n.titulo, n.mensagem, n.link, n.entidade_tipo, n.entidade_id, n.criado_em
-                FROM notificacoes n
-                JOIN notificacao_usuarios nu ON n.id = nu.notificacao_id
-                WHERE nu.usuario_id = :usuario_id AND nu.lida = FALSE
-                ORDER BY n.criado_em DESC
-                LIMIT :limit";
-
-        try {
-            $pdo = Database::getInstance();
-            $stmt = $pdo->prepare($sql);
-            $stmt->bindParam(":usuario_id", $userData->userId, PDO::PARAM_INT);
-            $stmt->bindParam(":limit", $limit, PDO::PARAM_INT);
-            $stmt->execute();
-            $notifications = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-            // Optionally, get the total unread count as well
-            $countSql = "SELECT COUNT(*) FROM notificacao_usuarios WHERE usuario_id = :usuario_id AND lida = FALSE";
-            $countStmt = $pdo->prepare($countSql);
-            $countStmt->bindParam(":usuario_id", $userData->userId, PDO::PARAM_INT);
-            $countStmt->execute();
-            $unreadCount = $countStmt->fetchColumn();
-
-            http_response_code(200);
-            return ["data" => $notifications, "unread_count" => (int)$unreadCount];
-
-        } catch (PDOException $e) {
-            error_log("Erro ao buscar notificações não lidas para usuário ID {$userData->userId}: " . $e->getMessage());
-            http_response_code(500);
-            return ["error" => "Erro interno ao buscar notificações."];
-        }
-    }
 
     /**
      * Mark a specific notification as read for the authenticated user.
@@ -274,17 +223,42 @@ class NotificationController
             http_response_code(401);
             return ["error" => "Autenticação do CRM necessária."];
         }
+        // se já estiver lido marca como não lido
+        // busca a notificação
+        $sqlBusca = "SELECT is_read FROM notifications WHERE id = :notificacao_id AND user_id = :usuario_id AND active = '1'";
+        try {
+            $pdo = Database::getInstance();
+            $stmtBusca = $pdo->prepare($sqlBusca);
+            $stmtBusca->bindParam(":notificacao_id", $notificationId, PDO::PARAM_INT);
+            $stmtBusca->bindParam(":usuario_id", $userData->userId, PDO::PARAM_INT);
+            $stmtBusca->execute();
+            $notification = $stmtBusca->fetch(PDO::FETCH_ASSOC);
+            if (!$notification) {
+                http_response_code(404);
+                return ["error" => "Notificação não encontrada."];
+            }
+            if ($notification['is_read'] == 1) {
+                $sql = "UPDATE notifications 
+                                    SET is_read = 0, readed_at = NULL 
+                                    WHERE id = :notificacao_id AND user_id = :usuario_id AND is_read = 1";
+            } else {
+                $sql = "UPDATE notifications 
+                SET is_read = 1, readed_at = NOW() 
+                WHERE id = :notificacao_id AND user_id = :usuario_id AND is_read = 0";
+            }
+        } catch (PDOException $e) {
+            error_log("Erro ao buscar notificação {$notificationId} para usuário ID {$userData->userId}: " . $e->getMessage());
+            http_response_code(500);
+            return ["error" => "Erro interno ao buscar notificação."];
+        }
 
-        $sql = "UPDATE notificacao_usuarios 
-                SET lida = TRUE, data_leitura = NOW() 
-                WHERE notificacao_id = :notificacao_id AND usuario_id = :usuario_id AND lida = FALSE";
 
         try {
             $pdo = Database::getInstance();
             $stmt = $pdo->prepare($sql);
             $stmt->bindParam(":notificacao_id", $notificationId, PDO::PARAM_INT);
             $stmt->bindParam(":usuario_id", $userData->userId, PDO::PARAM_INT);
-            
+
             if ($stmt->execute()) {
                 if ($stmt->rowCount() > 0) {
                     http_response_code(200);
@@ -319,15 +293,15 @@ class NotificationController
             return ["error" => "Autenticação do CRM necessária."];
         }
 
-        $sql = "UPDATE notificacao_usuarios 
-                SET lida = TRUE, data_leitura = NOW() 
-                WHERE usuario_id = :usuario_id AND lida = FALSE";
+        $sql = "UPDATE notifications 
+                SET is_read = 1, readed_at = NOW() 
+                WHERE user_id = :usuario_id AND is_read = 0";
 
         try {
             $pdo = Database::getInstance();
             $stmt = $pdo->prepare($sql);
             $stmt->bindParam(":usuario_id", $userData->userId, PDO::PARAM_INT);
-            
+
             if ($stmt->execute()) {
                 $rowCount = $stmt->rowCount();
                 http_response_code(200);
@@ -343,6 +317,78 @@ class NotificationController
         }
     }
 
+    public function delete(array $headers, int $notificationId): array
+    {
+        $userData = $this->authMiddleware->handle($headers);
+        if (!$userData) {
+            http_response_code(401);
+            return ["error" => "Autenticação do CRM necessária."];
+        }
+
+        $sql = "UPDATE notifications 
+                SET active = '0'
+                WHERE user_id = :usuario_id AND active = '1' AND id = :notificacao_id";
+
+        try {
+            $pdo = Database::getInstance();
+            $stmt = $pdo->prepare($sql);
+            $stmt->bindParam(":notificacao_id", $notificationId, PDO::PARAM_INT);
+            $stmt->bindParam(":usuario_id", $userData->userId, PDO::PARAM_INT);
+
+            if ($stmt->execute()) {
+                if ($stmt->rowCount() > 0) {
+                    http_response_code(200);
+                    return ["message" => "Notificação excluída com sucesso."];
+                } else {
+                    http_response_code(404);
+                    return ["error" => "Notificação não encontrada ou já excluída."];
+                }
+            } else {
+                http_response_code(500);
+                return ["error" => "Falha ao excluir notificação."];
+            }
+        } catch (PDOException $e) {
+            error_log("Erro ao excluir notificação {$notificationId} para usuário ID {$userData->userId}: " . $e->getMessage());
+            http_response_code(500);
+            return ["error" => "Erro ao excluir notificação {$notificationId} para usuário ID {$userData->userId}:"];
+        }
+    }
+
+    public function deleteAll(array $headers): array
+    {
+        $userData = $this->authMiddleware->handle($headers);
+        if (!$userData) {
+            http_response_code(401);
+            return ["error" => "Autenticação do CRM necessária."];
+        }
+
+        $sql = "UPDATE notifications 
+                SET active = '0' 
+                WHERE user_id = :usuario_id AND active = '1'";
+
+        try {
+            $pdo = Database::getInstance();
+            $stmt = $pdo->prepare($sql);
+            $stmt->bindParam(":usuario_id", $userData->userId, PDO::PARAM_INT);
+
+            if ($stmt->execute()) {
+                if ($stmt->rowCount() > 0) {
+                    http_response_code(200);
+                    return ["message" => "Notificação excluída com sucesso."];
+                } else {
+                    http_response_code(404);
+                    return ["error" => "Notificação não encontrada ou já excluída."];
+                }
+            } else {
+                http_response_code(500);
+                return ["error" => "Falha ao excluir notificação."];
+            }
+        } catch (PDOException $e) {
+            error_log("Erro ao excluir notificações para usuário ID {$userData->userId}: " . $e->getMessage());
+            http_response_code(500);
+            return ["error" => "Erro interno ao excluir notificações."];
+        }
+    }
     /**
      * Validate notification data
      */
@@ -374,4 +420,3 @@ class NotificationController
         ];
     }
 }
-

@@ -27,6 +27,13 @@ class AuthMiddleware
 
         $token = $headers["Authorization"] ?? $headers["authorization"] ?? null;
 
+        if (!$token) {
+            // No Authorization header provided
+            http_response_code(401);
+            echo json_encode(["erro" => "Cabeçalho de autorização ausente"]);
+            exit;
+        }
+
         if (!$headers) {
             http_response_code(401);
             echo json_encode(["erro" => "Cabeçalho de autorização ausente"]);
