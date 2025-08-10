@@ -283,16 +283,16 @@ class Lead
         try {
             $pdo = Database::getInstance();
             // Total de leads
-            $stmtTotal = $pdo->query("SELECT COUNT(*) FROM leads");
+            $stmtTotal = $pdo->query("SELECT COUNT(*) FROM leads WHERE active = '1'");
             $total = (int) $stmtTotal->fetchColumn();
 
             // Leads de hoje
-            $stmtToday = $pdo->prepare("SELECT COUNT(*) FROM leads WHERE DATE(created_at) = CURDATE()");
+            $stmtToday = $pdo->prepare("SELECT COUNT(*) FROM leads WHERE active = '1' AND DATE(created_at) = CURDATE()");
             $stmtToday->execute();
             $today = (int) $stmtToday->fetchColumn();
 
             // Leads de ontem
-            $stmtYesterday = $pdo->prepare("SELECT COUNT(*) FROM leads WHERE DATE(created_at) = CURDATE() - INTERVAL 1 DAY");
+            $stmtYesterday = $pdo->prepare("SELECT COUNT(*) FROM leads WHERE active = '1' AND DATE(created_at) = CURDATE() - INTERVAL 1 DAY");
             $stmtYesterday->execute();
             $yesterday = (int) $stmtYesterday->fetchColumn();
 
