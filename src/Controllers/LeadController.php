@@ -209,7 +209,7 @@ class LeadController
 
         try {
             $lead = Lead::findById($leadId);
-            
+
             if ($lead->active === 0) {
                 return $this->errorResponse(404, "Lead não encontrado ou lead desativado.");
             }
@@ -611,7 +611,14 @@ class LeadController
     /**
      * Area de settings de leads
      */
-    public function storeSettings(array $headers, array $requestData): array
+    /**
+     * Obter configurações de leads com filtro opcional por tipo
+     *
+     * @param array $headers Cabeçalhos da requisição
+     * @param string|null $type Tipo de configuração (source, stage, temperature)
+     * @return array Resposta JSON
+     */
+    public function getSettings(array $headers, ?string $type = null): array
     {
         $userData = $this->authMiddleware->handle($headers, ["admin", "comercial"]);
 
@@ -619,8 +626,221 @@ class LeadController
             return $this->errorResponse(401, "Autenticação necessária ou permissão insuficiente.");
         }
 
-        return [];
+        try {
+            $leadModel = new Lead();
+            $settings = $leadModel->loadLeadSettings($type);
+
+            if (!$settings) {
+                return $this->errorResponse(404, "Configurações de leads não encontradas.");
+            }
+
+            return $this->successResponse($settings);
+        } catch (\Exception $e) {
+            return $this->errorResponse(500, "Erro ao carregar configurações de leads.", $e->getMessage());
+        }
     }
+
+    /**
+     * Criar nova configuração de lead
+     *
+     * @param array $headers Cabeçalhos da requisição
+     * @param array $requestData Dados da configuração
+     * @return array Resposta JSON
+     */
+    public function storeSettings(array $headers, array $requestData): array
+    {
+        $userData = $this->authMiddleware->handle($headers, ["admin"]);
+
+        if (!$userData) {
+            return $this->errorResponse(401, "Autenticação necessária ou permissão insuficiente.");
+        }
+
+        // Validação básica
+        $validation = $this->validateSettingsData($requestData);
+        if (!$validation['valid']) {
+            return $this->errorResponse(400, $validation['message']);
+        }
+
+        try {
+            $leadModel = new Lead();
+
+            // Preparar dados para inserção
+            $settingData = [
+                'type' => $requestData['type'],
+                'value' => $requestData['value'],
+                'meta_config' => isset($requestData['meta_config']) ? json_encode($requestData['meta_config']) : null,
+                'created_at' => date('Y-m-d H:i:s')
+            ];
+
+            $settingId = $leadModel->createLeadSettings($settingData);
+
+            if ($settingId) {
+                $newSetting = $leadModel->findLeadSettingById($settingId);
+
+                return $this->successResponse(json_encode($newSetting), "Configuração criada com sucesso.", 201);
+            } else {
+                return $this->errorResponse(500, "Falha ao criar configuração.");
+            }
+        } catch (\Exception $e) {
+            return $this->errorResponse(500, "Erro interno ao criar configuração.", $e->getMessage());
+        }
+    }
+
+    /**
+     * Atualizar configuração existente
+     *
+     * @param array $headers Cabeçalhos da requisição
+     * @param int $settingId ID da configuração
+     * @param array $requestData Dados para atualização
+     * @return array Resposta JSON
+     */
+    public function updateSettings(array $headers, int $settingId, array $requestData): array
+    {
+        $userData = $this->authMiddleware->handle($headers, ["admin"]);
+
+        if (!$userData) {
+            return $this->errorResponse(401, "Autenticação necessária ou permissão insuficiente.");
+        }
+
+        if (empty($requestData)) {
+            return $this->errorResponse(400, "Nenhum dado fornecido para atualização.");
+        }
+
+        try {
+            $leadModel = new Lead();
+
+            // Verificar se a configuração existe
+            $existingSetting = $leadModel->findLeadSettingById($settingId);
+            if (!$existingSetting) {
+                return $this->errorResponse(404, "Configuração não encontrada.");
+            }
+
+            // Preparar dados para atualização
+            $updateData = [];
+
+            if (isset($requestData['type'])) {
+                $updateData['type'] = $requestData['type'];
+            }
+
+            if (isset($requestData['value'])) {
+                $updateData['value'] = $requestData['value'];
+            }
+
+            if (isset($requestData['meta_config'])) {
+                $updateData['meta_config'] = json_encode($requestData['meta_config']);
+            }
+
+            if (empty($updateData)) {
+                return $this->errorResponse(400, "Nenhum campo válido fornecido para atualização.");
+            }
+
+            $success = $leadModel->updateLeadSettings($settingId, $updateData);
+
+            if ($success) {
+                $updatedSetting = $leadModel->findLeadSettingById($settingId);
+
+                return $this->successResponse($updatedSetting, "Configuração atualizada com sucesso.");
+            } else {
+                return $this->errorResponse(500, "Falha ao atualizar configuração.");
+            }
+        } catch (\Exception $e) {
+            return $this->errorResponse(500, "Erro interno ao atualizar configuração.", $e->getMessage());
+        }
+    }
+
+    /**
+     * Excluir configuração
+     *
+     * @param array $headers Cabeçalhos da requisição
+     * @param int $settingId ID da configuração
+     * @return array Resposta JSON
+     */
+    public function deleteSettings(array $headers, int $settingId): array
+    {
+        $userData = $this->authMiddleware->handle($headers, ["admin"]);
+
+        if (!$userData) {
+            return $this->errorResponse(401, "Autenticação necessária ou permissão insuficiente.");
+        }
+
+        try {
+            $leadModel = new Lead();
+
+            // Verificar se a configuração existe
+            $existingSetting = $leadModel->findLeadSettingById($settingId);
+            if (!$existingSetting) {
+                return $this->errorResponse(404, "Configuração não encontrada.");
+            }
+
+            $success = $leadModel->deleteLeadSettings($settingId);
+
+            if ($success) {
+                return $this->successResponse(
+                    ["message" => "Configuração excluída com sucesso."],
+                    "Configuração excluída com sucesso."
+                );
+            } else {
+                return $this->errorResponse(500, "Falha ao excluir configuração.");
+            }
+        } catch (\Exception $e) {
+            return $this->errorResponse(500, "Erro interno ao excluir configuração.", $e->getMessage());
+        }
+    }
+
+    /**
+     * Validar dados de configuração
+     *
+     * @param array $data Dados a serem validados
+     * @return array Resultado da validação
+     */
+    private function validateSettingsData(array $data): array
+    {
+        if (empty($data['type'])) {
+            return ["valid" => false, "message" => "O tipo da configuração é obrigatório."];
+        }
+
+        if (!in_array($data['type'], ['source', 'stage', 'temperature'])) {
+            return ["valid" => false, "message" => "Tipo de configuração inválido. Use: source, stage ou temperature."];
+        }
+
+        if (empty($data['value'])) {
+            return ["valid" => false, "message" => "O valor da configuração é obrigatório."];
+        }
+
+        // Validar meta_config se fornecido
+        if (isset($data['meta_config'])) {
+            if (!is_array($data['meta_config'])) {
+                return ["valid" => false, "message" => "meta_config deve ser um objeto válido."];
+            }
+
+            // Validar estrutura do extra_field se presente
+            if (isset($data['meta_config']['extra_field'])) {
+                $extraField = $data['meta_config']['extra_field'];
+
+                if (empty($extraField['label'])) {
+                    return ["valid" => false, "message" => "Label do campo extra é obrigatório."];
+                }
+
+                if (empty($extraField['type'])) {
+                    return ["valid" => false, "message" => "Tipo do campo extra é obrigatório."];
+                }
+
+                $validTypes = ['text', 'email', 'tel', 'number', 'textarea', 'select'];
+                if (!in_array($extraField['type'], $validTypes)) {
+                    return ["valid" => false, "message" => "Tipo de campo extra inválido."];
+                }
+
+                // Se for select, deve ter opções
+                if ($extraField['type'] === 'select' && empty($extraField['options'])) {
+                    return ["valid" => false, "message" => "Campos do tipo select devem ter opções."];
+                }
+            }
+        }
+
+        return ["valid" => true, "message" => ""];
+    }
+
+
     /**
      * Resposta de sucesso padronizada
      */

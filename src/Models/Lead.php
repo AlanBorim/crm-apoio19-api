@@ -324,19 +324,189 @@ class Lead
         return $stmt->fetchAll(\PDO::FETCH_ASSOC);
     }
 
-    public function createLeadSettings(array $data): bool
+    /**
+     * Carregar configurações de leads com filtro opcional por tipo
+     *
+     * @param string|null $type Tipo de configuração (source, stage, temperature)
+     * @return array Array de configurações
+     */
+    public function loadLeadSettings(?string $type = null): array
     {
-        // Implementar lógica para criar configurações de lead
-        // Exemplo: inserir dados em uma tabela de configurações de leads
+        try {
+            $pdo = Database::getInstance();
 
-        $fields = implode(", ", array_keys($data));
-        $placeholders = ":" . implode(", :", array_keys($data));
-        $sql = "INSERT INTO lead_settings ({$fields}) VALUES ({$placeholders})";
+            $sql = "SELECT * FROM lead_settings";
+            $params = [];
 
-        $pdo = Database::getInstance();
+            if ($type) {
+                $sql .= " WHERE type = :type";
+                $params[':type'] = $type;
+            }
 
-        return true; // Retornar true se a criação for bem-sucedida
+            $sql .= " ORDER BY created_at DESC";
+
+            $stmt = $pdo->prepare($sql);
+            $stmt->execute($params);
+            $settings = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+
+            // Processar meta_config de JSON string para array
+            foreach ($settings as &$setting) {
+                if ($setting['meta_config']) {
+                    $setting['meta_config'] = json_decode($setting['meta_config'], true);
+                }
+            }
+
+            return $settings;
+        } catch (PDOException $e) {
+            error_log("Erro ao carregar configurações de leads: " . $e->getMessage());
+            return [];
+        }
     }
+
+    /**
+     * Criar nova configuração de lead
+     *
+     * @param array $data Dados da configuração
+     * @return int|false ID da nova configuração ou false em caso de erro
+     */
+    public function createLeadSettings(array $data): int|bool
+    {
+        try {
+            $pdo = Database::getInstance();
+
+            $fields = implode(", ", array_keys($data));
+            $placeholders = ":" . implode(", :", array_keys($data));
+            $sql = "INSERT INTO lead_settings ({$fields}) VALUES ({$placeholders})";
+
+            $stmt = $pdo->prepare($sql);
+
+            // Bind values
+            foreach ($data as $key => $value) {
+                $stmt->bindValue(":{$key}", $value, PDO::PARAM_STR);
+            }
+
+            if ($stmt->execute()) {
+                return (int)$pdo->lastInsertId();
+            }
+        } catch (PDOException $e) {
+            error_log("Erro ao criar configuração de lead: " . $e->getMessage());
+        }
+
+        return false;
+    }
+
+    /**
+     * Buscar configuração de lead por ID
+     *
+     * @param int $id ID da configuração
+     * @return array|null Dados da configuração ou null se não encontrada
+     */
+    public function findLeadSettingById(int $id): ?array
+    {
+        try {
+            $pdo = Database::getInstance();
+            $stmt = $pdo->prepare("SELECT * FROM lead_settings WHERE id = :id LIMIT 1");
+            $stmt->bindValue(":id", $id, PDO::PARAM_INT);
+            $stmt->execute();
+
+            $setting = $stmt->fetch(\PDO::FETCH_ASSOC);
+
+            if ($setting) {
+                // Processar meta_config de JSON string para array
+                if ($setting['meta_config']) {
+                    $setting['meta_config'] = json_decode($setting['meta_config'], true);
+                }
+                return $setting;
+            }
+        } catch (PDOException $e) {
+            error_log("Erro ao buscar configuração de lead por ID: " . $e->getMessage());
+        }
+
+        return null;
+    }
+
+    /**
+     * Atualizar configuração de lead
+     *
+     * @param int $id ID da configuração
+     * @param array $data Dados para atualização
+     * @return bool True em caso de sucesso, false caso contrário
+     */
+    public function updateLeadSettings(int $id, array $data): bool
+    {
+        try {
+            $pdo = Database::getInstance();
+
+            // Construir campos para atualização
+            $fields = [];
+            $params = [":id" => $id];
+
+            foreach ($data as $key => $value) {
+                if (in_array($key, ['type', 'value', 'meta_config'])) {
+                    $fields[] = "`{$key}` = :{$key}";
+                    $params[":{$key}"] = $value;
+                }
+            }
+
+            if (empty($fields)) {
+                return false; // Nenhum campo válido para atualizar
+            }
+
+            $sql = "UPDATE lead_settings SET " . implode(", ", $fields) . " WHERE id = :id";
+
+            $stmt = $pdo->prepare($sql);
+            return $stmt->execute($params);
+        } catch (PDOException $e) {
+            error_log("Erro ao atualizar configuração de lead ID {$id}: " . $e->getMessage());
+        }
+
+        return false;
+    }
+
+    /**
+     * Excluir configuração de lead
+     *
+     * @param int $id ID da configuração
+     * @return bool True em caso de sucesso, false caso contrário
+     */
+    public function deleteLeadSettings(int $id): bool
+    {
+        try {
+            $pdo = Database::getInstance();
+            $stmt = $pdo->prepare("DELETE FROM lead_settings WHERE id = :id");
+            $stmt->bindValue(":id", $id, PDO::PARAM_INT);
+            return $stmt->execute();
+        } catch (PDOException $e) {
+            error_log("Erro ao excluir configuração de lead ID {$id}: " . $e->getMessage());
+        }
+
+        return false;
+    }
+
+    /**
+     * Verificar se uma configuração existe
+     *
+     * @param string $type Tipo da configuração
+     * @param string $value Valor da configuração
+     * @return bool True se existe, false caso contrário
+     */
+    public function leadSettingExists(string $type, string $value): bool
+    {
+        try {
+            $pdo = Database::getInstance();
+            $stmt = $pdo->prepare("SELECT COUNT(*) FROM lead_settings WHERE type = :type AND value = :value");
+            $stmt->bindValue(":type", $type, PDO::PARAM_STR);
+            $stmt->bindValue(":value", $value, PDO::PARAM_STR);
+            $stmt->execute();
+
+            return (int)$stmt->fetchColumn() > 0;
+        } catch (PDOException $e) {
+            error_log("Erro ao verificar existência de configuração: " . $e->getMessage());
+        }
+
+        return false;
+    }
+
 
     /**
      * Hydrate a Lead object from database data.

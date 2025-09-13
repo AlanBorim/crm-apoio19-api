@@ -646,24 +646,144 @@ if (preg_match('#^/notifications/(\d+)$#', $requestPath, $matches) && $requestMe
     exit;
 }
 
-// rotas de configurações
-if ($requestPath === '/leads/settings' && $requestMethod === 'GET') {
-    // Ler o corpo da requisição JSON
-    $input = json_decode(file_get_contents('php://input'), true);
-
-    // Verificar se o JSON foi decodificado corretamente
-    if (json_last_error() !== JSON_ERROR_NONE) {
-        http_response_code(400); // Bad Request
-        echo json_encode(["error" => "JSON inválido no corpo da requisição."]);
-        exit;
+/* Endpoints de Configurações de Leads */
+// GET /settings/leads - Obter configurações (já existe)
+if ($requestPath === '/settings/leads' && $requestMethod === 'GET') {
+    try {
+        $headers = getallheaders();
+        $leadController = new LeadController();
+        
+        // Capturar parâmetro type se fornecido
+        $type = $_GET['type'] ?? null;
+        
+        $response = $leadController->getSettings($headers, $type);
+        
+        if (is_array($response)) {
+            http_response_code(200);
+            echo json_encode($response);
+        } else {
+            http_response_code(500);
+            echo json_encode([
+                "error" => "Erro interno. Resposta inesperada do servidor.",
+                "detalhes" => $response
+            ]);
+        }
+    } catch (\Exception $e) {
+        http_response_code(500);
+        echo json_encode([
+            "error" => "Erro interno no servidor.",
+            "detalhes" => $e->getMessage()
+        ]);
     }
-    $headers = getallheaders();
-    $lead_setting = new LeadController();
-    // Passar os dados de entrada para o método getLeadSettings
-    $response = $lead_setting->storeSettings($headers,$input);
-    var_dump($response);
     exit;
 }
+
+// POST /settings/leads - Criar nova configuração
+if ($requestPath === '/settings/leads' && $requestMethod === 'POST') {
+    try {
+        // Ler o corpo da requisição JSON
+        $input = json_decode(file_get_contents('php://input'), true);
+
+        // Verificar se o JSON foi decodificado corretamente
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            http_response_code(400);
+            echo json_encode(["error" => "JSON inválido no corpo da requisição."]);
+            exit;
+        }
+
+        $headers = getallheaders();
+        $leadController = new LeadController();
+
+        $response = $leadController->storeSettings($headers, $input);
+
+        if (is_array($response)) {
+            http_response_code(201); // Created
+            echo json_encode($response);
+        } else {
+            http_response_code(500);
+            echo json_encode(["error" => "Erro interno. Resposta inesperada do servidor."]);
+        }
+    } catch (\Throwable $th) {
+        error_log("Erro no LeadController->storeSettings: " . $th->getMessage() . "\n" . $th->getTraceAsString());
+        http_response_code(500);
+        echo json_encode([
+            "error" => "Erro interno ao criar configuração de lead.",
+            "status" => $th->getMessage() . "\n" . $th->getTraceAsString()
+        ]);
+    }
+    exit;
+}
+
+// PUT /settings/leads/{id} - Atualizar configuração existente
+if (preg_match('#^/settings/leads/(\d+)$#', $requestPath, $matches) && $requestMethod === 'PUT') {
+    $settingId = (int)$matches[1];
+
+    try {
+        // Ler o corpo da requisição JSON
+        $input = json_decode(file_get_contents('php://input'), true);
+
+        // Verificar se o JSON foi decodificado corretamente
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            http_response_code(400);
+            echo json_encode(["error" => "JSON inválido no corpo da requisição."]);
+            exit;
+        }
+
+        $headers = getallheaders();
+        $leadController = new LeadController();
+
+        $response = $leadController->updateSettings($headers, $settingId, $input);
+
+        if (is_array($response)) {
+            http_response_code(200);
+            echo json_encode($response);
+        } else {
+            http_response_code(500);
+            echo json_encode([
+                "error" => "Erro interno. Resposta inesperada do servidor.",
+                "detalhes" => $response
+            ]);
+        }
+    } catch (\Exception $e) {
+        http_response_code(500);
+        echo json_encode([
+            "error" => "Erro interno no servidor.",
+            "detalhes" => $e->getMessage()
+        ]);
+    }
+    exit;
+}
+
+// DELETE /settings/leads/{id} - Excluir configuração
+if (preg_match('#^/settings/leads/(\d+)$#', $requestPath, $matches) && $requestMethod === 'DELETE') {
+    $settingId = (int)$matches[1];
+
+    try {
+        $headers = getallheaders();
+        $leadController = new LeadController();
+
+        $response = $leadController->deleteSettings($headers, $settingId);
+
+        if (is_array($response)) {
+            http_response_code(200);
+            echo json_encode($response);
+        } else {
+            http_response_code(500);
+            echo json_encode([
+                "error" => "Erro interno. Resposta inesperada do servidor.",
+                "detalhes" => $response
+            ]);
+        }
+    } catch (\Exception $e) {
+        http_response_code(500);
+        echo json_encode([
+            "error" => "Erro interno no servidor.",
+            "detalhes" => $e->getMessage()
+        ]);
+    }
+    exit;
+}
+
 // --- Adicione outras rotas aqui ---
 // Exemplo:
 // if ($requestPath === '/leads' && $requestMethod === 'GET') { ... }
