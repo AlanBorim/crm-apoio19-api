@@ -115,7 +115,7 @@ class Lead
      * @param array $data Associative array of lead data.
      * @return int|false The ID of the new lead or false on failure.
      */
-    public static function create(array $data): int|bool
+    public static function create(array $data): mixed
     {
         // Basic validation/sanitization should happen in the controller or service layer
         $fields = implode(", ", array_keys($data));
@@ -369,7 +369,7 @@ class Lead
      * @param array $data Dados da configuração
      * @return int|false ID da nova configuração ou false em caso de erro
      */
-    public function createLeadSettings(array $data): int|bool
+    public function createLeadSettings(array $data): mixed
     {
         try {
             $pdo = Database::getInstance();

@@ -9,9 +9,11 @@ define("BASE_PATH", dirname(__DIR__));
 
 // --- Roteamento Simples ---
 use Apoio19\Crm\Controllers\AuthController;
+use Apoio19\Crm\Controllers\HealthController;
 use Apoio19\Crm\Controllers\LeadController;
 use Apoio19\Crm\Controllers\NotificationController;
 use Apoio19\Crm\Controllers\HistoryController;
+use Apoio19\Crm\Controllers\UserController;
 
 // --- Lógica de Extração de Caminho Corrigida ---
 $requestUri = $_SERVER['REQUEST_URI']; // ex: /api/login?param=1
@@ -563,7 +565,7 @@ if ($requestPath === '/notifications/mark-all-read' && $requestMethod === 'PATCH
 
 if (preg_match('#^/notifications/(\d+)/read$#', $requestPath, $matches) && $requestMethod === 'PATCH') {
     $leadId = $matches[1];
-    
+
     try {
         // Lógica para atualizar uma notificação específica
         $headers = getallheaders();
@@ -591,7 +593,7 @@ if (preg_match('#^/notifications/(\d+)/read$#', $requestPath, $matches) && $requ
 }
 
 if ($requestPath === '/notifications' && $requestMethod === 'DELETE') {
-    
+
     try {
         // Lógica para excluir todas as notificações
         $headers = getallheaders();
@@ -652,12 +654,12 @@ if ($requestPath === '/settings/leads' && $requestMethod === 'GET') {
     try {
         $headers = getallheaders();
         $leadController = new LeadController();
-        
+
         // Capturar parâmetro type se fornecido
         $type = $_GET['type'] ?? null;
-        
+
         $response = $leadController->getSettings($headers, $type);
-        
+
         if (is_array($response)) {
             http_response_code(200);
             echo json_encode($response);
@@ -780,6 +782,45 @@ if (preg_match('#^/settings/leads/(\d+)$#', $requestPath, $matches) && $requestM
             "error" => "Erro interno no servidor.",
             "detalhes" => $e->getMessage()
         ]);
+    }
+    exit;
+}
+
+// Endpoint de tratativas de usuários
+if ($requestPath === '/users' && $requestMethod === 'GET') {
+    try {
+        $headers = getallheaders();
+        $users = new UserController();
+
+        // Capturar parâmetro type se fornecido
+        $queryParams = [];
+
+        // Listar usuários
+        $users = $users->index($headers, $queryParams);
+        echo json_encode($users);
+        exit;
+    } catch (\Exception $e) {
+        http_response_code(500);
+        echo json_encode([
+            "error" => "Erro interno no servidor.",
+            "detalhes" => $e->getMessage()
+        ]);
+        error_log("Erro ao listar usuários: " . $e->getMessage());
+    }
+    http_response_code(501); // Not Implemented
+    echo json_encode(["error" => "Endpoint de usuários não implementado."]);
+    exit;
+}
+
+if ($requestPath === '/health' && $requestMethod === 'GET') {
+    try {
+        // Verificação de saúde da API
+        $healthController = new HealthController();
+        $response = $healthController->check();
+        
+        echo json_encode($response);
+    } catch (\Exception $e) {
+        //throw $e;
     }
     exit;
 }
