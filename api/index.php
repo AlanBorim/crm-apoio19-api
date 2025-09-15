@@ -812,6 +812,69 @@ if ($requestPath === '/users' && $requestMethod === 'GET') {
     exit;
 }
 
+if (preg_match('#^/users/activate/(\d+)$#', $requestPath, $matches) && $requestMethod === 'PATCH') {
+    $userId = (int)$matches[1];
+
+    try {
+        $headers = getallheaders();
+        $userController = new UserController();
+
+        // Ativar usuário
+        $response = $userController->activate($headers, $userId);
+
+        if (is_array($response)) {
+            http_response_code(200);
+            echo json_encode($response);
+        } else {
+            http_response_code(500);
+            echo json_encode([
+                "error" => "Erro interno. Resposta inesperada do servidor.",
+                "detalhes" => $response
+            ]);
+        }
+    } catch (\Exception $e) {
+        http_response_code(500);
+        echo json_encode([
+            "error" => "Erro interno no servidor.",
+            "detalhes" => $e->getMessage()
+        ]);
+        error_log("Erro ao ativar usuário: " . $e->getMessage());
+    }
+    exit;
+}
+
+if (preg_match('#^/users/deactivate/(\d+)$#', $requestPath, $matches) && $requestMethod === 'PATCH') {
+    $userId = (int)$matches[1];
+
+    try {
+        $headers = getallheaders();
+        $userController = new UserController();
+
+        // Desativar usuário
+        $response = $userController->deactivate($headers, $userId);
+
+        if (is_array($response)) {
+            http_response_code(200);
+            echo json_encode($response);
+        } else {
+            http_response_code(500);
+            echo json_encode([
+                "error" => "Erro interno. Resposta inesperada do servidor.",
+                "detalhes" => $response
+            ]);
+        }
+    } catch (\Exception $e) {
+        http_response_code(500);
+        echo json_encode([
+            "error" => "Erro interno no servidor.",
+            "detalhes" => $e->getMessage()
+        ]);
+        error_log("Erro ao desativar usuário: " . $e->getMessage());
+    }
+    exit;
+}
+
+// Endpoint de Health Check
 if ($requestPath === '/health' && $requestMethod === 'GET') {
     try {
         // Verificação de saúde da API

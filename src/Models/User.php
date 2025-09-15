@@ -19,6 +19,10 @@ class User
     public ?string $token_2fa_secreto;
     public string $criado_em;
     public string $atualizado_em;
+    public ?string $ultimo_login;
+    public ?string $telefone;
+    public ?string $permissoes;
+    
 
     /**
      * Criar novo usuário
@@ -69,8 +73,24 @@ class User
             $stmt = $pdo->prepare($sql);
             $stmt->execute([':id' => $id]);
 
-            $result = $stmt->fetch(PDO::FETCH_OBJ);
-            return $result ?: null;
+            $result = $stmt->fetch(PDO::FETCH_ASSOC);
+            if ($result) {
+                $user = new self();
+                $user->id = (int)$result["id"];
+                $user->nome = $result["name"];
+                $user->email = $result["email"];
+                $user->telefone = $result["phone"];
+                $user->permissoes = $result["permissions"];
+                $user->senha_hash = $result["password"];
+                $user->funcao  = $result["role"];
+                $user->ativo = $result["active"];
+                $user->criado_em = $result["created_at"];
+                $user->atualizado_em = $result["updated_at"];
+                $user->token_2fa_secreto = $result["2fa_secret"];
+                $user->ultimo_login = $result["last_login"];
+
+            }
+            return $user ?? null;
         } catch (PDOException $e) {
             error_log("Erro ao buscar usuário por ID: " . $e->getMessage());
             return null;
@@ -552,7 +572,7 @@ class User
             $params = [];
 
             if ($activeOnly) {
-                $conditions[] = "ativo = 1";
+                $conditions[] = "ativo = '1'";
             }
 
             $sql = "SELECT id, nome, email, funcao FROM users WHERE " . implode(" AND ", $conditions) . " ORDER BY nome";

@@ -293,7 +293,7 @@ class UserController
 
         try {
             $user = User::findById($userId);
-            if (!$user || $user->deleted_at) {
+            if (!$user) {
                 return $this->errorResponse(404, "Usuário não encontrado.");
             }
 
@@ -302,13 +302,13 @@ class UserController
             }
 
             $updateData = [
-                'ativo' => 1,
+                'active' => '1',
                 'updated_at' => date('Y-m-d H:i:s')
             ];
 
             if (User::update($userId, $updateData)) {
                 $updatedUser = User::findById($userId);
-
+                
                 return $this->successResponse(
                     $this->formatUserForResponse($updatedUser),
                     "Usuário ativado com sucesso."
@@ -337,7 +337,7 @@ class UserController
 
         try {
             $user = User::findById($userId);
-            if (!$user || $user->deleted_at) {
+            if (!$user) {
                 return $this->errorResponse(404, "Usuário não encontrado.");
             }
 
@@ -346,7 +346,7 @@ class UserController
             }
 
             // Verificar se não é o último admin ativo
-            if ($user->funcao === 'Admin') {
+            if ($user->funcao === 'admin') {
                 $activeAdminCount = User::countActiveAdmins();
                 if ($activeAdminCount <= 1) {
                     return $this->errorResponse(400, "Não é possível desativar o último administrador.");
@@ -354,13 +354,13 @@ class UserController
             }
 
             $updateData = [
-                'ativo' => 0,
+                'active' => '0',
                 'updated_at' => date('Y-m-d H:i:s')
             ];
 
             if (User::update($userId, $updateData)) {
                 $updatedUser = User::findById($userId);
-
+                
                 return $this->successResponse(
                     $this->formatUserForResponse($updatedUser),
                     "Usuário desativado com sucesso."
@@ -983,15 +983,15 @@ class UserController
 
         return [
             'id' => (string) $user->id,
-            'nome' => $user->name,
+            'nome' => $user->name ?? $user->nome,
             'email' => $user->email,
-            'funcao' => $user->role,
-            'ativo' => $user->active,
-            'telefone' => $user->phone,
+            'funcao' => $user->role ?? $user->funcao,
+            'ativo' => $user->active ?? $user->ativo,
+            'telefone' => $user->phone ?? $user->telefone,
             'permissoes' => $permissoes ?? [],
-            'dataCriacao' => $user->created_at,
-            'dataAtualizacao' => $user->updated_at,
-            'ultimoLogin' => $user->last_login
+            'dataCriacao' => $user->created_at ?? $user->criado_em,
+            'dataAtualizacao' => $user->updated_at ?? $user->atualizado_em,
+            'ultimoLogin' => $user->last_login ?? $user->ultimo_login
         ];
         
     }
