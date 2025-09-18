@@ -59,11 +59,14 @@ class UserController
                 $params[':search2'] = $search;
             }
 
-            // Excluir usuários deletados (soft delete)
-            $conditions[] = "active = '1'";
+
 
             // Construir WHERE
-            $where = $conditions ? "WHERE " . implode(" AND ", $conditions) : "WHERE active = '1'";
+            $where = '';
+
+            if (!empty($conditions)) {
+                $where .= " WHERE " . implode(" AND ", $conditions);
+            }
 
             // Paginação
             $page = isset($queryParams['page']) ? max(1, (int)$queryParams['page']) : 1;
@@ -76,14 +79,14 @@ class UserController
             $sortOrder = in_array($sortOrder, ['ASC', 'DESC']) ? $sortOrder : 'DESC';
 
             // Validar campo de ordenação
-            $allowedSortFields = ['id', 'nome', 'email', 'funcao', 'ativo', 'created_at', 'ultimo_login'];
+            $allowedSortFields = ['id', 'name', 'email', 'role', 'active', 'created_at', 'last_login'];
             if (!in_array($sortBy, $allowedSortFields)) {
                 $sortBy = 'created_at';
             }
 
             $orderBy = "ORDER BY {$sortBy} {$sortOrder}";
             $limitClause = "LIMIT {$limit} OFFSET {$offset}";
-            
+
             // Buscar usuários filtrados
             $users = User::findAllWithWhere($where . " " . $orderBy . " " . $limitClause, $params);
 
@@ -137,13 +140,13 @@ class UserController
         try {
             // Preparar dados para criação
             $userDataToCreate = [
-                'nome' => trim($requestData['nome']),
+                'name' => trim($requestData['nome']),
                 'email' => strtolower(trim($requestData['email'])),
-                'senha_hash' => password_hash($requestData['senha'], PASSWORD_DEFAULT),
-                'funcao' => $requestData['funcao'],
-                'ativo' => isset($requestData['ativo']) ? ($requestData['ativo'] ? 1 : 0) : 1,
-                'telefone' => $this->formatPhone($requestData['telefone'] ?? null),
-                'permissoes' => json_encode($this->getPermissionsForUser($requestData)),
+                'password' => password_hash($requestData['senha'], PASSWORD_DEFAULT),
+                'role' => $requestData['funcao'],
+                'active' => isset($requestData['ativo']) ? ($requestData['ativo'] ? 1 : 0) : 1,
+                'phone' => $this->formatPhone($requestData['telefone'] ?? null),
+                'permissions' => json_encode($this->getPermissionsForUser($requestData)),
                 'created_at' => date('Y-m-d H:i:s'),
                 'updated_at' => date('Y-m-d H:i:s')
             ];
@@ -216,7 +219,7 @@ class UserController
 
         try {
             $user = User::findById($userId);
-            if (!$user || $user->deleted_at) {
+            if (!$user || $user->active === '0') {
                 return $this->errorResponse(404, "Usuário não encontrado.");
             }
 
@@ -229,35 +232,31 @@ class UserController
             // Preparar dados para atualização
             $updateData = [];
 
-            if (isset($requestData['nome'])) {
-                $updateData['nome'] = trim($requestData['nome']);
-            }
-
-            if (isset($requestData['email'])) {
-                $updateData['email'] = strtolower(trim($requestData['email']));
+            if (isset($requestData['name'])) {
+                $updateData['name'] = trim($requestData['nome']);
             }
 
             if (isset($requestData['senha']) && !empty($requestData['senha'])) {
-                $updateData['senha_hash'] = password_hash($requestData['senha'], PASSWORD_DEFAULT);
+                $updateData['password'] = password_hash($requestData['senha'], PASSWORD_DEFAULT);
             }
 
             if (isset($requestData['funcao'])) {
-                $updateData['funcao'] = $requestData['funcao'];
+                $updateData['role'] = $requestData['funcao'];
             }
 
             if (isset($requestData['ativo'])) {
-                $updateData['ativo'] = $requestData['ativo'] ? 1 : 0;
+                $updateData['active'] = $requestData['ativo'] ? 1 : 0;
             }
 
             if (isset($requestData['telefone'])) {
-                $updateData['telefone'] = $this->formatPhone($requestData['telefone']);
+                $updateData['phone'] = $this->formatPhone($requestData['telefone']);
             }
 
             if (isset($requestData['permissoes'])) {
-                $updateData['permissoes'] = json_encode($requestData['permissoes']);
+                $updateData['permissions'] = json_encode($requestData['permissoes']);
             } elseif (isset($requestData['funcao'])) {
                 // Se mudou a função mas não especificou permissões, usar padrão da função
-                $updateData['permissoes'] = json_encode($this->getDefaultPermissionsForRole($requestData['funcao']));
+                $updateData['permissions'] = json_encode($this->getDefaultPermissionsForRole($requestData['funcao']));
             }
 
             $updateData['updated_at'] = date('Y-m-d H:i:s');
@@ -308,7 +307,7 @@ class UserController
 
             if (User::update($userId, $updateData)) {
                 $updatedUser = User::findById($userId);
-                
+
                 return $this->successResponse(
                     $this->formatUserForResponse($updatedUser),
                     "Usuário ativado com sucesso."
@@ -341,7 +340,7 @@ class UserController
                 return $this->errorResponse(404, "Usuário não encontrado.");
             }
 
-            if (!$user->ativo) {
+            if (!$user->active) {
                 return $this->errorResponse(400, "Usuário já está inativo.");
             }
 
@@ -360,7 +359,7 @@ class UserController
 
             if (User::update($userId, $updateData)) {
                 $updatedUser = User::findById($userId);
-                
+
                 return $this->successResponse(
                     $this->formatUserForResponse($updatedUser),
                     "Usuário desativado com sucesso."
@@ -567,16 +566,25 @@ class UserController
 
         try {
             $permissions = [
-                'leads.read', 'leads.write', 'leads.assign',
-                'propostas.read', 'propostas.write', 'propostas.approve',
-                'kanban.read', 'kanban.write',
-                'whatsapp.read', 'whatsapp.write',
-                'configuracoes.read', 'configuracoes.write',
-                'usuarios.read', 'usuarios.write',
-                'relatorios.read', 'relatorios.export'
+                'leads.read',
+                'leads.write',
+                'leads.assign',
+                'propostas.read',
+                'propostas.write',
+                'propostas.approve',
+                'kanban.read',
+                'kanban.write',
+                'whatsapp.read',
+                'whatsapp.write',
+                'configuracoes.read',
+                'configuracoes.write',
+                'usuarios.read',
+                'usuarios.write',
+                'relatorios.read',
+                'relatorios.export'
             ];
 
-            $roles = ['Admin', 'Gerente', 'Vendedor', 'Suporte'];
+            $roles = ['admin', 'gerente', 'vendedor', 'suporte', 'comercial', 'financeiro'];
 
             return $this->successResponse([
                 'permissions' => $permissions,
@@ -784,7 +792,7 @@ class UserController
             return ["valid" => false, "message" => "A função é obrigatória."];
         }
 
-        if (!in_array($data['funcao'], ['Admin', 'Gerente', 'Vendedor', 'Suporte'])) {
+        if (!in_array($data['funcao'], ['admin', 'gerente', 'vendedor', 'suporte', 'comercial', 'financeiro'])) {
             return ["valid" => false, "message" => "Função inválida."];
         }
 
@@ -803,17 +811,17 @@ class UserController
      */
     private function validateUserUpdateData(array $data, int $userId): array
     {
-        if (isset($data['nome'])) {
-            if (empty($data['nome'])) {
-                return ["valid" => false, "message" => "O nome não pode estar vazio."];
+        if (isset($data['name'])) {
+            if (empty($data['name'])) {
+                return ["valid" => false, "message" => "O name não pode estar vazio."];
             }
 
-            if (strlen($data['nome']) < 2) {
-                return ["valid" => false, "message" => "O nome deve ter pelo menos 2 caracteres."];
+            if (strlen($data['name']) < 2) {
+                return ["valid" => false, "message" => "O name deve ter pelo menos 2 caracteres."];
             }
 
-            if (!preg_match('/^[a-zA-ZÀ-ÿ\s]+$/', $data['nome'])) {
-                return ["valid" => false, "message" => "O nome deve conter apenas letras e espaços."];
+            if (!preg_match('/^[a-zA-ZÀ-ÿ\s]+$/', $data['name'])) {
+                return ["valid" => false, "message" => "O name deve conter apenas letras e espaços."];
             }
         }
 
@@ -833,18 +841,18 @@ class UserController
             }
         }
 
-        if (isset($data['senha']) && !empty($data['senha'])) {
-            if (strlen($data['senha']) < 8) {
-                return ["valid" => false, "message" => "A senha deve ter pelo menos 8 caracteres."];
+        if (isset($data['password']) && !empty($data['password'])) {
+            if (strlen($data['password']) < 8) {
+                return ["valid" => false, "message" => "A password deve ter pelo menos 8 caracteres."];
             }
 
-            if (!preg_match('/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/', $data['senha'])) {
-                return ["valid" => false, "message" => "A senha deve conter pelo menos: 1 letra minúscula, 1 maiúscula, 1 número e 1 caractere especial."];
+            if (!preg_match('/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/', $data['password'])) {
+                return ["valid" => false, "message" => "A password deve conter pelo menos: 1 letra minúscula, 1 maiúscula, 1 número e 1 caractere especial."];
             }
         }
 
         if (isset($data['funcao'])) {
-            if (!in_array($data['funcao'], ['Admin', 'Gerente', 'Vendedor', 'Suporte'])) {
+            if (!in_array($data['funcao'], ['admin', 'gerente', 'vendedor', 'suporte', 'comercial', 'financeiro'])) {
                 return ["valid" => false, "message" => "Função inválida."];
             }
         }
@@ -915,13 +923,13 @@ class UserController
         $numbers = preg_replace('/\D/', '', $phone);
 
         if (strlen($numbers) === 11) {
-            return '(' . substr($numbers, 0, 2) . ') ' . 
-                   substr($numbers, 2, 5) . '-' . 
-                   substr($numbers, 7);
+            return '(' . substr($numbers, 0, 2) . ') ' .
+                substr($numbers, 2, 5) . '-' .
+                substr($numbers, 7);
         } elseif (strlen($numbers) === 10) {
-            return '(' . substr($numbers, 0, 2) . ') ' . 
-                   substr($numbers, 2, 4) . '-' . 
-                   substr($numbers, 6);
+            return '(' . substr($numbers, 0, 2) . ') ' .
+                substr($numbers, 2, 4) . '-' .
+                substr($numbers, 6);
         }
 
         return $phone;
@@ -945,25 +953,37 @@ class UserController
     private function getDefaultPermissionsForRole(string $role): array
     {
         $rolePermissions = [
-            'Admin' => ['all'],
-            'Gerente' => [
-                'leads.read', 'leads.write', 'leads.assign',
-                'propostas.read', 'propostas.write', 'propostas.approve',
-                'kanban.read', 'kanban.write',
-                'whatsapp.read', 'whatsapp.write',
-                'relatorios.read', 'relatorios.export',
+            'admin' => ['all'],
+            'gerente' => [
+                'leads.read',
+                'leads.write',
+                'leads.assign',
+                'propostas.read',
+                'propostas.write',
+                'propostas.approve',
+                'kanban.read',
+                'kanban.write',
+                'whatsapp.read',
+                'whatsapp.write',
+                'relatorios.read',
+                'relatorios.export',
                 'usuarios.read'
             ],
-            'Vendedor' => [
-                'leads.read', 'leads.write',
-                'propostas.read', 'propostas.write',
-                'kanban.read', 'kanban.write',
-                'whatsapp.read', 'whatsapp.write'
+            'vendedor' => [
+                'leads.read',
+                'leads.write',
+                'propostas.read',
+                'propostas.write',
+                'kanban.read',
+                'kanban.write',
+                'whatsapp.read',
+                'whatsapp.write'
             ],
-            'Suporte' => [
+            'suporte' => [
                 'leads.read',
                 'kanban.read',
-                'whatsapp.read', 'whatsapp.write',
+                'whatsapp.read',
+                'whatsapp.write',
                 'configuracoes.read'
             ]
         ];
@@ -976,9 +996,9 @@ class UserController
      */
     private function formatUserForResponse($user): array
     {
-        $permissoes = [];
-        if (!empty($user->permissoes)) {
-            $permissoes = is_string($user->permissoes) ? json_decode($user->permissoes, true) : $user->permissoes;
+        $permissions = [];
+        if (!empty($user->permissions)) {
+            $permissions = is_string($user->permissions) ? json_decode($user->permissions, true) : $user->permissions;
         }
 
         return [
@@ -986,14 +1006,13 @@ class UserController
             'nome' => $user->name ?? $user->nome,
             'email' => $user->email,
             'funcao' => $user->role ?? $user->funcao,
-            'ativo' => $user->active ?? $user->ativo,
+            'ativo' => (bool) $user->active ?? (bool) $user->ativo,
             'telefone' => $user->phone ?? $user->telefone,
-            'permissoes' => $permissoes ?? [],
+            'permissoes' => $permissions ?? [],
             'dataCriacao' => $user->created_at ?? $user->criado_em,
             'dataAtualizacao' => $user->updated_at ?? $user->atualizado_em,
-            'ultimoLogin' => $user->last_login ?? $user->ultimo_login
+            'ultimoLogin' => $user->last_login
         ];
-        
     }
 
     /**
@@ -1003,11 +1022,11 @@ class UserController
     {
         $chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@#$%';
         $password = '';
-        
+
         for ($i = 0; $i < 12; $i++) {
             $password .= $chars[random_int(0, strlen($chars) - 1)];
         }
-        
+
         return $password;
     }
 

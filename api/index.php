@@ -797,6 +797,7 @@ if ($requestPath === '/users' && $requestMethod === 'GET') {
 
         // Listar usuários
         $users = $users->index($headers, $queryParams);
+        
         echo json_encode($users);
         exit;
     } catch (\Exception $e) {
@@ -870,6 +871,78 @@ if (preg_match('#^/users/deactivate/(\d+)$#', $requestPath, $matches) && $reques
             "detalhes" => $e->getMessage()
         ]);
         error_log("Erro ao desativar usuário: " . $e->getMessage());
+    }
+    exit;
+}
+
+// criar usuário
+if ($requestPath === '/users/create' && $requestMethod === 'POST') {
+    try {
+        // Ler o corpo da requisição JSON
+        $input = json_decode(file_get_contents('php://input'), true);
+        
+        // Verificar se o JSON foi decodificado corretamente
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            http_response_code(400);
+            echo json_encode(["error" => "JSON inválido no corpo da requisição."]);
+            exit;
+        }
+
+        $headers = getallheaders();
+        $userController = new UserController();
+
+        // Passar os dados de entrada para o método store
+        $response = $userController->store($headers, $input);
+
+        // Garante que o controller retorne um array
+        if (is_array($response)) {
+            http_response_code(201); // Created
+            echo json_encode($response);
+        } else {
+            http_response_code(500);
+            echo json_encode(["error" => "Erro interno. Resposta inesperada do servidor."]);
+        }
+    } catch (\Exception $th) {
+        error_log("Erro no UserController->store: " . $th->getMessage() . "\n" . $th->getTraceAsString());
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno ao processar a criação do usuário.", "status" => $th->getMessage() . "\n" . $th->getTraceAsString()]);
+    }
+    exit;
+}
+
+// alterar usuários
+if (preg_match('#^/users/update/(\d+)$#', $requestPath, $matches) && $requestMethod === 'PUT') {
+    $userId = (int)$matches[1];
+    
+    try {
+        // Ler o corpo da requisição JSON
+        $input = json_decode(file_get_contents('php://input'), true);
+
+        // Verificar se o JSON foi decodificado corretamente
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            http_response_code(400);
+            echo json_encode(["error" => "JSON inválido no corpo da requisição."]);
+            exit;
+        }
+
+        $headers = getallheaders();
+        $userController = new UserController();
+
+        // Passar os dados de entrada para o método update
+        $response = $userController->update($headers, $userId, $input);
+
+        // Garante que o controller retorne um array
+        if (is_array($response)) {
+            http_response_code(200); // OK
+            echo json_encode($response);
+        } else {
+            http_response_code(500);
+            echo json_encode(["error" => "Erro interno. Resposta inesperada do servidor."]);
+        }
+    } catch (\Exception $th) {
+        error_log("Erro no UserController->update: " . $th->getMessage() . "\n" . $th->getTraceAsString());
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno ao processar a atualização do usuário.", "status" => $th->getMessage() . "\n" . $th->getTraceAsString()]);
     }
     exit;
 }

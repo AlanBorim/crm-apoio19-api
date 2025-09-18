@@ -15,11 +15,12 @@ class User
     public string $email;
     public string $senha_hash;
     public string $funcao;
-    public string $ativo;
+    public ?string $active = null;
+    public ?string $ativo = null;
     public ?string $token_2fa_secreto;
     public string $criado_em;
     public string $atualizado_em;
-    public ?string $ultimo_login;
+    public ?string $last_login;
     public ?string $telefone;
     public ?string $permissoes;
     
@@ -35,18 +36,18 @@ class User
         try {
             $pdo = Database::getInstance();
 
-            $sql = "INSERT INTO users (nome, email, senha_hash, funcao, ativo, telefone, permissoes, created_at, updated_at) 
-                    VALUES (:nome, :email, :senha_hash, :funcao, :ativo, :telefone, :permissoes, :created_at, :updated_at)";
+            $sql = "INSERT INTO users (name, email, password, role, active, phone, permissions, created_at, updated_at) 
+                    VALUES (:name, :email, :password, :role, :active, :phone, :permissions, :created_at, :updated_at)";
 
             $stmt = $pdo->prepare($sql);
             $stmt->execute([
-                ':nome' => $data['nome'],
+                ':name' => $data['name'],
                 ':email' => $data['email'],
-                ':senha_hash' => $data['senha_hash'],
-                ':funcao' => $data['funcao'],
-                ':ativo' => $data['ativo'] ?? 1,
-                ':telefone' => $data['telefone'] ?? null,
-                ':permissoes' => $data['permissoes'] ?? null,
+                ':password' => $data['password'],
+                ':role' => $data['role'],
+                ':active' => $data['active'] ?? 1,
+                ':phone' => $data['phone'] ?? null,
+                ':permissions' => $data['permissions'] ?? null,
                 ':created_at' => $data['created_at'],
                 ':updated_at' => $data['updated_at']
             ]);
@@ -83,11 +84,11 @@ class User
                 $user->permissoes = $result["permissions"];
                 $user->senha_hash = $result["password"];
                 $user->funcao  = $result["role"];
-                $user->ativo = $result["active"];
+                $user->active = $result["active"];
                 $user->criado_em = $result["created_at"];
                 $user->atualizado_em = $result["updated_at"];
                 $user->token_2fa_secreto = $result["2fa_secret"];
-                $user->ultimo_login = $result["last_login"];
+                $user->last_login = $result["last_login"];
 
             }
             return $user ?? null;
