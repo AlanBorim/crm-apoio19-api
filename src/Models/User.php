@@ -22,7 +22,7 @@ class User
     public string $atualizado_em;
     public ?string $last_login;
     public ?string $telefone;
-    public ?string $permissoes;
+    public ?string $permissions;
     
 
     /**
@@ -81,7 +81,7 @@ class User
                 $user->nome = $result["name"];
                 $user->email = $result["email"];
                 $user->telefone = $result["phone"];
-                $user->permissoes = $result["permissions"];
+                $user->permissions = $result["permissions"];
                 $user->senha_hash = $result["password"];
                 $user->funcao  = $result["role"];
                 $user->active = $result["active"];

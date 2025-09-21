@@ -9,49 +9,74 @@ use \PDOException;
 class AuditLogService
 {
     /**
-     * Log an action performed in the system.
+     * Registra um log de auditoria.
      *
-     * @param string $acao Description of the action (e.g., "login_sucesso", "lead_criado").
-     * @param int|null $usuarioId ID of the user performing the action (null for system actions).
-     * @param string|null $entidadeTipo Type of the entity affected (e.g., "lead", "proposta").
-     * @param int|null $entidadeId ID of the entity affected.
-     * @param string|null $detalhes Additional details (e.g., changed fields, error messages).
-     * @param string|null $ipAddress IP address of the user.
-     * @return bool True on success, false on failure.
+     * @param string $acao               Ação executada (insert, update, delete, etc.)
+     * @param int|null $usuarioId        ID do usuário responsável
+     * @param string|null $tabelaNome    Nome da tabela afetada
+     * @param int|null $registroId       ID do registro afetado
+     * @param array|object|null $antigos Dados antigos (será convertido para JSON)
+     * @param array|object|null $novos   Dados novos (será convertido para JSON)
+     * @param string|null $ipAddress     Endereço IP (opcional, capturado automaticamente se null)
+     * @param string|null $userAgent     User-Agent (opcional, capturado automaticamente se null)
+     * @return bool                      true em caso de sucesso, false em caso de erro
      */
     public static function log(
-        string $acao,
         ?int $usuarioId = null,
-        ?string $entidadeTipo = null,
-        ?int $entidadeId = null,
-        ?string $detalhes = null,
-        ?string $ipAddress = null
-    ): bool
-    {
-        $sql = "INSERT INTO audit_logs (usuario_id, acao, entidade_tipo, entidade_id, detalhes, ip_address) 
-                VALUES (:usuario_id, :acao, :entidade_tipo, :entidade_id, :detalhes, :ip_address)";
+        string $acao,
+        ?string $tabelaNome = null,
+        ?int $registroId = null,
+        array|object|null $antigos = null,
+        array|object|null $novos = null,
+        ?string $ipAddress = null,
+        ?string $userAgent = null
+    ): bool {
+        $sql = "INSERT INTO audit_logs (
+                user_id,
+                action,
+                table_name,
+                record_id,
+                old_values,
+                new_values,
+                ip_address,
+                user_agent
+            ) VALUES (
+                :user_id,
+                :action,
+                :table_name,
+                :record_id,
+                :old_values,
+                :new_values,
+                :ip_address,
+                :user_agent
+            )";
 
-        // Attempt to get IP address if not provided
-        if ($ipAddress === null) {
-            $ipAddress = $_SERVER["REMOTE_ADDR"] ?? null;
-        }
+        // Captura IP se não foi fornecido
+        $ipAddress ??= $_SERVER['REMOTE_ADDR'] ?? null;
+
+        // Captura User-Agent se não foi fornecido
+        $userAgent ??= $_SERVER['HTTP_USER_AGENT'] ?? null;
+
+        // Converte arrays/objetos para JSON
+        $oldJson = $antigos !== null ? json_encode($antigos, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR) : null;
+        $newJson = $novos   !== null ? json_encode($novos,   JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR) : null;
 
         try {
             $pdo = Database::getInstance();
             $stmt = $pdo->prepare($sql);
 
-            $stmt->bindParam(":usuario_id", $usuarioId, PDO::PARAM_INT);
-            $stmt->bindParam(":acao", $acao);
-            $stmt->bindParam(":entidade_tipo", $entidadeTipo);
-            $stmt->bindParam(":entidade_id", $entidadeId, PDO::PARAM_INT);
-            $stmt->bindParam(":detalhes", $detalhes);
-            $stmt->bindParam(":ip_address", $ipAddress);
+            $stmt->bindParam(':user_id',     $usuarioId,  PDO::PARAM_INT);
+            $stmt->bindParam(':action',      $acao);
+            $stmt->bindParam(':table_name',  $tabelaNome);
+            $stmt->bindParam(':record_id',   $registroId, PDO::PARAM_INT);
+            $stmt->bindParam(':old_values',  $oldJson);
+            $stmt->bindParam(':new_values',  $newJson);
+            $stmt->bindParam(':ip_address',  $ipAddress);
+            $stmt->bindParam(':user_agent',  $userAgent);
 
             return $stmt->execute();
-
         } catch (PDOException $e) {
-            // Log the error to the system error log, but don't stop the application flow
-            error_log("Falha ao registrar log de auditoria: " . $e->getMessage());
+            error_log('Falha ao registrar log de auditoria: ' . $e->getMessage());
             return false;
         }
     }
@@ -70,7 +95,7 @@ class AuditLogService
         $sql = "SELECT a.*, u.nome as usuario_nome, u.email as usuario_email 
                 FROM audit_logs a 
                 LEFT JOIN usuarios u ON a.usuario_id = u.id";
-        
+
         $whereClauses = [];
         $params = [];
 
@@ -100,7 +125,7 @@ class AuditLogService
             $orderBy = "timestamp DESC"; // Default safe order
         }
         $sql .= " ORDER BY " . $orderBy;
-        
+
         $sql .= " LIMIT :limit OFFSET :offset";
         $params[":limit"] = $limit;
         $params[":offset"] = $offset;
@@ -108,7 +133,7 @@ class AuditLogService
         try {
             $pdo = Database::getInstance();
             $stmt = $pdo->prepare($sql);
-            
+
             // Bind parameters with correct types
             foreach ($params as $key => &$val) {
                 $type = (str_ends_with($key, "_id") || $key === ":limit" || $key === ":offset") ? PDO::PARAM_INT : PDO::PARAM_STR;
@@ -123,7 +148,7 @@ class AuditLogService
             return [];
         }
     }
-    
+
     /**
      * Get the total count of audit logs based on filters.
      *
@@ -137,7 +162,7 @@ class AuditLogService
         $params = [];
 
         if (!empty($filters)) {
-             foreach ($filters as $key => $value) {
+            foreach ($filters as $key => $value) {
                 if (in_array($key, ["id", "usuario_id", "acao", "entidade_tipo", "entidade_id", "ip_address"])) {
                     $paramName = ":" . $key;
                     $whereClauses[] = "a." . $key . " = " . $paramName;
@@ -166,4 +191,3 @@ class AuditLogService
         }
     }
 }
-

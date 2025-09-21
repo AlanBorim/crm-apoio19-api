@@ -29,14 +29,33 @@ class AuthController
 
         if (!$this->rateLimiter->isAllowed($ipAddress, $loginAction, $loginLimit, $loginPeriod)) {
             http_response_code(429);
-            AuditLogService::log("login_bloqueado_rate_limit", null, null, null, "Tentativa de login bloqueada por rate limit.", $ipAddress);
+            AuditLogService::log(
+                null,
+                "login_bloqueado",
+                null,
+                null,
+                null,
+                ['error' => 'Muitas tentativas de login. Tente novamente mais tarde.'],
+                $ipAddress,
+                $_SERVER['HTTP_USER_AGENT'] ?? null
+            );
+            
             return ["error" => "Muitas tentativas de login. Tente novamente mais tarde."];
         }
 
         if (!$email || !$senha) {
             http_response_code(400);
             $this->rateLimiter->recordAttempt($ipAddress, $loginAction);
-            AuditLogService::log("login_falha", null, null, null, "Email ou senha não fornecidos.", $ipAddress);
+            AuditLogService::log(
+                null,
+                "login_falha",
+                null,
+                null,
+                null,
+                ['error' => 'Email e senha são obrigatórios.'],
+                $ipAddress,
+                $_SERVER['HTTP_USER_AGENT'] ?? null
+            );
             return ["error" => "Email e senha são obrigatórios."];
         }
 
@@ -45,7 +64,16 @@ class AuthController
         if (!$user || !$user->ativo) {
             http_response_code(401);
             $this->rateLimiter->recordAttempt($ipAddress, $loginAction);
-            AuditLogService::log("login_falha", null, "usuario", null, "Usuário não encontrado ou inativo: " . $email, $ipAddress);
+            AuditLogService::log(
+                null,
+                "login_falha",
+                "users",
+                null,
+                null,
+                ['error' => "Usuário não encontrado ou inativo: " . $email],
+                $ipAddress,
+                $_SERVER['HTTP_USER_AGENT'] ?? null
+            );
             return ["error" => "Credenciais inválidas ou usuário inativo."];
         }
 
@@ -63,7 +91,16 @@ class AuthController
                 ]);
 
                 http_response_code(200);
-                AuditLogService::log("login_sucesso", $user->id, "usuario", $user->id, "Login bem-sucedido.", $ipAddress);
+                AuditLogService::log(
+                    $user->id,
+                    "login_sucesso",
+                    "users",
+                    $user->id, 
+                    null,
+                    ['message' => 'Login bem-sucedido','user_id' => $user->id,'email' => $user->email],
+                    $ipAddress,
+                    $_SERVER['HTTP_USER_AGENT'] ?? null
+                );
                 return [
                     "token" => $token,
                     "user" => [
@@ -75,13 +112,31 @@ class AuthController
                 ];
             } else {
                 http_response_code(500);
-                AuditLogService::log("login_erro_jwt", $user->id, "usuario", $user->id, "Falha ao gerar token JWT.", $ipAddress);
+                AuditLogService::log(
+                    $user->id,
+                    "login_erro",
+                    "users",
+                    $user->id,
+                    null,
+                    ['error' => 'Erro ao gerar token de autenticação.'],
+                    $ipAddress,
+                    $_SERVER['HTTP_USER_AGENT'] ?? null
+                );
                 return ["error" => "Erro ao gerar token de autenticação."];
             }
         } else {
             http_response_code(401);
             $this->rateLimiter->recordAttempt($ipAddress, $loginAction);
-            AuditLogService::log("login_falha", $user->id, "usuario", $user->id, "Senha incorreta.", $ipAddress);
+            AuditLogService::log(
+                $user->id,
+                "login_falha",
+                "users",
+                $user->id,
+                null,
+                ['error' => 'Senha incorreta.'],
+                $ipAddress,
+                $_SERVER['HTTP_USER_AGENT'] ?? null
+            );
             return ["error" => "Credenciais inválidas."];
         }
     }
@@ -105,19 +160,46 @@ class AuthController
 
         if (!$nome || !$email || !$senha) {
             http_response_code(400);
-            AuditLogService::log("registro_falha", null, null, null, "Dados de registro incompletos.", $ipAddress);
+            AuditLogService::log(
+                null,
+                "registro_falha", 
+                "users", 
+                null, 
+                null, 
+                ['error' => "Dados de registro incompletos."], 
+                $ipAddress,
+                $_SERVER['HTTP_USER_AGENT'] ?? null
+            );
             return ["error" => "Nome, email e senha são obrigatórios."];
         }
 
         if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
             http_response_code(400);
-            AuditLogService::log("registro_falha", null, null, null, "Formato de email inválido: " . $email, $ipAddress);
+            AuditLogService::log(
+                null,
+                "registro_falha",
+                "users",
+                null,
+                null,
+                ['error' => "Formato de email inválido: " . $email],
+                $ipAddress,
+                $_SERVER['HTTP_USER_AGENT'] ?? null
+            );
             return ["error" => "Formato de email inválido."];
         }
 
         if (User::findByEmail($email)) {
             http_response_code(409);
-            AuditLogService::log("registro_falha", null, null, null, "Email já cadastrado: " . $email, $ipAddress);
+            AuditLogService::log(
+                null,
+                "registro_falha",
+                "users",
+                null,
+                null,
+                ['error' => "Email já cadastrado: " . $email],
+                $ipAddress,
+                $_SERVER['HTTP_USER_AGENT'] ?? null
+            );
             return ["error" => "Este email já está cadastrado."];
         }
 
@@ -126,11 +208,29 @@ class AuthController
 
         if ($userId) {
             http_response_code(201);
-            AuditLogService::log("usuario_criado", $userId, "usuario", $userId, "Novo usuário registrado: " . $email, $ipAddress);
+            AuditLogService::log(
+                null,
+                "usuario_criado",
+                "users",
+                $userId,
+                null,
+                ['message' => "Novo usuário registrado: " . $email],
+                $ipAddress,
+                $_SERVER['HTTP_USER_AGENT'] ?? null
+            );
             return ["message" => "Usuário registrado com sucesso.", "user_id" => $userId];
         } else {
             http_response_code(500);
-            AuditLogService::log("registro_erro", null, null, null, "Falha ao inserir usuário no banco de dados: " . $email, $ipAddress);
+            AuditLogService::log(
+                null,
+                "registro_erro",
+                "users",
+                null,
+                null,
+                ['error' => "Falha ao inserir usuário no banco de dados: " . $email],
+                $ipAddress,
+                $_SERVER['HTTP_USER_AGENT'] ?? null
+            );
             return ["error" => "Falha ao registrar usuário."];
         }
     }
@@ -157,7 +257,14 @@ class AuthController
 
         if (!$refreshToken) {
             http_response_code(401);
-            AuditLogService::log("refresh_token_ausente", null, null, null, "Refresh token não fornecido.", $ipAddress);
+            AuditLogService::log(
+                null,
+                "refresh_token_ausente", 
+                null, 
+                null, 
+                null, ['error' => "Refresh token não fornecido."], 
+                $ipAddress,
+                $_SERVER['HTTP_USER_AGENT'] ?? null);
             return ["error" => "Refresh token não fornecido."];
         }
 
@@ -165,7 +272,14 @@ class AuthController
         
         if (!$userData) {
             http_response_code(401);
-            AuditLogService::log("refresh_token_invalido", null, null, null, "Refresh token inválido ou expirado.", $ipAddress);
+            AuditLogService::log(
+                null,
+                "refresh_token_invalido", 
+                null, 
+                null, 
+                null, ['error' => "Refresh token inválido ou expirado."], 
+                $ipAddress,
+                $_SERVER['HTTP_USER_AGENT'] ?? null);
             return ["error" => "Refresh token inválido ou expirado."];
         }
 
@@ -186,7 +300,16 @@ class AuthController
         ]);
 
         http_response_code(200);
-        AuditLogService::log("refresh_token_sucesso", $userData['id'], "usuario", $userData['id'], "Refresh de token bem-sucedido.", $ipAddress);
+        AuditLogService::log(
+            $userData['id'],
+            'refresh_token_sucesso',
+            'users',
+            $userData['id'],
+            null,
+            ['message' => 'Token renovado com sucesso','user_id' => $userData['id'],'email' => $userData['email']],
+            $ipAddress,
+            $_SERVER['HTTP_USER_AGENT'] ?? null
+        );
 
         return [
             "access_token" => $accessToken,

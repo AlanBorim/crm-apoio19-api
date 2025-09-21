@@ -88,7 +88,7 @@ if ($requestPath === '/login' && $requestMethod === 'POST') {
         $authController = new AuthController();
         // Passar os dados de entrada para o método login
         $response = $authController->login($input);
-
+        var_dump($response);
         // Garante que o controller retorne um array
         if (is_array($response)) {
             echo json_encode($response);

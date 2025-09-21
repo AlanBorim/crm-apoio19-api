@@ -146,7 +146,7 @@ class AuthService
             $decoded = JWT::decode($token, new Key($this->secretKey, $this->algo));
             
             return [
-                "id" => $decoded->data->sub ? $decoded->data->sub : $decoded->data->userId,
+                "id" => $decoded->data->userId,
                 "email" => $decoded->data->email,
                 "role" => $decoded->data->role,
                 "nome" => $decoded->data->userName

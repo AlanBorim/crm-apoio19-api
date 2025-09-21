@@ -308,6 +308,17 @@ class UserController
             if (User::update($userId, $updateData)) {
                 $updatedUser = User::findById($userId);
 
+                $this->notificationService->createNotification(
+                    'activate_user',
+                    'Usuário Ativado',
+                    "Seu usuário foi ativado com sucesso.",
+                    [$updatedUser->id],
+                    '/activate',
+                    'user',
+                    $user->id,
+                    true
+                );
+
                 return $this->successResponse(
                     $this->formatUserForResponse($updatedUser),
                     "Usuário ativado com sucesso."
@@ -359,6 +370,17 @@ class UserController
 
             if (User::update($userId, $updateData)) {
                 $updatedUser = User::findById($userId);
+
+                $this->notificationService->createNotification(
+                    'deactivate_user',
+                    'Usuário Desativado',
+                    "Seu usuário foi desativado com sucesso.",
+                    [$updatedUser->id],
+                    '/deactivate',
+                    'user',
+                    $user->id,
+                    true
+                );
 
                 return $this->successResponse(
                     $this->formatUserForResponse($updatedUser),
