@@ -88,7 +88,7 @@ if ($requestPath === '/login' && $requestMethod === 'POST') {
         $authController = new AuthController();
         // Passar os dados de entrada para o método login
         $response = $authController->login($input);
-        var_dump($response);
+
         // Garante que o controller retorne um array
         if (is_array($response)) {
             echo json_encode($response);
@@ -112,6 +112,30 @@ if ($requestPath === '/refresh' && $requestMethod === 'POST') {
     $controller = new AuthController();
     echo json_encode($controller->refresh());
     exit;
+}
+
+// Rota de logout
+if ($requestPath === '/logout' && $requestMethod === 'POST') {
+
+    try {
+        // Ler o corpo da requisição JSON
+        $input = json_decode(file_get_contents('php://input'), true);
+
+        // Verificar se o JSON foi decodificado corretamente
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            http_response_code(400); // Bad Request
+            echo json_encode(["error" => "JSON inválido no corpo da requisição."]);
+            exit;
+        }
+        $controller = new AuthController();
+        $controller->logout($input);
+        exit;
+    } catch (\Throwable $th) {
+        error_log("Erro no AuthController->logout: " . $th->getMessage() . "\n" . $th->getTraceAsString());
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno ao processar o logout.", "status" => $th->getMessage() . "\n" . $th->getTraceAsString()]);
+        exit;
+    }
 }
 
 // Rotas de Leads 
@@ -797,7 +821,7 @@ if ($requestPath === '/users' && $requestMethod === 'GET') {
 
         // Listar usuários
         $users = $users->index($headers, $queryParams);
-        
+
         echo json_encode($users);
         exit;
     } catch (\Exception $e) {
@@ -880,7 +904,7 @@ if ($requestPath === '/users/create' && $requestMethod === 'POST') {
     try {
         // Ler o corpo da requisição JSON
         $input = json_decode(file_get_contents('php://input'), true);
-        
+
         // Verificar se o JSON foi decodificado corretamente
         if (json_last_error() !== JSON_ERROR_NONE) {
             http_response_code(400);
@@ -913,7 +937,7 @@ if ($requestPath === '/users/create' && $requestMethod === 'POST') {
 // alterar usuários
 if (preg_match('#^/users/update/(\d+)$#', $requestPath, $matches) && $requestMethod === 'PUT') {
     $userId = (int)$matches[1];
-    
+
     try {
         // Ler o corpo da requisição JSON
         $input = json_decode(file_get_contents('php://input'), true);
@@ -953,7 +977,7 @@ if ($requestPath === '/health' && $requestMethod === 'GET') {
         // Verificação de saúde da API
         $healthController = new HealthController();
         $response = $healthController->check();
-        
+
         echo json_encode($response);
     } catch (\Exception $e) {
         //throw $e;

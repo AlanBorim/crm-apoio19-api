@@ -321,4 +321,31 @@ class AuthController
             ]
         ];
     }
+
+    public function logout($userData): array
+    {
+        
+        $ipAddress = $_SERVER["REMOTE_ADDR"] ?? "unknown";
+        setcookie('refresh_token', '', [
+            'expires' => time() - 3600,
+            'httponly' => true,
+            'secure' => true,
+            'samesite' => 'Strict',
+            'path' => '/refresh'
+        ]);
+
+        http_response_code(200);
+        AuditLogService::log(
+            $userData['id'] ?? null,
+            "logout_sucesso",
+            null,
+            null,
+            $userData ?? null,
+            ['message' => 'Logout realizado com sucesso.'],
+            $ipAddress,
+            $_SERVER['HTTP_USER_AGENT'] ?? null
+        );
+
+        return ["message" => "Logout realizado com sucesso."];
+    }
 }
