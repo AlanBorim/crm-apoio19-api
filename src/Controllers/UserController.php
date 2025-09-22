@@ -5,6 +5,9 @@ namespace Apoio19\Crm\Controllers;
 use Apoio19\Crm\Models\User;
 use Apoio19\Crm\Middleware\AuthMiddleware;
 use Apoio19\Crm\Services\NotificationService;
+use Firebase\JWT\JWT;
+use Firebase\JWT\Key;
+
 
 /**
  * Controlador para gerenciamento de usuários
@@ -14,10 +17,46 @@ class UserController
     private AuthMiddleware $authMiddleware;
     private NotificationService $notificationService;
 
-    public function __construct()
+    private string $secretKey;
+    private int $expirationTime;
+    private string $algo;
+    private string $issuer;
+    private string $audience;
+    private string $configPath;
+
+    public function __construct(?array $config = null)
     {
         $this->authMiddleware = new AuthMiddleware();
         $this->notificationService = new NotificationService();
+
+        if ($config === null) {
+            $configPath = __DIR__ .
+
+                '/../../config/jwt.php
+
+';
+            if (file_exists($configPath)) {
+                $config = require $configPath;
+            } else {
+                // Fallback configuration (should not happen in a configured environment)
+                $config = [
+                    'secret' => $_ENV["JWT_SECRET"] ?? 'valor_padrao_inseguro_trocar_em_producao',
+                    'expiration' => (int)($_ENV["JWT_EXPIRATION"] ?? 3600),
+                    'algo' => 'HS256',
+                    'issuer' => 'Apoio19 CRM',
+                    'audience' => 'Apoio19 CRM Users'
+                ];
+                if ($config['secret'] === 'valor_padrao_inseguro_trocar_em_producao' && ($_ENV["APP_ENV"] ?? "production") !== "testing") {
+                    error_log("CRITICAL: JWT Secret not configured properly! Using insecure default.", 0);
+                }
+            }
+        }
+
+        $this->secretKey = $config['secret'];
+        $this->expirationTime = $config['expiration'];
+        $this->algo = $config['algo'] ?? 'HS256';
+        $this->issuer = $config['issuer'] ?? 'Apoio19 CRM';
+        $this->audience = $config['audience'] ?? 'Apoio19 CRM Users';
     }
 
     /**
@@ -280,7 +319,8 @@ class UserController
      * Ativar usuário
      *
      * @param array $headers Cabeçalhos da requisição
-     * @param int $userId ID do usuário
+     * @param int $userId ID do usuário para ativar
+     * @param array $creatorData Dados do usuário que está realizando a ativação
      * @return array Resposta JSON
      */
     public function activate(array $headers, int $userId): array
@@ -307,16 +347,23 @@ class UserController
 
             if (User::update($userId, $updateData)) {
                 $updatedUser = User::findById($userId);
+                $token      = preg_replace('/^Bearer\s+/i', '', $headers['Authorization']);
+
+                $decoded = JWT::decode($token, new Key($this->secretKey, $this->algo));
+
+                $dados       = $decoded->data ?? null;
+                $loggedUid   = (int) ($dados->userId ?? 0);
+                $loggedName  = $dados->userName ?? 'Usuário';
+
+                $activatedName = $updatedUser->nome ?? $updatedUser->name ?? 'Usuário';
 
                 $this->notificationService->createNotification(
+                    $loggedUid,
                     'activate_user',
-                    'Usuário Ativado',
-                    "Seu usuário foi ativado com sucesso.",
-                    [$updatedUser->id],
+                    "Usuário {$activatedName} ativado no CRM por {$loggedName}",
+                    'success',
                     '/activate',
-                    'user',
-                    $user->id,
-                    true
+                    '0'
                 );
 
                 return $this->successResponse(
@@ -370,16 +417,22 @@ class UserController
 
             if (User::update($userId, $updateData)) {
                 $updatedUser = User::findById($userId);
+                $token      = preg_replace('/^Bearer\s+/i', '', $headers['Authorization']);
 
+                $decoded = JWT::decode($token, new Key($this->secretKey, $this->algo));
+
+                $dados       = $decoded->data ?? null;
+                $loggedUid   = (int) ($dados->userId ?? 0);
+                $loggedName  = $dados->userName ?? 'Usuário';
+
+                $activatedName = $updatedUser->nome ?? $updatedUser->name ?? 'Usuário';
                 $this->notificationService->createNotification(
+                    $loggedUid,
                     'deactivate_user',
-                    'Usuário Desativado',
-                    "Seu usuário foi desativado com sucesso.",
-                    [$updatedUser->id],
+                    "Usuário {$activatedName} desativado no CRM por {$loggedName}",
+                    'success',
                     '/deactivate',
-                    'user',
-                    $user->id,
-                    true
+                    '0'
                 );
 
                 return $this->successResponse(
@@ -394,54 +447,6 @@ class UserController
         }
     }
 
-    /**
-     * Excluir usuário (soft delete)
-     *
-     * @param array $headers Cabeçalhos da requisição
-     * @param int $userId ID do usuário
-     * @return array Resposta JSON
-     */
-    public function destroy(array $headers, int $userId): array
-    {
-        $userData = $this->authMiddleware->handle($headers, ["admin"]);
-        if (!$userData) {
-            return $this->errorResponse(401, "Autenticação necessária ou permissão insuficiente.");
-        }
-
-        try {
-            $user = User::findById($userId);
-            if (!$user || $user->deleted_at) {
-                return $this->errorResponse(404, "Usuário não encontrado.");
-            }
-
-            // Verificar se não é o último admin
-            if ($user->funcao === 'Admin') {
-                $activeAdminCount = User::countActiveAdmins();
-                if ($activeAdminCount <= 1) {
-                    return $this->errorResponse(400, "Não é possível excluir o último administrador.");
-                }
-            }
-
-            // Verificar se o usuário não está tentando excluir a si mesmo
-            if ($userId === $userData->userId) {
-                return $this->errorResponse(400, "Você não pode excluir sua própria conta.");
-            }
-
-            $updateData = [
-                'deleted_at' => date('Y-m-d H:i:s'),
-                'ativo' => 0,
-                'updated_at' => date('Y-m-d H:i:s')
-            ];
-
-            if (User::update($userId, $updateData)) {
-                return $this->successResponse(null, "Usuário excluído com sucesso.");
-            } else {
-                return $this->errorResponse(500, "Falha ao excluir usuário.");
-            }
-        } catch (\Exception $e) {
-            return $this->errorResponse(500, "Erro interno ao excluir usuário.", $e->getMessage());
-        }
-    }
 
     /**
      * Ações em lote
@@ -1059,14 +1064,12 @@ class UserController
     {
         try {
             $this->notificationService->createNotification(
-                'user_created',
-                'Conta Criada',
-                "Sua conta foi criada no sistema CRM. Bem-vindo(a)!",
-                [$user->id],
-                '/profile',
-                'user',
-                $user->id,
-                true
+                $creatorData['userId'],
+                'create_user',
+                'Usuário ' . $user->name . ' Criado no CRM por ' . $creatorData['name'],
+                "success",
+                '/activate',
+                '0'
             );
         } catch (\Exception $e) {
             error_log("Erro ao enviar notificação de criação de usuário: " . $e->getMessage());
