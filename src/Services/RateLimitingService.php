@@ -16,39 +16,51 @@ class RateLimitingService
     }
 
     /**
-     * Check if an action from a specific IP is allowed based on rate limits.
+     * Undocumented function
      *
-     * @param string $ipAddress The IP address making the request.
-     * @param string $actionType A unique identifier for the action being limited (e.g., "login_attempt", "api_general").
-     * @param int $limit The maximum number of allowed attempts.
-     * @param int $period The time period in seconds (e.g., 3600 for 1 hour).
-     * @return bool True if the action is allowed, false if the limit is exceeded.
+     * @param string $ip
+     * @param string $account
+     * @param string $device
+     * @return boolean
      */
-    public function isAllowed(string $ipAddress, string $actionType, int $limit, int $period): bool
+    public function isAllowed(string $ip, string $account, string $device): bool
     {
-        $sql = "SELECT COUNT(*) 
-                FROM rate_limit_attempts 
-                WHERE ip_address = :ip_address 
-                  AND action_type = :action_type 
-                  AND attempt_timestamp >= DATE_SUB(NOW(), INTERVAL :period SECOND)";
+        $rules = [
+            'ip'      => ['limit' => 20, 'window' => 900, 'block' => 900],
+            'account' => ['limit' => 5,  'window' => 300, 'block' => 1800],
+            'device'  => ['limit' => 3,  'window' => 120, 'block' => 600],
+        ];
 
-        try {
+        foreach ($rules as $scope => $cfg) {
+
+            $col = $scope === 'ip' ? 'ip_address' : ($scope === 'account' ? 'user_account' : 'device_fp');
+
+            $sql = "SELECT COUNT(*) 
+                FROM login_rate_limit
+                WHERE $col = :identifier
+                  AND failed_at >= DATE_SUB(NOW(), INTERVAL {$cfg['window']} SECOND)";
+
             $stmt = $this->pdo->prepare($sql);
-            $stmt->bindParam(":ip_address", $ipAddress);
-            $stmt->bindParam(":action_type", $actionType);
-            $stmt->bindParam(":period", $period, PDO::PARAM_INT);
-            $stmt->execute();
-            
-            $count = (int)$stmt->fetchColumn();
-            
-            return $count < $limit;
 
-        } catch (PDOException $e) {
-            error_log("Erro ao verificar rate limit para {$ipAddress} / {$actionType}: " . $e->getMessage());
-            // Fail open or closed? Failing open might be safer in case of DB issues, 
-            // but failing closed is stricter for security. Let's fail open for now.
-            return true; 
+            $stmt->execute([':identifier' => $$scope]);
+
+            if ((int)$stmt->fetchColumn() >= $cfg['limit']) {
+                // Verifica se ainda está no período de bloqueio
+                $sql2 = "SELECT MAX(failed_at) 
+                     FROM login_rate_limit
+                     WHERE $col = :identifier
+                       AND failed_at >= DATE_SUB(NOW(), INTERVAL {$cfg['block']} SECOND)";
+
+                $stmt2 = $this->pdo->prepare($sql2);
+
+                $stmt2->execute([':identifier' => $$scope]);
+
+                if ($stmt2->fetchColumn()) {
+                    return false; // ainda bloqueado
+                }
+            }
         }
+        return true;
     }
 
     /**
@@ -92,7 +104,7 @@ class RateLimitingService
             return false;
         }
     }
-    
+
     /**
      * Convenience method to check and record an attempt in one call.
      *
@@ -102,23 +114,25 @@ class RateLimitingService
      * @param int $period
      * @return bool True if the attempt was allowed and recorded, false otherwise.
      */
-     public function checkAndRecord(string $ipAddress, string $actionType, int $limit, int $period): bool
-     {
+    public function checkAndRecord(string $ipAddress, string $actionType, int $limit, int $period): bool
+    {
+
         if ($this->isAllowed($ipAddress, $actionType, $limit, $period)) {
             $this->recordAttempt($ipAddress, $actionType);
             return true;
         } else {
             // Log that the rate limit was exceeded
             AuditLogService::log(
-                "rate_limit_excedido", 
+                null,
+                "rate_limit_excedido",
                 null, // No specific user ID usually for rate limiting checks
-                null, 
-                null, 
-                "Limite de taxa excedido para ação '{$actionType}'.", 
-                $ipAddress
+                null,
+                null,
+                ['Message' => "Limite de taxa excedido para ação '{$actionType}'."],
+                $ipAddress,
+                $_SERVER['HTTP_USER_AGENT'] ?? null
             );
             return false;
         }
-     }
+    }
 }
-
