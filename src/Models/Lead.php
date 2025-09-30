@@ -14,6 +14,7 @@ class Lead
     public ?string $email;
     public ?string $phone;
     public ?string $source;
+    public ?string $source_extra;
     public ?string $interest;
     public string $status;
     public ?string $stage;
@@ -166,8 +167,8 @@ class Lead
         $fields = [];
         $params = [":id" => $id];
         foreach ($data as $key => $value) {
-            // Allow updating only specific fields          
-            if (in_array($key, ['name', 'company', 'address', 'cep', 'city', 'state', 'position', 'stage', 'email', 'phone', 'source', 'interest', 'next_contact', 'temperature', 'assined_to', 'value'])) {
+            // Allow updating only specific fields
+            if (in_array($key, ['name', 'company', 'address', 'cep', 'city', 'state', 'position', 'stage', 'email', 'phone', 'source', 'source_extra', 'interest', 'next_contact', 'temperature', 'assigned_to', 'value'])) {
                 $fields[] = "`{$key}` = :{$key}";
                 $paramType = PDO::PARAM_STR;
                 if ($key === 'assigned_to' || $key === 'value') {
@@ -524,6 +525,7 @@ class Lead
         $lead->position = $data["position"] ?? null;
         $lead->phone = $data["phone"] ?? null;
         $lead->source = $data["source"] ?? null;
+        $lead->source_extra = $data['source_extra'] ?? null;
         $lead->interest = $data["interest"] ?? null;
         $lead->temperature = $data["temperature"] ?? null;
         // Ensure qualificacao has a default if null/missing from DB data, matching the property type hint

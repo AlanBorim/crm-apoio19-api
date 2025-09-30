@@ -236,8 +236,8 @@ class LeadController
                     $leadId,
                     null,
                     $userData->userId,
-                    "Lead Atualizado - " . json_encode($requestData, JSON_UNESCAPED_SLASHES),
-                    $logDetails
+                    "Lead Atualizado",
+                    $logDetails . json_encode($requestData, JSON_UNESCAPED_SLASHES)
                 );
 
                 // Notificar novo responsável
