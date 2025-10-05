@@ -9,6 +9,7 @@ define("BASE_PATH", dirname(__DIR__));
 
 // --- Roteamento Simples ---
 use Apoio19\Crm\Controllers\AuthController;
+use Apoio19\Crm\Controllers\EmailController;
 use Apoio19\Crm\Controllers\HealthController;
 use Apoio19\Crm\Controllers\LeadController;
 use Apoio19\Crm\Controllers\NotificationController;
@@ -968,6 +969,30 @@ if (preg_match('#^/users/update/(\d+)$#', $requestPath, $matches) && $requestMet
         http_response_code(500);
         echo json_encode(["error" => "Erro interno ao processar a atualização do usuário.", "status" => $th->getMessage() . "\n" . $th->getTraceAsString()]);
     }
+    exit;
+}
+
+// Rota de envio de e-mail /api/email/send-welcome
+if ($requestPath === '/email/send-welcome' && $requestMethod === 'POST') {
+    $requestData = json_decode(file_get_contents('php://input'), true);
+    
+    if (!$requestData) {
+        http_response_code(400);
+        echo json_encode(["error" => "Corpo da requisição vazio ou inválido."]);
+        exit;
+    }   
+    
+    if (json_last_error() !== JSON_ERROR_NONE) {
+        http_response_code(400);
+        echo json_encode(["error" => "JSON inválido no corpo da requisição."]);
+        exit;
+    }
+
+    $controller = new EmailController();
+    $response = $controller->sendWelcomeEmail($requestData);
+    
+    header('Content-Type: application/json');
+    echo json_encode($response);
     exit;
 }
 
