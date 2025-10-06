@@ -115,6 +115,23 @@ if ($requestPath === '/refresh' && $requestMethod === 'POST') {
     exit;
 }
 
+if ($requestPath === '/forgot-password' && $requestMethod === 'POST') {
+    
+    $input = json_decode(file_get_contents('php://input'), true);
+
+    // Verificar se o JSON foi decodificado corretamente
+    if (json_last_error() !== JSON_ERROR_NONE) {
+        http_response_code(400); // Bad Request
+        echo json_encode(["error" => "JSON inválido no corpo da requisição."]);
+        exit;
+    }
+
+    $controller = new AuthController();
+    echo json_encode($controller->requestPasswordReset($input));
+
+    exit;
+}
+
 // Rota de logout
 if ($requestPath === '/logout' && $requestMethod === 'POST') {
 
@@ -975,13 +992,13 @@ if (preg_match('#^/users/update/(\d+)$#', $requestPath, $matches) && $requestMet
 // Rota de envio de e-mail /api/email/send-welcome
 if ($requestPath === '/email/send-welcome' && $requestMethod === 'POST') {
     $requestData = json_decode(file_get_contents('php://input'), true);
-    
+
     if (!$requestData) {
         http_response_code(400);
         echo json_encode(["error" => "Corpo da requisição vazio ou inválido."]);
         exit;
-    }   
-    
+    }
+
     if (json_last_error() !== JSON_ERROR_NONE) {
         http_response_code(400);
         echo json_encode(["error" => "JSON inválido no corpo da requisição."]);
@@ -990,7 +1007,7 @@ if ($requestPath === '/email/send-welcome' && $requestMethod === 'POST') {
 
     $controller = new EmailController();
     $response = $controller->sendWelcomeEmail($requestData);
-    
+
     header('Content-Type: application/json');
     echo json_encode($response);
     exit;

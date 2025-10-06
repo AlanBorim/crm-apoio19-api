@@ -23,7 +23,7 @@ class User
     public ?string $last_login;
     public ?string $telefone;
     public ?string $permissions;
-    
+
 
     /**
      * Criar novo usuário
@@ -89,7 +89,6 @@ class User
                 $user->atualizado_em = $result["updated_at"];
                 $user->token_2fa_secreto = $result["2fa_secret"];
                 $user->last_login = $result["last_login"];
-
             }
             return $user ?? null;
         } catch (PDOException $e) {
@@ -124,7 +123,6 @@ class User
                 $user->ativo = $userData["active"];
                 $user->criado_em = $userData["created_at"];
                 $user->atualizado_em = $userData["updated_at"];
-                
             }
             return $user ?? null;
         } catch (PDOException $e) {
@@ -584,6 +582,54 @@ class User
         } catch (PDOException $e) {
             error_log("Erro ao buscar usuários para seleção: " . $e->getMessage());
             return [];
+        }
+    }
+
+    // Dentro da classe Apoio19\Crm\Models\User
+
+    /**
+     * Define um token de recuperação de senha para um usuário.
+     *
+     * @param string $email O e-mail do usuário.
+     * @param string $token O token a ser salvo.
+     * @param string $expiresAt A data e hora de expiração do token (formato 'Y-m-d H:i:s').
+     * @return bool True se foi bem-sucedido, false caso contrário.
+     */
+    public static function setPasswordResetToken(string $email, string $token, string $expiresAt): bool
+    {
+        try {
+            $pdo = Database::getInstance();
+            $stmt = $pdo->prepare(
+                "UPDATE users SET password_reset_token = :token, password_reset_expires_at = :expires_at WHERE email = :email"
+            );
+            $stmt->bindParam(':token', $token);
+            $stmt->bindParam(':expires_at', $expiresAt);
+            $stmt->bindParam(':email', $email);
+            return $stmt->execute();
+        } catch (PDOException $e) {
+            // Logar o erro em um ambiente de produção
+            return false;
+        }
+    }
+
+    /**
+     * Encontra um usuário pelo token de recuperação de senha e verifica se não expirou.
+     *
+     * @param string $token O token a ser verificado.
+     * @return array|false Os dados do usuário se o token for válido, ou false.
+     */
+    public static function findByValidResetToken(string $token)
+    {
+        try {
+            $pdo = Database::getInstance();
+            $stmt = $pdo->prepare(
+                "SELECT * FROM users WHERE password_reset_token = :token AND password_reset_expires_at > NOW()"
+            );
+            $stmt->bindParam(':token', $token);
+            $stmt->execute();
+            return $stmt->fetch(PDO::FETCH_ASSOC);
+        } catch (PDOException $e) {
+            return false;
         }
     }
 }

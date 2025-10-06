@@ -1,4 +1,5 @@
 <?php
+
 namespace Apoio19\Crm\Controllers;
 
 use Apoio19\Crm\Models\User;
@@ -6,15 +7,20 @@ use Apoio19\Crm\Services\AuthService;
 use Apoio19\Crm\Services\AuditLogService;
 use Apoio19\Crm\Services\RateLimitingService;
 
+use Apoio19\Crm\Services\EmailService;
+use Apoio19\Crm\Views\EmailView;
+
 class AuthController
 {
     private AuthService $authService;
     private RateLimitingService $rateLimiter;
+    private EmailService $emailService;
 
     public function __construct()
     {
         $this->authService = new AuthService();
         $this->rateLimiter = new RateLimitingService();
+        $this->emailService = new EmailService();
     }
 
     public function login(array $requestData): array
@@ -39,7 +45,7 @@ class AuthController
                 $ipAddress,
                 $_SERVER['HTTP_USER_AGENT'] ?? null
             );
-            
+
             return ["error" => "Muitas tentativas de login. Tente novamente mais tarde."];
         }
 
@@ -95,9 +101,9 @@ class AuthController
                     $user->id,
                     "login_sucesso",
                     "users",
-                    $user->id, 
+                    $user->id,
                     null,
-                    ['message' => 'Login bem-sucedido','user_id' => $user->id,'email' => $user->email],
+                    ['message' => 'Login bem-sucedido', 'user_id' => $user->id, 'email' => $user->email],
                     $ipAddress,
                     $_SERVER['HTTP_USER_AGENT'] ?? null
                 );
@@ -162,11 +168,11 @@ class AuthController
             http_response_code(400);
             AuditLogService::log(
                 null,
-                "registro_falha", 
-                "users", 
-                null, 
-                null, 
-                ['error' => "Dados de registro incompletos."], 
+                "registro_falha",
+                "users",
+                null,
+                null,
+                ['error' => "Dados de registro incompletos."],
                 $ipAddress,
                 $_SERVER['HTTP_USER_AGENT'] ?? null
             );
@@ -247,7 +253,7 @@ class AuthController
             exit;
         }
 
-        if (!preg_match('/Bearer\s(\S+)/', $refreshToken , $matches)) {
+        if (!preg_match('/Bearer\s(\S+)/', $refreshToken, $matches)) {
             http_response_code(401);
             echo json_encode(["erro" => "Formato do token inválido"]);
             exit;
@@ -259,27 +265,31 @@ class AuthController
             http_response_code(401);
             AuditLogService::log(
                 null,
-                "refresh_token_ausente", 
-                null, 
-                null, 
-                null, ['error' => "Refresh token não fornecido."], 
+                "refresh_token_ausente",
+                null,
+                null,
+                null,
+                ['error' => "Refresh token não fornecido."],
                 $ipAddress,
-                $_SERVER['HTTP_USER_AGENT'] ?? null);
+                $_SERVER['HTTP_USER_AGENT'] ?? null
+            );
             return ["error" => "Refresh token não fornecido."];
         }
 
         $userData = $this->authService->validateRefreshToken($refreshToken);
-        
+
         if (!$userData) {
             http_response_code(401);
             AuditLogService::log(
                 null,
-                "refresh_token_invalido", 
-                null, 
-                null, 
-                null, ['error' => "Refresh token inválido ou expirado."], 
+                "refresh_token_invalido",
+                null,
+                null,
+                null,
+                ['error' => "Refresh token inválido ou expirado."],
                 $ipAddress,
-                $_SERVER['HTTP_USER_AGENT'] ?? null);
+                $_SERVER['HTTP_USER_AGENT'] ?? null
+            );
             return ["error" => "Refresh token inválido ou expirado."];
         }
 
@@ -306,7 +316,7 @@ class AuthController
             'users',
             $userData['id'],
             null,
-            ['message' => 'Token renovado com sucesso','user_id' => $userData['id'],'email' => $userData['email']],
+            ['message' => 'Token renovado com sucesso', 'user_id' => $userData['id'], 'email' => $userData['email']],
             $ipAddress,
             $_SERVER['HTTP_USER_AGENT'] ?? null
         );
@@ -322,9 +332,76 @@ class AuthController
         ];
     }
 
-    public function logout($userData): array
+    /**
+     * Inicia o processo de recuperação de senha.
+     *
+     * @param array $requestData Deve conter 'email'.
+     * @return array Resposta da API.
+     */
+    public function requestPasswordReset(array $requestData): array
     {
+        $email = $requestData['email'] ?? null;
+        if (!$email) {
+            http_response_code(400);
+            return ['status' => 'error', 'message' => 'O e-mail é obrigatório.'];
+        }
+
+        // valida o formato do email
+        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            http_response_code(400);
+            return ['status' => 'error', 'message' => 'Formato de e-mail inválido.'];
+        }
+
+        // Verifica se o usuário existe
+        $user = User::findByEmail($email); // Supondo que você tenha este método
+        if (!$user) {
+            http_response_code(400);
+            return ['status' => 'error', 'message' => 'Usuário não localizado.'];
+        }
         
+        // 1. Gerar Token Seguro
+        $token = bin2hex(random_bytes(32)); // Gera um token de 64 caracteres
+        $expiresAt = (new \DateTime())->modify('+1 hour')->format('Y-m-d H:i:s');
+
+        // 2. Salvar Token no Banco
+        if (!User::setPasswordResetToken($email, $token, $expiresAt)) {
+            http_response_code(500);
+            return ['status' => 'error', 'message' => 'Não foi possível iniciar o processo de recuperação.'];
+        }
+        
+        // 3. Montar o Link e o Corpo do E-mail
+        $resetLink = 'https://crm.apoio19.com.br/reset-password?token=' . $token;
+        $emailBody = EmailView::render('recuperacao_senha.html', [
+            'nome_usuario' => $user->nome, 
+            'link_recuperacao' => $resetLink
+        ]);
+
+        if (!$emailBody) {
+            http_response_code(500);
+            return ['status' => 'error', 'message' => 'Template de e-mail não encontrado.'];
+        }
+
+        // 4. Enviar o E-mail
+        $subject = 'Recuperação de Senha - Apoio19';
+        $success = $this->emailService->send($user->email, $user->nome, $subject, $emailBody);
+
+        if ($success) {
+            return ['status' => 'success', 'message' => 'Se um usuário com este e-mail existir, um link de recuperação será enviado.'];
+        } else {
+            http_response_code(500);
+            return ['status' => 'error', 'message' => 'Falha ao enviar o e-mail de recuperação.'];
+        }
+    }
+
+    /**
+     * Logout do usuário, invalidando o refresh token.
+     *
+     * @param array $userData
+     * @return array
+     */
+    public function logout(array $userData): array
+    {
+
         $ipAddress = $_SERVER["REMOTE_ADDR"] ?? "unknown";
         setcookie('refresh_token', '', [
             'expires' => time() - 3600,
