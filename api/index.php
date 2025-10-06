@@ -132,6 +132,23 @@ if ($requestPath === '/forgot-password' && $requestMethod === 'POST') {
     exit;
 }
 
+if ($requestPath === '/reset-password' && $requestMethod === 'POST') {
+    
+    $input = json_decode(file_get_contents('php://input'), true);
+
+    // Verificar se o JSON foi decodificado corretamente
+    if (json_last_error() !== JSON_ERROR_NONE) {
+        http_response_code(400); // Bad Request
+        echo json_encode(["error" => "JSON inválido no corpo da requisição."]);
+        exit;
+    }
+
+    $controller = new AuthController();
+    echo json_encode($controller->resetPassword($input));
+      
+    exit;
+}
+
 // Rota de logout
 if ($requestPath === '/logout' && $requestMethod === 'POST') {
 

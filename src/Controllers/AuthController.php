@@ -394,6 +394,73 @@ class AuthController
     }
 
     /**
+     * Valida um token de redefinição de senha.
+     * Usado para verificar se o token é válido antes de mostrar o formulário de nova senha.
+     *
+     * @param array $requestData Deve conter 'token'.
+     * @return array Resposta da API.
+     */
+    public function validateResetToken(array $requestData): array
+    {
+        $token = $requestData['token'] ?? null;
+
+        if (!$token) {
+            http_response_code(400 ); // Bad Request
+            return ['status' => 'error', 'message' => 'Token não fornecido.'];
+        }
+
+        // Usa o método que criamos no Model
+        $user = User::findByValidResetToken($token);
+
+        if ($user) {
+            return ['status' => 'success', 'message' => 'Token válido.'];
+        } else {
+            http_response_code(404 ); // Not Found
+            return ['status' => 'error', 'message' => 'Token inválido ou expirado.'];
+        }
+    }
+
+    /**
+     * Redefine a senha do usuário usando um token válido.
+     *
+     * @param array $requestData Deve conter 'token' e 'nova_senha'.
+     * @return array Resposta da API.
+     */
+    public function resetPassword(array $requestData): array
+    {
+        $token = $requestData['token'] ?? null;
+        $newPassword = $requestData['newPassword'] ?? null;
+
+        if (!$token || !$newPassword) {
+            http_response_code(400);
+            return ['status' => 'error', 'message' => 'Token e nova senha são obrigatórios.'];
+        }
+
+        // 1. Valida o token novamente (verificação final de segurança)
+        $user = User::findByValidResetToken($token);
+
+        if (!$user) {
+            http_response_code(404);
+            return ['status' => 'error', 'message' => 'Token inválido ou expirado. Tente solicitar a recuperação novamente.'];
+        }
+
+        // 2. Atualiza a senha no banco de dados
+        // É CRUCIAL que a senha seja armazenada com hash!
+        $hashedPassword = password_hash($newPassword, PASSWORD_DEFAULT);
+
+        // 3. Invalida o token para que não possa ser reutilizado
+        $success = User::updatePasswordAndInvalidateToken($user['id'], $hashedPassword);
+
+        if ($success) {
+            
+            return ['status' => 'success', 'message' => 'Senha alterada com sucesso!'];
+        } else {
+            http_response_code(500 );
+            return ['status' => 'error', 'message' => 'Ocorreu um erro ao atualizar sua senha.'];
+        }
+    }
+
+    /**
      * Logout do usuário, invalidando o refresh token.
      *
      * @param array $userData

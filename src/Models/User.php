@@ -632,4 +632,52 @@ class User
             return false;
         }
     }
+
+    /**
+     * Atualiza a senha de um usuário e invalida o token de recuperação.
+     *
+     * @param int $userId ID do usuário.
+     * @param string $hashedPassword A nova senha já com hash.
+     * @return bool True se bem-sucedido, false caso contrário.
+     */
+    public static function updatePasswordAndInvalidateToken(int $userId, string $hashedPassword): bool
+    {
+        try {
+            $pdo = Database::getInstance();
+            
+            // Usar uma transação garante que ambas as operações ocorram ou nenhuma ocorra.
+            $pdo->beginTransaction();
+
+            $stmt = $pdo->prepare(
+                "UPDATE users 
+                 SET 
+                    password = :password, 
+                    password_reset_token = NULL, 
+                    password_reset_expires_at = NULL 
+                 WHERE id = :id"
+            );
+
+            $stmt->bindParam(':password', $hashedPassword);
+            $stmt->bindParam(':id', $userId, PDO::PARAM_INT);
+            
+            $success = $stmt->execute();
+
+            if ($success) {
+                $pdo->commit();
+                return true;
+            } else {
+                $pdo->rollBack();
+                return false;
+            }
+        } catch (PDOException $e) {
+            // Se o PDO já não fez rollback, faça agora.
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            // Logar o erro
+            return false;
+        }
+    }
+
+
 }
