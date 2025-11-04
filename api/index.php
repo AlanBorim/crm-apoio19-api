@@ -15,6 +15,8 @@ use Apoio19\Crm\Controllers\LeadController;
 use Apoio19\Crm\Controllers\NotificationController;
 use Apoio19\Crm\Controllers\HistoryController;
 use Apoio19\Crm\Controllers\UserController;
+use Apoio19\Crm\Controllers\KanbanController;
+use Apoio19\Crm\Controllers\TarefaController;
 
 // --- Lógica de Extração de Caminho Corrigida ---
 $requestUri = $_SERVER['REQUEST_URI']; // ex: /api/login?param=1
@@ -1040,6 +1042,283 @@ if ($requestPath === '/health' && $requestMethod === 'GET') {
         echo json_encode($response);
     } catch (\Exception $e) {
         //throw $e;
+    }
+    exit;
+}
+
+// ============================================
+// ROTAS DO KANBAN
+// ============================================
+
+// GET /api/kanban/board - Obter quadro completo do Kanban
+if ($requestPath === '/kanban/board' && $requestMethod === 'GET') {
+    try {
+        $headers = getallheaders();
+        $queryParams = $_GET;
+        $controller = new KanbanController();
+        $response = $controller->getBoard($headers, $queryParams);
+        echo json_encode($response);
+    } catch (\Exception $e) {
+        error_log("Erro em /kanban/board: " . $e->getMessage());
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno ao buscar quadro Kanban."]);
+    }
+    exit;
+}
+
+// POST /api/kanban/columns - Criar nova coluna
+if ($requestPath === '/kanban/columns' && $requestMethod === 'POST') {
+    try {
+        $headers = getallheaders();
+        $requestData = json_decode(file_get_contents('php://input'), true);
+        
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            http_response_code(400);
+            echo json_encode(["error" => "JSON inválido no corpo da requisição."]);
+            exit;
+        }
+        
+        $controller = new KanbanController();
+        $response = $controller->createColumn($headers, $requestData);
+        echo json_encode($response);
+    } catch (\Exception $e) {
+        error_log("Erro em POST /kanban/columns: " . $e->getMessage());
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno ao criar coluna."]);
+    }
+    exit;
+}
+
+// PUT /api/kanban/columns/{id} - Atualizar coluna
+if (preg_match('#^/kanban/columns/(\d+)$#', $requestPath, $matches) && $requestMethod === 'PUT') {
+    try {
+        $columnId = (int)$matches[1];
+        $headers = getallheaders();
+        $requestData = json_decode(file_get_contents('php://input'), true);
+        
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            http_response_code(400);
+            echo json_encode(["error" => "JSON inválido no corpo da requisição."]);
+            exit;
+        }
+        
+        $controller = new KanbanController();
+        $response = $controller->updateColumn($headers, $columnId, $requestData);
+        echo json_encode($response);
+    } catch (\Exception $e) {
+        error_log("Erro em PUT /kanban/columns: " . $e->getMessage());
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno ao atualizar coluna."]);
+    }
+    exit;
+}
+
+// DELETE /api/kanban/columns/{id} - Deletar coluna
+if (preg_match('#^/kanban/columns/(\d+)$#', $requestPath, $matches) && $requestMethod === 'DELETE') {
+    try {
+        $columnId = (int)$matches[1];
+        $headers = getallheaders();
+        $controller = new KanbanController();
+        $response = $controller->deleteColumn($headers, $columnId);
+        echo json_encode($response);
+    } catch (\Exception $e) {
+        error_log("Erro em DELETE /kanban/columns: " . $e->getMessage());
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno ao deletar coluna."]);
+    }
+    exit;
+}
+
+// POST /api/kanban/tasks/order - Atualizar ordem das tarefas
+if ($requestPath === '/kanban/tasks/order' && $requestMethod === 'POST') {
+    try {
+        $headers = getallheaders();
+        $requestData = json_decode(file_get_contents('php://input'), true);
+        
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            http_response_code(400);
+            echo json_encode(["error" => "JSON inválido no corpo da requisição."]);
+            exit;
+        }
+        
+        $controller = new KanbanController();
+        $response = $controller->updateTaskOrder($headers, $requestData);
+        echo json_encode($response);
+    } catch (\Exception $e) {
+        error_log("Erro em POST /kanban/tasks/order: " . $e->getMessage());
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno ao atualizar ordem das tarefas."]);
+    }
+    exit;
+}
+
+// ============================================
+// ROTAS DE TAREFAS
+// ============================================
+
+// GET /api/kanban/tasks - Listar tarefas
+if ($requestPath === '/kanban/tasks' && $requestMethod === 'GET') {
+    try {
+        $headers = getallheaders();
+        $queryParams = $_GET;
+        $controller = new TarefaController();
+        $response = $controller->index($headers, $queryParams);
+        echo json_encode($response);
+    } catch (\Exception $e) {
+        error_log("Erro em GET /kanban/tasks: " . $e->getMessage());
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno ao listar tarefas."]);
+    }
+    exit;
+}
+
+// GET /api/kanban/tasks/{id} - Obter tarefa específica
+if (preg_match('#^/kanban/tasks/(\d+)$#', $requestPath, $matches) && $requestMethod === 'GET') {
+    try {
+        $taskId = (int)$matches[1];
+        $headers = getallheaders();
+        $controller = new TarefaController();
+        $response = $controller->show($headers, $taskId);
+        echo json_encode($response);
+    } catch (\Exception $e) {
+        error_log("Erro em GET /kanban/tasks/{id}: " . $e->getMessage());
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno ao buscar tarefa."]);
+    }
+    exit;
+}
+
+// POST /api/kanban/tasks - Criar tarefa
+if ($requestPath === '/kanban/tasks' && $requestMethod === 'POST') {
+    try {
+        $headers = getallheaders();
+        $requestData = json_decode(file_get_contents('php://input'), true);
+        
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            http_response_code(400);
+            echo json_encode(["error" => "JSON inválido no corpo da requisição."]);
+            exit;
+        }
+        
+        $controller = new TarefaController();
+        $response = $controller->store($headers, $requestData);
+        echo json_encode($response);
+    } catch (\Exception $e) {
+        error_log("Erro em POST /kanban/tasks: " . $e->getMessage());
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno ao criar tarefa."]);
+    }
+    exit;
+}
+
+// PUT /api/kanban/tasks/{id} - Atualizar tarefa
+if (preg_match('#^/kanban/tasks/(\d+)$#', $requestPath, $matches) && $requestMethod === 'PUT') {
+    try {
+        $taskId = (int)$matches[1];
+        $headers = getallheaders();
+        $requestData = json_decode(file_get_contents('php://input'), true);
+        
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            http_response_code(400);
+            echo json_encode(["error" => "JSON inválido no corpo da requisição."]);
+            exit;
+        }
+        
+        $controller = new TarefaController();
+        $response = $controller->update($headers, $taskId, $requestData);
+        echo json_encode($response);
+    } catch (\Exception $e) {
+        error_log("Erro em PUT /kanban/tasks/{id}: " . $e->getMessage());
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno ao atualizar tarefa."]);
+    }
+    exit;
+}
+
+// DELETE /api/kanban/tasks/{id} - Deletar tarefa
+if (preg_match('#^/kanban/tasks/(\d+)$#', $requestPath, $matches) && $requestMethod === 'DELETE') {
+    try {
+        $taskId = (int)$matches[1];
+        $headers = getallheaders();
+        $controller = new TarefaController();
+        $response = $controller->destroy($headers, $taskId);
+        echo json_encode($response);
+    } catch (\Exception $e) {
+        error_log("Erro em DELETE /kanban/tasks/{id}: " . $e->getMessage());
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno ao deletar tarefa."]);
+    }
+    exit;
+}
+
+// GET /api/kanban/tasks/{id}/comments - Obter comentários de uma tarefa
+if (preg_match('#^/kanban/tasks/(\d+)/comments$#', $requestPath, $matches) && $requestMethod === 'GET') {
+    try {
+        $taskId = (int)$matches[1];
+        $headers = getallheaders();
+        $controller = new TarefaController();
+        $response = $controller->getComments($headers, $taskId);
+        echo json_encode($response);
+    } catch (\Exception $e) {
+        error_log("Erro em GET /kanban/tasks/{id}/comments: " . $e->getMessage());
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno ao buscar comentários."]);
+    }
+    exit;
+}
+
+// POST /api/kanban/tasks/{id}/comments - Criar comentário
+if (preg_match('#^/kanban/tasks/(\d+)/comments$#', $requestPath, $matches) && $requestMethod === 'POST') {
+    try {
+        $taskId = (int)$matches[1];
+        $headers = getallheaders();
+        $requestData = json_decode(file_get_contents('php://input'), true);
+        
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            http_response_code(400);
+            echo json_encode(["error" => "JSON inválido no corpo da requisição."]);
+            exit;
+        }
+        
+        $controller = new TarefaController();
+        $response = $controller->addComment($headers, $taskId, $requestData);
+        echo json_encode($response);
+    } catch (\Exception $e) {
+        error_log("Erro em POST /kanban/tasks/{id}/comments: " . $e->getMessage());
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno ao criar comentário."]);
+    }
+    exit;
+}
+
+// DELETE /api/kanban/comments/{id} - Deletar comentário
+if (preg_match('#^/kanban/comments/(\d+)$#', $requestPath, $matches) && $requestMethod === 'DELETE') {
+    try {
+        $commentId = (int)$matches[1];
+        $headers = getallheaders();
+        $controller = new TarefaController();
+        $response = $controller->deleteComment($headers, 0, $commentId); // taskId não é usado
+        echo json_encode($response);
+    } catch (\Exception $e) {
+        error_log("Erro em DELETE /kanban/comments/{id}: " . $e->getMessage());
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno ao deletar comentário."]);
+    }
+    exit;
+}
+
+// GET /api/kanban/logs - Obter logs de atividade
+if ($requestPath === '/kanban/logs' && $requestMethod === 'GET') {
+    try {
+        $headers = getallheaders();
+        $queryParams = $_GET;
+        $controller = new TarefaController();
+        $response = $controller->getLogs($headers, $queryParams);
+        echo json_encode($response);
+    } catch (\Exception $e) {
+        error_log("Erro em GET /kanban/logs: " . $e->getMessage());
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno ao buscar logs."]);
     }
     exit;
 }

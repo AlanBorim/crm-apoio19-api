@@ -3,6 +3,8 @@
 namespace Apoio19\Crm\Models;
 
 use Apoio19\Crm\Models\Database;
+use Apoio19\Crm\Models\TarefaResponsavel;
+use Apoio19\Crm\Models\TarefaComentario;
 use \PDO;
 use \PDOException;
 
@@ -22,20 +24,21 @@ class Tarefa
     public bool $concluida;
     public ?string $data_conclusao;
     public int $ordem_na_coluna;
+    public ?string $tags;
     public string $criado_em;
     public string $atualizado_em;
 
-    // Optional: Properties for joined data (like user names)
+    // Propriedades para dados relacionados
     public ?string $responsavel_nome;
     public ?string $criador_nome;
     public ?string $kanban_coluna_nome;
 
     /**
-     * Find tasks based on criteria (e.g., by column, user, status).
+     * Buscar tarefas com filtros.
      *
-     * @param array $filters Associative array of filters (e.g., ["kanban_coluna_id" => 1, "responsavel_id" => 5]).
-     * @param string $orderBy SQL ORDER BY clause (e.g., "ordem_na_coluna ASC").
-     * @return array Array of Tarefa objects.
+     * @param array $filters
+     * @param string $orderBy
+     * @return array
      */
     public static function findBy(array $filters = [], string $orderBy = "ordem_na_coluna ASC"): array
     {
@@ -53,7 +56,6 @@ class Tarefa
 
         if (!empty($filters)) {
             foreach ($filters as $key => $value) {
-                // Basic security: ensure key is a valid column name (whitelist if needed)
                 if (in_array($key, ["id", "kanban_coluna_id", "responsavel_id", "criador_id", "lead_id", "contato_id", "proposta_id", "prioridade", "concluida"])) {
                     $paramName = ":" . $key;
                     $whereClauses[] = "t." . $key . " = " . $paramName;
@@ -62,21 +64,26 @@ class Tarefa
                      $whereClauses[] = "t.titulo LIKE :titulo_like";
                      $params[":titulo_like"] = "%" . $value . "%";
                 }
-                // Add more filters as needed (date ranges, etc.)
             }
             if (!empty($whereClauses)) {
                 $sql .= " WHERE " . implode(" AND ", $whereClauses);
             }
         }
 
-        $sql .= " ORDER BY " . $orderBy; // Be cautious with user-provided $orderBy
+        $sql .= " ORDER BY " . $orderBy;
 
         try {
             $pdo = Database::getInstance();
             $stmt = $pdo->prepare($sql);
             $stmt->execute($params);
-            // Fetch as Tarefa objects, properties like responsavel_nome will be populated if selected
-            return $stmt->fetchAll(PDO::FETCH_CLASS, self::class); 
+            $tarefas = $stmt->fetchAll(PDO::FETCH_CLASS, self::class);
+            
+            // Adicionar responsáveis e comentários para cada tarefa
+            foreach ($tarefas as $tarefa) {
+                $tarefa->loadRelations();
+            }
+            
+            return $tarefas;
         } catch (PDOException $e) {
             error_log("Erro ao buscar tarefas: " . $e->getMessage());
             return [];
@@ -84,7 +91,7 @@ class Tarefa
     }
 
     /**
-     * Find a single task by its ID.
+     * Buscar uma tarefa por ID.
      *
      * @param int $id
      * @return Tarefa|null
@@ -106,7 +113,13 @@ class Tarefa
             $stmt->bindParam(":id", $id, PDO::PARAM_INT);
             $stmt->execute();
             $result = $stmt->fetchObject(self::class);
-            return $result ?: null;
+            
+            if ($result) {
+                $result->loadRelations();
+                return $result;
+            }
+            
+            return null;
         } catch (PDOException $e) {
             error_log("Erro ao buscar tarefa ID {$id}: " . $e->getMessage());
             return null;
@@ -114,37 +127,69 @@ class Tarefa
     }
 
     /**
-     * Create a new task.
+     * Carregar relações (responsáveis e comentários).
+     */
+    public function loadRelations(): void
+    {
+        // Carregar responsáveis
+        $this->responsaveis = TarefaResponsavel::findByTarefa($this->id);
+        
+        // Carregar comentários
+        $this->comentarios = TarefaComentario::findByTaskId($this->id);
+        
+        // Decodificar tags JSON
+        if ($this->tags) {
+            $this->tags_array = json_decode($this->tags, true) ?? [];
+        } else {
+            $this->tags_array = [];
+        }
+    }
+
+    /**
+     * Criar uma nova tarefa.
      *
-     * @param array $data Associative array of task data.
-     * @return int|false The ID of the new task or false on failure.
+     * @param array $data
+     * @return int|false
      */
     public static function create(array $data): int|false
     {
-        $sql = "INSERT INTO tarefas (titulo, descricao, kanban_coluna_id, responsavel_id, criador_id, lead_id, contato_id, proposta_id, data_vencimento, prioridade, ordem_na_coluna) 
-                VALUES (:titulo, :descricao, :kanban_coluna_id, :responsavel_id, :criador_id, :lead_id, :contato_id, :proposta_id, :data_vencimento, :prioridade, :ordem_na_coluna)";
+        $sql = "INSERT INTO tarefas (titulo, descricao, kanban_coluna_id, responsavel_id, criador_id, lead_id, contato_id, proposta_id, data_vencimento, prioridade, ordem_na_coluna, tags) 
+                VALUES (:titulo, :descricao, :kanban_coluna_id, :responsavel_id, :criador_id, :lead_id, :contato_id, :proposta_id, :data_vencimento, :prioridade, :ordem_na_coluna, :tags)";
         
         try {
             $pdo = Database::getInstance();
             $stmt = $pdo->prepare($sql);
 
-            // Set default order (e.g., place at the top/bottom of the column)
             $ordem = $data["ordem_na_coluna"] ?? self::getNextOrderInColumn($data["kanban_coluna_id"] ?? null);
+            
+            // Processar tags
+            $tags = null;
+            if (isset($data["tags"]) && is_array($data["tags"])) {
+                $tags = json_encode($data["tags"]);
+            }
 
             $stmt->bindParam(":titulo", $data["titulo"]);
             $stmt->bindValue(":descricao", $data["descricao"] ?? null);
             $stmt->bindValue(":kanban_coluna_id", $data["kanban_coluna_id"] ?? null, PDO::PARAM_INT);
             $stmt->bindValue(":responsavel_id", $data["responsavel_id"] ?? null, PDO::PARAM_INT);
-            $stmt->bindValue(":criador_id", $data["criador_id"] ?? null, PDO::PARAM_INT); // Should likely be the logged-in user ID
+            $stmt->bindValue(":criador_id", $data["criador_id"] ?? null, PDO::PARAM_INT);
             $stmt->bindValue(":lead_id", $data["lead_id"] ?? null, PDO::PARAM_INT);
             $stmt->bindValue(":contato_id", $data["contato_id"] ?? null, PDO::PARAM_INT);
             $stmt->bindValue(":proposta_id", $data["proposta_id"] ?? null, PDO::PARAM_INT);
             $stmt->bindValue(":data_vencimento", $data["data_vencimento"] ?? null);
             $stmt->bindValue(":prioridade", $data["prioridade"] ?? "media");
             $stmt->bindValue(":ordem_na_coluna", $ordem, PDO::PARAM_INT);
+            $stmt->bindValue(":tags", $tags);
 
             if ($stmt->execute()) {
-                return (int)$pdo->lastInsertId();
+                $tarefaId = (int)$pdo->lastInsertId();
+                
+                // Adicionar responsáveis se fornecidos
+                if (isset($data["responsaveis"]) && is_array($data["responsaveis"])) {
+                    TarefaResponsavel::updateAll($tarefaId, $data["responsaveis"]);
+                }
+                
+                return $tarefaId;
             }
             return false;
         } catch (PDOException $e) {
@@ -154,29 +199,36 @@ class Tarefa
     }
 
     /**
-     * Update an existing task.
+     * Atualizar uma tarefa.
      *
-     * @param int $id Task ID.
-     * @param array $data Associative array of data to update.
-     * @return bool True on success, false on failure.
+     * @param int $id
+     * @param array $data
+     * @return bool
      */
     public static function update(int $id, array $data): bool
     {
         $setClauses = [];
         $params = [":id" => $id];
 
-        // Build SET clauses dynamically based on provided data
-        $allowedFields = ["titulo", "descricao", "kanban_coluna_id", "responsavel_id", "lead_id", "contato_id", "proposta_id", "data_vencimento", "prioridade", "concluida", "data_conclusao", "ordem_na_coluna"];
+        $allowedFields = ["titulo", "descricao", "kanban_coluna_id", "responsavel_id", "lead_id", "contato_id", "proposta_id", "data_vencimento", "prioridade", "concluida", "data_conclusao", "ordem_na_coluna", "tags"];
+        
         foreach ($data as $key => $value) {
             if (in_array($key, $allowedFields)) {
                 $paramName = ":" . $key;
                 $setClauses[] = $key . " = " . $paramName;
-                $params[$paramName] = ($key === "concluida") ? (bool)$value : $value; // Cast boolean
+                
+                if ($key === "concluida") {
+                    $params[$paramName] = (bool)$value;
+                } elseif ($key === "tags" && is_array($value)) {
+                    $params[$paramName] = json_encode($value);
+                } else {
+                    $params[$paramName] = $value;
+                }
             }
         }
 
         if (empty($setClauses)) {
-            return false; // Nothing to update
+            return false;
         }
 
         $sql = "UPDATE tarefas SET " . implode(", ", $setClauses) . ", atualizado_em = NOW() WHERE id = :id";
@@ -184,7 +236,14 @@ class Tarefa
         try {
             $pdo = Database::getInstance();
             $stmt = $pdo->prepare($sql);
-            return $stmt->execute($params);
+            $success = $stmt->execute($params);
+            
+            // Atualizar responsáveis se fornecidos
+            if ($success && isset($data["responsaveis"]) && is_array($data["responsaveis"])) {
+                TarefaResponsavel::updateAll($id, $data["responsaveis"]);
+            }
+            
+            return $success;
         } catch (PDOException $e) {
             error_log("Erro ao atualizar tarefa ID {$id}: " . $e->getMessage());
             return false;
@@ -192,16 +251,13 @@ class Tarefa
     }
 
     /**
-     * Delete a task.
+     * Deletar uma tarefa.
      *
      * @param int $id
-     * @return bool True on success, false on failure.
+     * @return bool
      */
     public static function delete(int $id): bool
     {
-        // Consider deleting associated comments first if needed, though CASCADE should handle it
-        // TarefaComentario::deleteByTaskId($id);
-        
         $sql = "DELETE FROM tarefas WHERE id = :id";
         try {
             $pdo = Database::getInstance();
@@ -215,7 +271,7 @@ class Tarefa
     }
 
     /**
-     * Get the next available order value for a task within a specific column.
+     * Obter próxima ordem na coluna.
      *
      * @param int|null $kanbanColunaId
      * @return int
@@ -239,21 +295,21 @@ class Tarefa
             return ($maxOrder === false || $maxOrder === null) ? 0 : (int)$maxOrder + 1;
         } catch (PDOException $e) {
             error_log("Erro ao buscar próxima ordem na coluna: " . $e->getMessage());
-            return 0; // Default to 0 on error
+            return 0;
         }
     }
     
     /**
-     * Update the order of multiple tasks, typically after a drag-and-drop operation.
+     * Atualizar ordem das tarefas.
      *
-     * @param array $taskOrder An array where keys are task IDs and values are their new order index (0-based).
-     * @param int $kanbanColunaId The ID of the column these tasks belong to.
-     * @return bool True if all updates were successful, false otherwise.
+     * @param array $taskOrder
+     * @param int $kanbanColunaId
+     * @return bool
      */
     public static function updateTaskOrder(array $taskOrder, int $kanbanColunaId): bool
     {
         if (empty($taskOrder)) {
-            return true; // Nothing to do
+            return true;
         }
 
         $sql = "UPDATE tarefas SET ordem_na_coluna = :ordem, kanban_coluna_id = :coluna_id, atualizado_em = NOW() WHERE id = :id";
