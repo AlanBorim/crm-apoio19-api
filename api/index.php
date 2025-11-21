@@ -1,7 +1,8 @@
 <?php
-ini_set('display_errors', 1);
-ini_set('display_startup_errors', 1);
-error_reporting(E_ALL);
+
+// ini_set('display_errors', 1);
+// ini_set('display_startup_errors', 1);
+// error_reporting(E_ALL);
 // Define o cabeçalho de resposta como JSON
 header("Content-Type: application/json");
 // Define o diretório base da aplicação
@@ -17,6 +18,8 @@ use Apoio19\Crm\Controllers\HistoryController;
 use Apoio19\Crm\Controllers\UserController;
 use Apoio19\Crm\Controllers\KanbanController;
 use Apoio19\Crm\Controllers\TarefaController;
+use Apoio19\Crm\Controllers\WhatsappCampaignController;
+use Apoio19\Crm\Controllers\WhatsappTemplateController;
 
 // --- Lógica de Extração de Caminho Corrigida ---
 $requestUri = $_SERVER['REQUEST_URI']; // ex: /api/login?param=1
@@ -1319,6 +1322,196 @@ if ($requestPath === '/kanban/logs' && $requestMethod === 'GET') {
         error_log("Erro em GET /kanban/logs: " . $e->getMessage());
         http_response_code(500);
         echo json_encode(["error" => "Erro interno ao buscar logs."]);
+    }
+    exit;
+}
+
+// ============================================================================
+// ROTAS DO WHATSAPP
+// ============================================================================
+
+// Campanhas WhatsApp - Listar todas
+if ($requestPath === '/whatsapp/campaigns' && $requestMethod === 'GET') {
+    try {
+        $headers = getallheaders();
+        $controller = new WhatsappCampaignController();
+        $response = $controller->index($headers);
+        echo json_encode($response);
+    } catch (\Exception $e) {
+        http_response_code(500);
+        echo json_encode(["error" => "Erro ao listar campanhas"]);
+    }
+    exit;
+}
+
+// Campanhas WhatsApp - Criar nova
+if ($requestPath === '/whatsapp/campaigns' && $requestMethod === 'POST') {
+    try {
+        $headers = getallheaders();
+        $input = json_decode(file_get_contents('php://input'), true);
+        $controller = new WhatsappCampaignController();
+        $response = $controller->store($headers, $input);
+        echo json_encode($response);
+    } catch (\Exception $e) {
+        http_response_code(500);
+        echo json_encode(["error" => "Erro ao criar campanha"]);
+    }
+    exit;
+}
+
+// Campanhas WhatsApp - Buscar por ID
+if (preg_match('#^/whatsapp/campaigns/(\d+)$#', $requestPath, $matches) && $requestMethod === 'GET') {
+    try {
+        $headers = getallheaders();
+        $controller = new WhatsappCampaignController();
+        $response = $controller->show($headers, (int)$matches[1]);
+        echo json_encode($response);
+    } catch (\Exception $e) {
+        http_response_code(500);
+        echo json_encode(["error" => "Erro ao buscar campanha"]);
+    }
+    exit;
+}
+
+// Campanhas WhatsApp - Atualizar
+if (preg_match('#^/whatsapp/campaigns/(\d+)$#', $requestPath, $matches) && $requestMethod === 'PUT') {
+    try {
+        $headers = getallheaders();
+        $input = json_decode(file_get_contents('php://input'), true);
+        $controller = new WhatsappCampaignController();
+        $response = $controller->update($headers, (int)$matches[1], $input);
+        echo json_encode($response);
+    } catch (\Exception $e) {
+        http_response_code(500);
+        echo json_encode(["error" => "Erro ao atualizar campanha"]);
+    }
+    exit;
+}
+
+// Campanhas WhatsApp - Iniciar
+if (preg_match('#^/whatsapp/campaigns/(\d+)/start$#', $requestPath, $matches) && $requestMethod === 'POST') {
+    try {
+        $headers = getallheaders();
+        $controller = new WhatsappCampaignController();
+        $response = $controller->start($headers, (int)$matches[1]);
+        echo json_encode($response);
+    } catch (\Exception $e) {
+        http_response_code(500);
+        echo json_encode(["error" => "Erro ao iniciar campanha"]);
+    }
+    exit;
+}
+
+// Campanhas WhatsApp - Pausar
+if (preg_match('#^/whatsapp/campaigns/(\d+)/pause$#', $requestPath, $matches) && $requestMethod === 'POST') {
+    try {
+        $headers = getallheaders();
+        $controller = new WhatsappCampaignController();
+        $response = $controller->pause($headers, (int)$matches[1]);
+        echo json_encode($response);
+    } catch (\Exception $e) {
+        http_response_code(500);
+        echo json_encode(["error" => "Erro ao pausar campanha"]);
+    }
+    exit;
+}
+
+// Campanhas WhatsApp - Cancelar
+if (preg_match('#^/whatsapp/campaigns/(\d+)/cancel$#', $requestPath, $matches) && $requestMethod === 'POST') {
+    try {
+        $headers = getallheaders();
+        $controller = new WhatsappCampaignController();
+        $response = $controller->cancel($headers, (int)$matches[1]);
+        echo json_encode($response);
+    } catch (\Exception $e) {
+        http_response_code(500);
+        echo json_encode(["error" => "Erro ao cancelar campanha"]);
+    }
+    exit;
+}
+
+// Campanhas WhatsApp - Deletar
+if (preg_match('#^/whatsapp/campaigns/(\d+)$#', $requestPath, $matches) && $requestMethod === 'DELETE') {
+    try {
+        $headers = getallheaders();
+        $controller = new WhatsappCampaignController();
+        $response = $controller->delete($headers, (int)$matches[1]);
+        echo json_encode($response);
+    } catch (\Exception $e) {
+        http_response_code(500);
+        echo json_encode(["error" => "Erro ao deletar campanha"]);
+    }
+    exit;
+}
+
+// Templates WhatsApp - Listar todos
+if ($requestPath === '/whatsapp/templates' && $requestMethod === 'GET') {
+    try {
+        $headers = getallheaders();
+        $controller = new WhatsappTemplateController();
+        $response = $controller->index($headers);
+        echo json_encode($response);
+    } catch (\Exception $e) {
+        http_response_code(500);
+        echo json_encode(["error" => "Erro ao listar templates"]);
+    }
+    exit;
+}
+
+// Templates WhatsApp - Criar novo
+if ($requestPath === '/whatsapp/templates' && $requestMethod === 'POST') {
+    try {
+        $headers = getallheaders();
+        $input = json_decode(file_get_contents('php://input'), true);
+        $controller = new WhatsappTemplateController();
+        $response = $controller->store($headers, $input);
+        echo json_encode($response);
+    } catch (\Exception $e) {
+        http_response_code(500);
+        echo json_encode(["error" => "Erro ao criar template"]);
+    }
+    exit;
+}
+
+// Templates WhatsApp - Buscar por ID
+if (preg_match('#^/whatsapp/templates/(\d+)$#', $requestPath, $matches) && $requestMethod === 'GET') {
+    try {
+        $headers = getallheaders();
+        $controller = new WhatsappTemplateController();
+        $response = $controller->show($headers, (int)$matches[1]);
+        echo json_encode($response);
+    } catch (\Exception $e) {
+        http_response_code(500);
+        echo json_encode(["error" => "Erro ao buscar template"]);
+    }
+    exit;
+}
+
+// Templates WhatsApp - Atualizar
+if (preg_match('#^/whatsapp/templates/(\d+)$#', $requestPath, $matches) && $requestMethod === 'PUT') {
+    try {
+        $headers = getallheaders();
+        $input = json_decode(file_get_contents('php://input'), true);
+        $controller = new WhatsappTemplateController();
+        $response = $controller->update($headers, (int)$matches[1], $input);
+        echo json_encode($response);
+    } catch (\Exception $e) {
+        http_response_code(500);
+        echo json_encode(["error" => "Erro ao atualizar template"]);
+    }
+    exit;
+}
+
+// Templates WhatsApp - Deletar
+if (preg_match('#^/whatsapp/templates/(\d+)$#', $requestPath, $matches) && $requestMethod === 'DELETE') {
+    try {
+        $headers = getallheaders();
+        $controller = new WhatsappTemplateController();
+        $response = $controller->delete($headers, (int)$matches[1]);
+        echo json_encode($response);
+    } catch (\Exception $e) {
+        http_response_code(500);
+        echo json_encode(["error" => "Erro ao deletar template"]);
     }
     exit;
 }

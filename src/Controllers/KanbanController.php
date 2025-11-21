@@ -48,16 +48,42 @@ class KanbanController
                 
                 $tasks = Tarefa::findBy($columnFilters, "ordem_na_coluna ASC");
                 
+                // Formatar tarefas para o formato esperado pelo frontend
+                $formattedTasks = [];
+                foreach ($tasks as $task) {
+                    $formattedTasks[] = [
+                        "id" => (string)$task->id,
+                        "title" => $task->titulo,
+                        "description" => $task->descricao ?? '',
+                        "priority" => $task->prioridade ?? 'media',
+                        "dueDate" => $task->data_vencimento ?? null,
+                        "assignedTo" => $task->responsavel_id ? [
+                            [
+                                "id" => (string)$task->responsavel_id,
+                                "nome" => $task->responsavel_nome ?? 'Não atribuído'
+                            ]
+                        ] : [],
+                        "tags" => $task->tags ? json_decode($task->tags, true) : [],
+                        "completed" => (bool)$task->concluida,
+                        "createdAt" => $task->criado_em,
+                        "updatedAt" => $task->atualizado_em,
+                        "lead_id" => $task->lead_id,
+                        "contato_id" => $task->contato_id,
+                        "proposta_id" => $task->proposta_id
+                    ];
+                }
+                
                 $boardData[] = [
-                    "id" => $coluna->id,
-                    "nome" => $coluna->nome,
-                    "ordem" => $coluna->ordem,
-                    "tarefas" => $tasks
+                    "id" => (string)$coluna->id,
+                    "title" => $coluna->nome,
+                    "order" => $coluna->ordem,
+                    "color" => $coluna->cor ?? '#3B82F6',
+                    "cards" => $formattedTasks
                 ];
             }
 
             http_response_code(200);
-            return ["data" => $boardData];
+            return ["success" => true, "data" => $boardData];
 
         } catch (\Exception $e) {
             error_log("Erro ao buscar quadro Kanban: " . $e->getMessage());
