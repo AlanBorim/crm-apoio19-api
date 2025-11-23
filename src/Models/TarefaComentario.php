@@ -27,9 +27,9 @@ class TarefaComentario
      */
     public static function findByTaskId(int $tarefaId): array
     {
-        $sql = "SELECT tc.*, u.nome as usuario_nome, u.email as usuario_email
+        $sql = "SELECT tc.*, u.name as usuario_nome, u.email as usuario_email
                 FROM tarefa_comentarios tc
-                LEFT JOIN usuarios u ON tc.usuario_id = u.id
+                LEFT JOIN users u ON tc.usuario_id = u.id
                 WHERE tc.tarefa_id = :tarefa_id
                 ORDER BY tc.criado_em ASC";
         
@@ -53,9 +53,9 @@ class TarefaComentario
      */
     public static function findById(int $id): ?TarefaComentario
     {
-        $sql = "SELECT tc.*, u.nome as usuario_nome, u.email as usuario_email
+        $sql = "SELECT tc.*, u.name as usuario_nome, u.email as usuario_email
                 FROM tarefa_comentarios tc
-                LEFT JOIN usuarios u ON tc.usuario_id = u.id
+                LEFT JOIN users u ON tc.usuario_id = u.id
                 WHERE tc.id = :id";
         
         try {

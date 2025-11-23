@@ -53,6 +53,37 @@ class TarefaController
         if ($taskId) {
             $newTask = Tarefa::findById($taskId); // Fetch the created task with details
             
+            if (!$newTask) {
+                // DEBUG: Try the FULL query from findById to see why it fails
+                $debugInfo = "";
+                try {
+                    $pdo = \Apoio19\Crm\Models\Database::getInstance();
+                    $sql = "SELECT t.*, 
+                           kc.nome as kanban_coluna_nome, 
+                           u_resp.name as responsavel_nome, 
+                           u_criador.name as criador_nome
+                    FROM tarefas t
+                    LEFT JOIN kanban_colunas kc ON t.kanban_coluna_id = kc.id
+                    LEFT JOIN users u_resp ON t.responsavel_id = u_resp.id
+                    LEFT JOIN users u_criador ON t.criador_id = u_criador.id
+                    WHERE t.id = " . (int)$taskId;
+                    
+                    $stmt = $pdo->query($sql);
+                    $fullData = $stmt->fetch(\PDO::FETCH_ASSOC);
+                    if ($fullData) {
+                         $debugInfo = "Full query SUCCEEDED. Data: " . json_encode($fullData);
+                    } else {
+                         $debugInfo = "Full query returned EMPTY for ID " . $taskId;
+                    }
+                } catch (\Exception $e) {
+                    $debugInfo = "Full query FAILED: " . $e->getMessage();
+                }
+
+                error_log("Erro: Tarefa criada com ID {$taskId} mas não encontrada pelo findById. Debug: " . $debugInfo);
+                http_response_code(500);
+                return ["error" => "Tarefa criada com ID {$taskId}, mas erro ao recuperar detalhes. " . $debugInfo];
+            }
+
             // --- Notification --- 
             if ($newTask && $newTask->responsavel_id && $newTask->responsavel_id !== $userData->userId) { // Notify assignee if different from creator
                 $this->notificationService->createNotification(
@@ -71,6 +102,7 @@ class TarefaController
             http_response_code(201);
             return ["message" => "Tarefa criada com sucesso.", "tarefa" => $newTask];
         } else {
+            error_log("Erro: Falha ao criar tarefa no banco de dados.");
             http_response_code(500);
             return ["error" => "Falha ao criar tarefa."];
         }
@@ -270,6 +302,35 @@ class TarefaController
             http_response_code(500);
             return ["error" => "Falha ao adicionar comentário."];
         }
+    }
+
+    /**
+     * Get comments for a task.
+     *
+     * @param array $headers Request headers.
+     * @param int $taskId Task ID.
+     * @return array JSON response.
+     */
+    public function getComments(array $headers, int $taskId): array
+    {
+        $userData = $this->authMiddleware->handle($headers);
+        if (!$userData) {
+            http_response_code(401);
+            return ["error" => "Autenticação do CRM necessária."];
+        }
+
+        // Check if task exists
+        $tarefa = Tarefa::findById($taskId);
+        if (!$tarefa) {
+            http_response_code(404);
+            return ["error" => "Tarefa não encontrada."];
+        }
+
+        // Fetch comments for the task
+        $comentarios = TarefaComentario::findByTaskId($taskId);
+
+        http_response_code(200);
+        return ["comentarios" => $comentarios];
     }
 
     /**

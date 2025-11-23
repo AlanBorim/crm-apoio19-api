@@ -30,7 +30,7 @@ class WhatsappController
      */
     public function sendMessage(array $headers, array $requestData): array
     {
-        $userData = $this->authMiddleware->handle($headers, ["Comercial", "Admin"]); // Or specific roles allowed to send
+        $userData = $this->authMiddleware->handle($headers, ["comercial", "admin"]); // Or specific roles allowed to send
         if (!$userData) {
             http_response_code(401);
             return ["error" => "Autenticação do CRM necessária."];

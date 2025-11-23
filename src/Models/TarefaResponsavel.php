@@ -25,11 +25,11 @@ class TarefaResponsavel
      */
     public static function findByTarefa(int $tarefaId): array
     {
-        $sql = "SELECT u.id, u.nome, u.email, u.funcao as role
+        $sql = "SELECT u.id, u.name as nome, u.email, u.role as role
                 FROM tarefa_responsaveis tr
-                INNER JOIN usuarios u ON tr.usuario_id = u.id
+                INNER JOIN users u ON tr.usuario_id = u.id
                 WHERE tr.tarefa_id = :tarefa_id
-                ORDER BY u.nome ASC";
+                ORDER BY u.name ASC";
         
         try {
             $pdo = Database::getInstance();

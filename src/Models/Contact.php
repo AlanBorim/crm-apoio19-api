@@ -254,9 +254,9 @@ class Contact
     public static function getInteractionHistory(int $contactId): array
     {
         $history = [];
-        $sql = "SELECT hi.*, u.nome as usuario_nome 
+        $sql = "SELECT hi.*, u.name as usuario_nome 
                 FROM historico_interacoes hi
-                LEFT JOIN usuarios u ON hi.usuario_id = u.id
+                LEFT JOIN users u ON hi.usuario_id = u.id
                 WHERE hi.contato_id = :contato_id 
                 ORDER BY hi.data_interacao DESC";
         try {

@@ -244,7 +244,7 @@ class User
         try {
             $pdo = Database::getInstance();
 
-            $sql = "SELECT COUNT(*) as total FROM users WHERE funcao = 'Admin' AND ativo = 1 AND deleted_at IS NULL";
+            $sql = "SELECT COUNT(*) as total FROM users WHERE role = 'Admin' AND ativo = 1 AND deleted_at IS NULL";
             $stmt = $pdo->prepare($sql);
             $stmt->execute();
 
@@ -285,7 +285,7 @@ class User
             $inactive = $stmt->fetch(PDO::FETCH_OBJ)->inactive;
 
             // Usuários por função
-            $sql = "SELECT funcao, COUNT(*) as count FROM users WHERE deleted_at IS NULL GROUP BY funcao";
+            $sql = "SELECT role as funcao, COUNT(*) as count FROM users WHERE deleted_at IS NULL GROUP BY role";
             $stmt = $pdo->prepare($sql);
             $stmt->execute();
             $roleStats = $stmt->fetchAll(PDO::FETCH_OBJ);
@@ -390,14 +390,14 @@ class User
         try {
             $pdo = Database::getInstance();
 
-            $conditions = ["funcao = :role", "deleted_at IS NULL"];
+            $conditions = ["role = :role", "deleted_at IS NULL"];
             $params = [':role' => $role];
 
             if ($activeOnly) {
                 $conditions[] = "ativo = 1";
             }
 
-            $sql = "SELECT * FROM users WHERE " . implode(" AND ", $conditions) . " ORDER BY nome";
+            $sql = "SELECT * FROM users WHERE " . implode(" AND ", $conditions) . " ORDER BY name";
             $stmt = $pdo->prepare($sql);
             $stmt->execute($params);
 
@@ -418,7 +418,7 @@ class User
         try {
             $pdo = Database::getInstance();
 
-            $sql = "SELECT * FROM users WHERE ativo = 1 AND deleted_at IS NULL ORDER BY nome";
+            $sql = "SELECT * FROM users WHERE ativo = 1 AND deleted_at IS NULL ORDER BY name";
             $stmt = $pdo->prepare($sql);
             $stmt->execute();
 
@@ -510,7 +510,7 @@ class User
                 'whatsapp.write',
                 'relatorios.read',
                 'relatorios.export',
-                'usuarios.read'
+                'users.read'
             ],
             'Vendedor' => [
                 'leads.read',
@@ -574,7 +574,7 @@ class User
                 $conditions[] = "ativo = '1'";
             }
 
-            $sql = "SELECT id, nome, email, funcao FROM users WHERE " . implode(" AND ", $conditions) . " ORDER BY nome";
+            $sql = "SELECT id, name as nome, email, role as funcao FROM users WHERE " . implode(" AND ", $conditions) . " ORDER BY name";
             $stmt = $pdo->prepare($sql);
             $stmt->execute($params);
 

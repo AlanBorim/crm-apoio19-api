@@ -1191,7 +1191,30 @@ if (preg_match('#^/kanban/tasks/(\d+)$#', $requestPath, $matches) && $requestMet
     exit;
 }
 
-// POST /api/kanban/tasks - Criar tarefa
+// POST /api/kanban - Criar tarefa (Endpoint simplificado solicitado)
+if ($requestPath === '/kanban' && $requestMethod === 'POST') {
+    try {
+        $headers = getallheaders();
+        $requestData = json_decode(file_get_contents('php://input'), true);
+        
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            http_response_code(400);
+            echo json_encode(["error" => "JSON inválido no corpo da requisição."]);
+            exit;
+        }
+        
+        $controller = new TarefaController();
+        $response = $controller->store($headers, $requestData);
+        echo json_encode($response);
+    } catch (\Exception $e) {
+        error_log("Erro em POST /kanban: " . $e->getMessage());
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno ao criar tarefa."]);
+    }
+    exit;
+}
+
+// POST /api/kanban/tasks - Criar tarefa (Mantendo compatibilidade ou removendo se necessário)
 if ($requestPath === '/kanban/tasks' && $requestMethod === 'POST') {
     try {
         $headers = getallheaders();

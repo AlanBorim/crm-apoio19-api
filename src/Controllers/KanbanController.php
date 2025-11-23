@@ -48,37 +48,14 @@ class KanbanController
                 
                 $tasks = Tarefa::findBy($columnFilters, "ordem_na_coluna ASC");
                 
-                // Formatar tarefas para o formato esperado pelo frontend
-                $formattedTasks = [];
-                foreach ($tasks as $task) {
-                    $formattedTasks[] = [
-                        "id" => (string)$task->id,
-                        "title" => $task->titulo,
-                        "description" => $task->descricao ?? '',
-                        "priority" => $task->prioridade ?? 'media',
-                        "dueDate" => $task->data_vencimento ?? null,
-                        "assignedTo" => $task->responsavel_id ? [
-                            [
-                                "id" => (string)$task->responsavel_id,
-                                "nome" => $task->responsavel_nome ?? 'Não atribuído'
-                            ]
-                        ] : [],
-                        "tags" => $task->tags ? json_decode($task->tags, true) : [],
-                        "completed" => (bool)$task->concluida,
-                        "createdAt" => $task->criado_em,
-                        "updatedAt" => $task->atualizado_em,
-                        "lead_id" => $task->lead_id,
-                        "contato_id" => $task->contato_id,
-                        "proposta_id" => $task->proposta_id
-                    ];
-                }
-                
+                // Return raw column data matching database schema
                 $boardData[] = [
                     "id" => (string)$coluna->id,
-                    "title" => $coluna->nome,
-                    "order" => $coluna->ordem,
-                    "color" => $coluna->cor ?? '#3B82F6',
-                    "cards" => $formattedTasks
+                    "nome" => $coluna->nome,
+                    "ordem" => $coluna->ordem,
+                    "cor" => $coluna->cor,
+                    "limite_cards" => $coluna->limite_cards,
+                    "tarefas" => $tasks // Frontend expects 'tarefas' with raw DB columns
                 ];
             }
 
@@ -96,26 +73,28 @@ class KanbanController
      * Create a new Kanban column.
      *
      * @param array $headers Request headers.
-     * @param array $requestData Expected keys: nome, ordem.
+     * @param array $requestData Expected keys: nome, ordem, cor (optional), limite_cards (optional).
      * @return array JSON response.
      */
     public function createColumn(array $headers, array $requestData): array
     {
-        $userData = $this->authMiddleware->handle($headers, ["Admin"]); // Only Admins can create columns?
+        $userData = $this->authMiddleware->handle($headers, ["admin", "gerente"]); // Admins and managers can create columns
         if (!$userData) {
             http_response_code(403);
-            return ["error" => "Acesso negado. Permissão de Administrador necessária."];
+            return ["error" => "Acesso negado. Permissão de Administrador ou Gerente necessária."];
         }
 
         $nome = $requestData["nome"] ?? null;
         $ordem = isset($requestData["ordem"]) ? (int)$requestData["ordem"] : 0;
+        $cor = $requestData["cor"] ?? null;
+        $limite_cards = isset($requestData["limite_cards"]) ? (int)$requestData["limite_cards"] : null;
 
         if (!$nome) {
             http_response_code(400);
             return ["error" => "O nome da coluna é obrigatório."];
         }
 
-        $columnId = KanbanColuna::create($nome, $ordem);
+        $columnId = KanbanColuna::create($nome, $ordem, $cor, $limite_cards);
 
         if ($columnId) {
             http_response_code(201);
@@ -127,6 +106,7 @@ class KanbanController
         }
     }
 
+
     /**
      * Update a Kanban column.
      *
@@ -137,7 +117,7 @@ class KanbanController
      */
     public function updateColumn(array $headers, int $columnId, array $requestData): array
     {
-         $userData = $this->authMiddleware->handle($headers, ["Admin"]); // Only Admins?
+         $userData = $this->authMiddleware->handle($headers, ["admin"]); // Only Admins?
         if (!$userData) {
             http_response_code(403);
             return ["error" => "Acesso negado. Permissão de Administrador necessária."];
@@ -180,7 +160,7 @@ class KanbanController
      */
     public function deleteColumn(array $headers, int $columnId): array
     {
-        $userData = $this->authMiddleware->handle($headers, ["Admin"]); // Only Admins?
+        $userData = $this->authMiddleware->handle($headers, ["admin"]); // Only Admins?
         if (!$userData) {
             http_response_code(403);
             return ["error" => "Acesso negado. Permissão de Administrador necessária."];

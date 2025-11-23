@@ -68,12 +68,12 @@ class Proposal
     public static function findAll(array $filters = [], int $limit = 25, int $offset = 0): array
     {
         $proposals = [];
-        $sql = "SELECT p.*, l.nome as lead_nome, c.nome as contato_nome, e.nome as empresa_nome, u.nome as responsavel_nome 
+        $sql = "SELECT p.*, l.nome as lead_nome, c.nome as contato_nome, e.nome as empresa_nome, u.name as responsavel_nome 
                FROM propostas p
                LEFT JOIN leads l ON p.lead_id = l.id
                LEFT JOIN contatos c ON p.contato_id = c.id
                LEFT JOIN empresas e ON p.empresa_id = e.id
-               LEFT JOIN usuarios u ON p.responsavel_id = u.id";
+               LEFT JOIN users u ON p.responsavel_id = u.id";
         $whereClauses = [];
         $params = [];
 
@@ -381,9 +381,9 @@ class Proposal
     public static function getHistory(int $proposalId): array
     {
         $history = [];
-        $sql = "SELECT hp.*, u.nome as usuario_nome 
+        $sql = "SELECT hp.*, u.name as usuario_nome 
                 FROM historico_propostas hp
-                LEFT JOIN usuarios u ON hp.usuario_id = u.id
+                LEFT JOIN users u ON hp.usuario_id = u.id
                 WHERE hp.proposta_id = :proposal_id 
                 ORDER BY hp.data_acao DESC";
         try {

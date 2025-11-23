@@ -98,12 +98,12 @@ class AtividadeLog
         $params[":offset"] = $offset;
 
         $sql = "SELECT al.*, 
-                       u.nome as usuario_nome, 
+                       u.name as usuario_nome, 
                        u.email as usuario_email,
                        t.titulo as tarefa_titulo,
                        kc.nome as coluna_nome
                 FROM atividade_logs al
-                LEFT JOIN usuarios u ON al.usuario_id = u.id
+                LEFT JOIN users u ON al.usuario_id = u.id
                 LEFT JOIN tarefas t ON al.tarefa_id = t.id
                 LEFT JOIN kanban_colunas kc ON al.coluna_id = kc.id
                 {$whereClause}

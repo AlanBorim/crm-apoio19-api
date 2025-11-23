@@ -11,6 +11,8 @@ class KanbanColuna
     public int $id;
     public string $nome;
     public int $ordem;
+    public ?string $cor = null;
+    public ?int $limite_cards = null;
     public string $criado_em;
     public string $atualizado_em;
 
@@ -59,16 +61,20 @@ class KanbanColuna
      *
      * @param string $nome
      * @param int $ordem
+     * @param string|null $cor
+     * @param int|null $limite_cards
      * @return int|false The ID of the new column or false on failure.
      */
-    public static function create(string $nome, int $ordem): int|false
+    public static function create(string $nome, int $ordem, ?string $cor = null, ?int $limite_cards = null): int|false
     {
-        $sql = "INSERT INTO kanban_colunas (nome, ordem) VALUES (:nome, :ordem)";
+        $sql = "INSERT INTO kanban_colunas (nome, ordem, cor, limite_cards) VALUES (:nome, :ordem, :cor, :limite_cards)";
         try {
             $pdo = Database::getInstance();
             $stmt = $pdo->prepare($sql);
             $stmt->bindParam(":nome", $nome);
             $stmt->bindParam(":ordem", $ordem, PDO::PARAM_INT);
+            $stmt->bindParam(":cor", $cor);
+            $stmt->bindParam(":limite_cards", $limite_cards, PDO::PARAM_INT);
             if ($stmt->execute()) {
                 return (int)$pdo->lastInsertId();
             }

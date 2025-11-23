@@ -10,28 +10,28 @@ use \PDOException;
 
 class Tarefa
 {
-    public int $id;
-    public string $titulo;
-    public ?string $descricao;
-    public ?int $kanban_coluna_id;
-    public ?int $responsavel_id;
-    public ?int $criador_id;
-    public ?int $lead_id;
-    public ?int $contato_id;
-    public ?int $proposta_id;
-    public ?string $data_vencimento;
-    public string $prioridade;
-    public bool $concluida;
-    public ?string $data_conclusao;
-    public int $ordem_na_coluna;
-    public ?string $tags;
-    public string $criado_em;
-    public string $atualizado_em;
+    public $id;
+    public $titulo;
+    public $descricao;
+    public $kanban_coluna_id;
+    public $responsavel_id;
+    public $criador_id;
+    public $lead_id;
+    public $contato_id;
+    public $proposta_id;
+    public $data_vencimento;
+    public $prioridade;
+    public $concluida;
+    public $data_conclusao;
+    public $ordem_na_coluna;
+    public $tags;
+    public $criado_em;
+    public $atualizado_em;
 
     // Propriedades para dados relacionados
-    public ?string $responsavel_nome;
-    public ?string $criador_nome;
-    public ?string $kanban_coluna_nome;
+    public $responsavel_nome;
+    public $criador_nome;
+    public $kanban_coluna_nome;
 
     /**
      * Buscar tarefas com filtros.
@@ -40,16 +40,16 @@ class Tarefa
      * @param string $orderBy
      * @return array
      */
-    public static function findBy(array $filters = [], string $orderBy = "ordem_na_coluna ASC"): array
+    public static function findBy(array $filters = [], string $orderBy = "ordem_na_coluna ASC")
     {
         $sql = "SELECT t.*, 
                        kc.nome as kanban_coluna_nome, 
-                       u_resp.nome as responsavel_nome, 
-                       u_criador.nome as criador_nome
+                       u_resp.name as responsavel_nome, 
+                       u_criador.name as criador_nome
                 FROM tarefas t
                 LEFT JOIN kanban_colunas kc ON t.kanban_coluna_id = kc.id
-                LEFT JOIN usuarios u_resp ON t.responsavel_id = u_resp.id
-                LEFT JOIN usuarios u_criador ON t.criador_id = u_criador.id";
+                LEFT JOIN users u_resp ON t.responsavel_id = u_resp.id
+                LEFT JOIN users u_criador ON t.criador_id = u_criador.id";
         
         $whereClauses = [];
         $params = [];
@@ -96,32 +96,51 @@ class Tarefa
      * @param int $id
      * @return Tarefa|null
      */
-    public static function findById(int $id): ?Tarefa
+    public static function findById(int $id)
     {
+        error_log("DEBUG: findById called for ID: " . $id);
          $sql = "SELECT t.*, 
                        kc.nome as kanban_coluna_nome, 
-                       u_resp.nome as responsavel_nome, 
-                       u_criador.nome as criador_nome
+                       u_resp.name as responsavel_nome, 
+                       u_criador.name as criador_nome
                 FROM tarefas t
                 LEFT JOIN kanban_colunas kc ON t.kanban_coluna_id = kc.id
-                LEFT JOIN usuarios u_resp ON t.responsavel_id = u_resp.id
-                LEFT JOIN usuarios u_criador ON t.criador_id = u_criador.id
+                LEFT JOIN users u_resp ON t.responsavel_id = u_resp.id
+                LEFT JOIN users u_criador ON t.criador_id = u_criador.id
                 WHERE t.id = :id";
         try {
             $pdo = Database::getInstance();
             $stmt = $pdo->prepare($sql);
             $stmt->bindParam(":id", $id, PDO::PARAM_INT);
-            $stmt->execute();
-            $result = $stmt->fetchObject(self::class);
             
-            if ($result) {
-                $result->loadRelations();
-                return $result;
+            error_log("DEBUG: Executing query...");
+            $stmt->execute();
+            
+            error_log("DEBUG: Fetching data...");
+            $data = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+            if ($data) {
+                error_log("DEBUG: Data found. Hydrating...");
+                $tarefa = new self();
+                foreach ($data as $key => $value) {
+                    if (property_exists($tarefa, $key)) {
+                        $tarefa->$key = $value;
+                    }
+                }
+                error_log("DEBUG: Loading relations...");
+                $tarefa->loadRelations();
+                error_log("DEBUG: Returning object.");
+                return $tarefa;
+            } else {
+                error_log("DEBUG: No data found for ID: " . $id);
             }
             
             return null;
         } catch (PDOException $e) {
             error_log("Erro ao buscar tarefa ID {$id}: " . $e->getMessage());
+            return null;
+        } catch (\Exception $e) {
+            error_log("Erro genérico em findById ID {$id}: " . $e->getMessage());
             return null;
         }
     }
@@ -129,7 +148,7 @@ class Tarefa
     /**
      * Carregar relações (responsáveis e comentários).
      */
-    public function loadRelations(): void
+    public function loadRelations()
     {
         // Carregar responsáveis
         $this->responsaveis = TarefaResponsavel::findByTarefa($this->id);
@@ -151,7 +170,7 @@ class Tarefa
      * @param array $data
      * @return int|false
      */
-    public static function create(array $data): int|false
+    public static function create(array $data)
     {
         $sql = "INSERT INTO tarefas (titulo, descricao, kanban_coluna_id, responsavel_id, criador_id, lead_id, contato_id, proposta_id, data_vencimento, prioridade, ordem_na_coluna, tags) 
                 VALUES (:titulo, :descricao, :kanban_coluna_id, :responsavel_id, :criador_id, :lead_id, :contato_id, :proposta_id, :data_vencimento, :prioridade, :ordem_na_coluna, :tags)";
@@ -161,6 +180,11 @@ class Tarefa
             $stmt = $pdo->prepare($sql);
 
             $ordem = $data["ordem_na_coluna"] ?? self::getNextOrderInColumn($data["kanban_coluna_id"] ?? null);
+            
+            // Se responsavel_id não foi enviado, mas responsaveis sim, usar o primeiro como principal
+            if (empty($data["responsavel_id"]) && !empty($data["responsaveis"]) && is_array($data["responsaveis"])) {
+                $data["responsavel_id"] = $data["responsaveis"][0];
+            }
             
             // Processar tags
             $tags = null;

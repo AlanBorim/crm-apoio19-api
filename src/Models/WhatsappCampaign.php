@@ -60,7 +60,7 @@ class WhatsappCampaign
     public function findById(int $id): ?array
     {
         $stmt = $this->db->prepare('
-            SELECT wc.*, u.nome as user_name, wpn.name as phone_name, wpn.phone_number
+            SELECT wc.*, u.name as user_name, wpn.name as phone_name, wpn.phone_number
             FROM whatsapp_campaigns wc
             LEFT JOIN users u ON wc.user_id = u.id
             LEFT JOIN whatsapp_phone_numbers wpn ON wc.phone_number_id = wpn.id
@@ -74,7 +74,7 @@ class WhatsappCampaign
 
     public function getAll(array $filters = []): array
     {
-        $sql = 'SELECT wc.*, u.nome as user_name, wpn.name as phone_name,
+        $sql = 'SELECT wc.*, u.name as user_name, wpn.name as phone_name,
                 (SELECT COUNT(*) FROM whatsapp_campaign_messages WHERE campaign_id = wc.id) as total_messages,
                 (SELECT COUNT(*) FROM whatsapp_campaign_messages WHERE campaign_id = wc.id AND status = "sent") as sent_count,
                 (SELECT COUNT(*) FROM whatsapp_campaign_messages WHERE campaign_id = wc.id AND status = "delivered") as delivered_count,
@@ -154,7 +154,7 @@ class WhatsappCampaign
     public function getAccessList(int $campaignId): array
     {
         $stmt = $this->db->prepare('
-            SELECT u.id, u.nome as name, u.email, wca.created_at as granted_at
+            SELECT u.id, u.name as name, u.email, wca.created_at as granted_at
             FROM whatsapp_campaign_access wca
             JOIN users u ON wca.user_id = u.id
             WHERE wca.campaign_id = ?

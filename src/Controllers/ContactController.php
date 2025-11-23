@@ -69,7 +69,7 @@ class ContactController
      */
     public function store(array $headers, array $requestData): array
     {
-        $userData = $this->authMiddleware->handle($headers, ["Comercial", "Admin"]);
+        $userData = $this->authMiddleware->handle($headers, ["comercial", "admin"]);
         if (!$userData) {
             http_response_code(401); // Or 403
             return ["error" => "Acesso não autorizado ou autenticação necessária."];
@@ -157,7 +157,7 @@ class ContactController
      */
     public function update(array $headers, int $id, array $requestData): array
     {
-        $userData = $this->authMiddleware->handle($headers, ["Comercial", "Admin"]); 
+        $userData = $this->authMiddleware->handle($headers, ["comercial", "admin"]); 
         if (!$userData) {
             http_response_code(401); // Or 403
             return ["error" => "Acesso não autorizado ou autenticação necessária."];
