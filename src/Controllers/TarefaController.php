@@ -4,6 +4,7 @@ namespace Apoio19\Crm\Controllers;
 
 use Apoio19\Crm\Models\Tarefa;
 use Apoio19\Crm\Models\TarefaComentario;
+use Apoio19\Crm\Models\AtividadeLog;
 use Apoio19\Crm\Middleware\AuthMiddleware;
 use Apoio19\Crm\Services\NotificationService; // Import NotificationService
 
@@ -358,6 +359,122 @@ class TarefaController
         } else {
             http_response_code(500);
             return ["error" => "Falha ao excluir comentário."];
+        }
+    }
+
+    /**
+     * Get activity logs with filters and pagination.
+     *
+     * @param array $headers Request headers.
+     * @param array $queryParams Query parameters for filtering.
+     * @return array JSON response.
+     */
+    public function getLogs(array $headers, array $queryParams = []): array
+    {
+        $userData = $this->authMiddleware->handle($headers);
+        if (!$userData) {
+            http_response_code(401);
+            return ["error" => "Autenticação do CRM necessária."];
+        }
+
+        // Parse filters
+        $filters = [];
+        if (isset($queryParams['tarefa_id'])) {
+            $filters['tarefa_id'] = (int)$queryParams['tarefa_id'];
+        }
+        if (isset($queryParams['coluna_id'])) {
+            $filters['coluna_id'] = (int)$queryParams['coluna_id'];
+        }
+        if (isset($queryParams['usuario_id'])) {
+            $filters['usuario_id'] = (int)$queryParams['usuario_id'];
+        }
+        if (isset($queryParams['acao'])) {
+            $filters['acao'] = $queryParams['acao'];
+        }
+
+        // Parse pagination
+        $page = isset($queryParams['page']) ? (int)$queryParams['page'] : 1;
+        $limit = isset($queryParams['limit']) ? (int)$queryParams['limit'] : 50;
+        $limit = min($limit, 100); // Max 100 per page
+
+        try {
+            $logs = AtividadeLog::findAll($filters, $page, $limit);
+            $total = AtividadeLog::count($filters);
+
+            http_response_code(200);
+            return [
+                "success" => true,
+                "data" => [
+                    "data" => $logs,
+                    "pagination" => [
+                        "page" => $page,
+                        "limit" => $limit,
+                        "total" => $total,
+                        "totalPages" => ceil($total / $limit)
+                    ]
+                ]
+            ];
+        } catch (\Exception $e) {
+            error_log("Erro ao buscar logs: " . $e->getMessage());
+            http_response_code(500);
+            return ["error" => "Erro ao buscar logs de atividade."];
+        }
+    }
+
+    /**
+     * Create a new activity log.
+     *
+     * @param array $headers Request headers.
+     * @param array $requestData Log data.
+     * @return array JSON response.
+     */
+    public function createLog(array $headers, array $requestData): array
+    {
+        $userData = $this->authMiddleware->handle($headers);
+        if (!$userData) {
+            http_response_code(401);
+            return ["error" => "Autenticação do CRM necessária."];
+        }
+
+        // Validation
+        if (empty($requestData['acao'])) {
+            http_response_code(400);
+            return ["error" => "O campo 'acao' é obrigatório."];
+        }
+        if (empty($requestData['descricao'])) {
+            http_response_code(400);
+            return ["error" => "O campo 'descricao' é obrigatório."];
+        }
+
+        // Prepare data for database
+        $logData = [
+            'tarefa_id' => isset($requestData['tarefa_id']) ? (int)$requestData['tarefa_id'] : null,
+            'coluna_id' => isset($requestData['coluna_id']) ? (int)$requestData['coluna_id'] : null,
+            'usuario_id' => $userData->userId,
+            'acao' => $requestData['acao'],
+            'descricao' => $requestData['descricao'],
+            'valor_antigo' => $requestData['valor_antigo'] ?? null,
+            'valor_novo' => $requestData['valor_novo'] ?? null
+        ];
+
+        try {
+            $logId = AtividadeLog::create($logData);
+            
+            if ($logId) {
+                http_response_code(201);
+                return [
+                    "success" => true,
+                    "message" => "Log de atividade criado com sucesso.",
+                    "log_id" => $logId
+                ];
+            } else {
+                http_response_code(500);
+                return ["error" => "Falha ao criar log de atividade."];
+            }
+        } catch (\Exception $e) {
+            error_log("Erro ao criar log: " . $e->getMessage());
+            http_response_code(500);
+            return ["error" => "Erro ao criar log de atividade."];
         }
     }
 }

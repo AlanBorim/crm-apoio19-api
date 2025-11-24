@@ -3,42 +3,36 @@
 namespace Apoio19\Crm\Controllers;
 
 use Apoio19\Crm\Models\Proposal;
-use Apoio19\Crm\Models\ProposalItem;
-use Apoio19\Crm\Models\HistoricoPropostas; // Assuming this model exists for logging
+use Apoio19\Crm\Models\Lead;
+use Apoio19\Crm\Models\User;
 use Apoio19\Crm\Services\PdfService;
+use Apoio19\Crm\Services\EmailService;
 use Apoio19\Crm\Middleware\AuthMiddleware;
-use Apoio19\Crm\Services\NotificationService; // Import NotificationService
 
-// Placeholder for Request/Response handling
 class ProposalController
 {
     private AuthMiddleware $authMiddleware;
     private PdfService $pdfService;
-    private NotificationService $notificationService; // Add NotificationService instance
+    private EmailService $emailService;
 
     public function __construct()
     {
         $this->authMiddleware = new AuthMiddleware();
         $this->pdfService = new PdfService();
-        $this->notificationService = new NotificationService(); // Instantiate NotificationService
+        $this->emailService = new EmailService();
     }
 
     /**
-     * List proposals based on filters.
-     *
-     * @param array $headers Request headers.
-     * @param array $queryParams Filters (e.g., status, responsavel_id, lead_id).
-     * @return array JSON response.
+     * List all proposals with filters.
      */
     public function index(array $headers, array $queryParams = []): array
     {
         $userData = $this->authMiddleware->handle($headers);
         if (!$userData) {
             http_response_code(401);
-            return ["error" => "Autenticação do CRM necessária."];
+            return ["error" => "Autenticação necessária."];
         }
 
-        // Basic filtering example (add more as needed)
         $filters = [];
         if (isset($queryParams["status"])) {
             $filters["status"] = $queryParams["status"];
@@ -46,66 +40,56 @@ class ProposalController
         if (isset($queryParams["responsavel_id"])) {
             $filters["responsavel_id"] = (int)$queryParams["responsavel_id"];
         }
-        // Add role-based filtering if necessary (e.g., non-admins only see their own proposals)
-        // if ($userData->role !== "Admin") {
-        //     $filters["responsavel_id"] = $userData->userId;
-        // }
 
-        $proposals = Proposal::findBy($filters);
+        $page = isset($queryParams["page"]) ? (int)$queryParams["page"] : 1;
+        $limit = isset($queryParams["limit"]) ? (int)$queryParams["limit"] : 25;
+        $offset = ($page - 1) * $limit;
+
+        $proposals = Proposal::findAll($filters, $limit, $offset);
+        $total = Proposal::countAll($filters);
+
         http_response_code(200);
-        return ["data" => $proposals];
+        return [
+            "success" => true,
+            "data" => $proposals,
+            "pagination" => [
+                "page" => $page,
+                "limit" => $limit,
+                "total" => $total,
+                "totalPages" => ceil($total / $limit)
+            ]
+        ];
     }
 
     /**
-     * Create a new proposal.
-     *
-     * @param array $headers Request headers.
-     * @param array $requestData Proposal data (titulo, lead_id, etc.).
-     * @return array JSON response.
+     * Create new proposal.
      */
     public function store(array $headers, array $requestData): array
     {
-        $userData = $this->authMiddleware->handle($headers, ["Admin", "Comercial"]);
+        $userData = $this->authMiddleware->handle($headers, ["Admin", "Comercial", "gerente"]);
         if (!$userData) {
             http_response_code(401);
-            return ["error" => "Autenticação necessária ou permissão insuficiente."];
+            return ["error" => "Autenticação necessária."];
         }
 
         if (empty($requestData["titulo"])) {
             http_response_code(400);
-            return ["error" => "O título da proposta é obrigatório."];
+            return ["error" => "Título é obrigatório."];
         }
-        // Add more validation
 
-        // Set creator/responsible if not provided?
         $requestData["responsavel_id"] = $requestData["responsavel_id"] ?? $userData->userId;
+        $items = $requestData["itens"] ?? [];
 
-        $proposalId = Proposal::create($requestData);
+        $proposalId = Proposal::create($requestData, $items);
 
         if ($proposalId) {
             $newProposal = Proposal::findById($proposalId);
-            // Log history
-            HistoricoPropostas::logAction($proposalId, $userData->userId, "Proposta Criada");
-            
-            // --- Notification (Optional: Notify admin/manager?) ---
-            // Example: Notify admin about a new proposal
-            // $adminUsers = User::findByRole("Admin"); // Assuming User model exists
-            // $adminIds = array_map(fn($u) => $u->id, $adminUsers);
-            // if (!empty($adminIds)) {
-            //     $this->notificationService->createNotification(
-            //         "nova_proposta",
-            //         "Nova Proposta Criada: " . $newProposal->titulo,
-            //         "Uma nova proposta \"{$newProposal->titulo}\" foi criada por {$userData->userName}.",
-            //         $adminIds,
-            //         "/propostas/" . $proposalId,
-            //         "proposta",
-            //         $proposalId
-            //     );
-            // }
-            // --- End Notification ---
-            
             http_response_code(201);
-            return ["message" => "Proposta criada com sucesso.", "proposta" => $newProposal];
+            return [
+                "success" => true,
+                "message" => "Proposta criada com sucesso.",
+                "data" => $newProposal
+            ];
         } else {
             http_response_code(500);
             return ["error" => "Falha ao criar proposta."];
@@ -113,18 +97,14 @@ class ProposalController
     }
 
     /**
-     * Get details of a specific proposal.
-     *
-     * @param array $headers Request headers.
-     * @param int $proposalId Proposal ID.
-     * @return array JSON response.
+     * Show proposal details.
      */
     public function show(array $headers, int $proposalId): array
     {
         $userData = $this->authMiddleware->handle($headers);
         if (!$userData) {
             http_response_code(401);
-            return ["error" => "Autenticação do CRM necessária."];
+            return ["error" => "Autenticação necessária."];
         }
 
         $proposal = Proposal::findById($proposalId);
@@ -133,103 +113,48 @@ class ProposalController
             return ["error" => "Proposta não encontrada."];
         }
 
-        // Authorization check (e.g., can user view this proposal?)
-        // if ($userData->role !== "Admin" && $proposal->responsavel_id !== $userData->userId) {
-        //     http_response_code(403);
-        //     return ["error" => "Acesso negado a esta proposta."];
-        // }
-
-        $items = ProposalItem::findByProposalId($proposalId);
-        $history = HistoricoPropostas::findByProposalId($proposalId);
+        $items = Proposal::getItems($proposalId);
+        $history = Proposal::getHistory($proposalId);
 
         http_response_code(200);
-        return ["data" => ["proposta" => $proposal, "itens" => $items, "historico" => $history]];
+        return [
+            "success" => true,
+            "data" => [
+                "proposta" => $proposal,
+                "itens" => $items,
+                "historico" => $history
+            ]
+        ];
     }
 
     /**
-     * Update an existing proposal.
-     *
-     * @param array $headers Request headers.
-     * @param int $proposalId Proposal ID.
-     * @param array $requestData Data to update.
-     * @return array JSON response.
+     * Update proposal.
      */
     public function update(array $headers, int $proposalId, array $requestData): array
     {
-        $userData = $this->authMiddleware->handle($headers, ["Admin", "Comercial"]);
+        $userData = $this->authMiddleware->handle($headers, ["Admin", "Comercial", "gerente"]);
         if (!$userData) {
             http_response_code(401);
-            return ["error" => "Autenticação necessária ou permissão insuficiente."];
+            return ["error" => "Autenticação necessária."];
         }
 
         $proposal = Proposal::findById($proposalId);
         if (!$proposal) {
             http_response_code(404);
-            return ["error" => "Proposta não encontrada para atualização."];
+            return ["error" => "Proposta não encontrada."];
         }
 
-        // Authorization check
-        // if ($userData->role !== "Admin" && $proposal->responsavel_id !== $userData->userId) {
-        //     http_response_code(403);
-        //     return ["error" => "Você não tem permissão para atualizar esta proposta."];
-        // }
+        $items = $requestData["itens"] ?? [];
+        $updated = Proposal::update($proposalId, $requestData, $items, $userData->userId);
 
-        if (empty($requestData)) {
-            http_response_code(400);
-            return ["error" => "Nenhum dado fornecido para atualização."];
-        }
-
-        // --- Notification Check (Before Update) ---
-        $oldStatus = $proposal->status;
-        $newStatus = $requestData["status"] ?? $oldStatus;
-        $statusChanged = ($newStatus !== $oldStatus);
-        // --- End Notification Check ---
-
-        if (Proposal::update($proposalId, $requestData)) {
+        if ($updated) {
             $updatedProposal = Proposal::findById($proposalId);
-            $logDetails = "Proposta atualizada.";
-            if ($statusChanged) {
-                $logDetails = "Status da proposta alterado de {$oldStatus} para {$newStatus}.";
-            }
-            HistoricoPropostas::logAction($proposalId, $userData->userId, "Proposta Atualizada", $logDetails);
-
-            // --- Notification (After Update) ---
-            if ($statusChanged && $updatedProposal && $updatedProposal->responsavel_id) {
-                $notificationTitle = "";
-                $notificationMessage = "";
-                $notifyUser = false;
-
-                switch ($newStatus) {
-                    case "aceita":
-                        $notificationTitle = "Proposta Aceita: " . $updatedProposal->titulo;
-                        $notificationMessage = "Parabéns! A proposta \"{$updatedProposal->titulo}\" foi marcada como ACEITA.";
-                        $notifyUser = true;
-                        break;
-                    case "rejeitada":
-                        $notificationTitle = "Proposta Rejeitada: " . $updatedProposal->titulo;
-                        $notificationMessage = "A proposta \"{$updatedProposal->titulo}\" foi marcada como REJEITADA.";
-                        $notifyUser = true;
-                        break;
-                    // Add notifications for other relevant status changes if needed (e.g., enviada)
-                }
-
-                if ($notifyUser) {
-                    $this->notificationService->createNotification(
-                        "proposta_status_alterado",
-                        $notificationTitle,
-                        $notificationMessage,
-                        [$updatedProposal->responsavel_id],
-                        "/propostas/" . $proposalId,
-                        "proposta",
-                        $proposalId,
-                        true // Send email
-                    );
-                }
-            }
-            // --- End Notification ---
-
             http_response_code(200);
-            return ["message" => "Proposta atualizada com sucesso.", "proposta" => $updatedProposal];
+            return [
+                "success" => true,
+                "message" => "Proposta atualizada com sucesso.",
+                "data" => $updatedProposal
+            ];
         } else {
             http_response_code(500);
             return ["error" => "Falha ao atualizar proposta."];
@@ -237,56 +162,14 @@ class ProposalController
     }
 
     /**
-     * Delete a proposal.
-     *
-     * @param array $headers Request headers.
-     * @param int $proposalId Proposal ID.
-     * @return array JSON response.
+     * Delete proposal.
      */
     public function destroy(array $headers, int $proposalId): array
     {
-        $userData = $this->authMiddleware->handle($headers, ["Admin"]); // Only Admins can delete?
+        $userData = $this->authMiddleware->handle($headers, ["Admin"]);
         if (!$userData) {
             http_response_code(401);
-            return ["error" => "Autenticação necessária ou permissão insuficiente."];
-        }
-
-        $proposal = Proposal::findById($proposalId);
-        if (!$proposal) {
-            http_response_code(404);
-            return ["error" => "Proposta não encontrada para exclusão."];
-        }
-
-        // Consider business logic: Can proposals be deleted? Maybe only if in draft status?
-        // if ($proposal->status !== "rascunho") {
-        //     http_response_code(400);
-        //     return ["error" => "Apenas propostas em rascunho podem ser excluídas."];
-        // }
-
-        if (Proposal::delete($proposalId)) {
-            // Log history (optional, as proposal is gone)
-            // HistoricoPropostas::logAction($proposalId, $userData->userId, "Proposta Excluída");
-            http_response_code(200); // Or 204
-            return ["message" => "Proposta excluída com sucesso."];
-        } else {
-            http_response_code(500);
-            return ["error" => "Falha ao excluir proposta."];
-        }
-    }
-
-    /**
-     * Generate PDF for a proposal.
-     *
-     * @param array $headers Request headers.
-     * @param int $proposalId Proposal ID.
-     * @return array JSON response (or potentially trigger file download).
-     */
-    public function generatePdf(array $headers, int $proposalId): array
-    {
-        $userData = $this->authMiddleware->handle($headers);
-        if (!$userData) {
-            http_response_code(401);
-            return ["error" => "Autenticação do CRM necessária."];
+            return ["error" => "Apenas administradores podem excluir propostas."];
         }
 
         $proposal = Proposal::findById($proposalId);
@@ -295,143 +178,171 @@ class ProposalController
             return ["error" => "Proposta não encontrada."];
         }
 
-        // Authorization check
-        // ...
-
-        $items = ProposalItem::findByProposalId($proposalId);
-        
-        // Define where to save the PDF
-        $saveDir = "/home/ubuntu/crm_apoio19/storage/proposals"; // Ensure this dir exists and is writable
-        if (!is_dir($saveDir)) {
-            mkdir($saveDir, 0775, true);
+        if (Proposal::delete($proposalId)) {
+            http_response_code(200);
+            return [
+                "success" => true,
+                "message" => "Proposta excluída com sucesso."
+            ];
+        } else {
+            http_response_code(500);
+            return ["error" => "Falha ao excluir proposta."];
         }
-        $pdfFileName = "proposta_" . $proposalId . "_" . time() . ".pdf";
-        $pdfPath = $saveDir . "/" . $pdfFileName;
+    }
+
+    /**
+     * Generate PDF for proposal.
+     */
+    public function generatePdf(array $headers, int $proposalId): array
+    {
+        $userData = $this->authMiddleware->handle($headers);
+        if (!$userData) {
+            http_response_code(401);
+            return ["error" => "Autenticação necessária."];
+        }
+
+        $proposal = Proposal::findById($proposalId);
+        if (!$proposal) {
+            http_response_code(404);
+            return ["error" => "Proposta não encontrada."];
+        }
 
         try {
-            $success = $this->pdfService->generateProposalPdf($proposal, $items, $pdfPath);
+            $pdfPath = $this->pdfService->generateProposalPdf($proposalId);
             
-            if ($success) {
-                // Update proposal record with PDF path
-                Proposal::update($proposalId, ["pdf_path" => $pdfPath]);
-                HistoricoPropostas::logAction($proposalId, $userData->userId, "PDF da Proposta Gerado");
+            if ($pdfPath) {
+                Proposal::addHistory($proposalId, $userData->userId, "PDF Gerado", "PDF da proposta foi gerado.");
                 
                 http_response_code(200);
-                // Return path or link for download
-                return ["message" => "PDF da proposta gerado com sucesso.", "pdf_path" => $pdfPath]; 
+                return [
+                    "success" => true,
+                    "message" => "PDF gerado com sucesso.",
+                    "pdf_path" => $pdfPath
+                ];
             } else {
                 http_response_code(500);
-                return ["error" => "Falha ao gerar PDF da proposta."];
+                return ["error" => "Falha ao gerar PDF."];
             }
         } catch (\Exception $e) {
             error_log("Erro ao gerar PDF da proposta {$proposalId}: " . $e->getMessage());
             http_response_code(500);
-            return ["error" => "Erro interno ao gerar PDF da proposta."];
+            return ["error" => "Erro interno ao gerar PDF."];
         }
     }
 
-    // --- Methods for Proposal Items --- 
-
     /**
-     * Add an item to a proposal.
-     *
-     * @param array $headers
-     * @param int $proposalId
-     * @param array $requestData (descricao, quantidade, valor_unitario)
-     * @return array
+     * Send proposal via email with PDF attachment.
      */
-    public function addItem(array $headers, int $proposalId, array $requestData): array
+    public function sendProposal(array $headers, int $proposalId): array
     {
-        $userData = $this->authMiddleware->handle($headers, ["Admin", "Comercial"]);
-        if (!$userData) { /* ... */ }
+        $userData = $this->authMiddleware->handle($headers, ["Admin", "Comercial", "gerente"]);
+        if (!$userData) {
+            http_response_code(401);
+            return ["error" => "Autenticação necessária."];
+        }
 
         $proposal = Proposal::findById($proposalId);
-        if (!$proposal) { /* 404 */ }
-        // Authorization check...
-
-        // Validation...
-        if (empty($requestData["descricao"]) || !isset($requestData["quantidade"]) || !isset($requestData["valor_unitario"])) {
-             http_response_code(400);
-             return ["error" => "Descrição, quantidade e valor unitário são obrigatórios para o item."];
+        if (!$proposal) {
+            http_response_code(404);
+            return ["error" => "Proposta não encontrada."];
         }
 
-        $itemId = ProposalItem::create($proposalId, $requestData);
-        if ($itemId) {
-            Proposal::recalculateTotal($proposalId); // Recalculate proposal total
-            $newItem = ProposalItem::findById($itemId);
-            HistoricoPropostas::logAction($proposalId, $userData->userId, "Item Adicionado à Proposta", "Item: " . $requestData["descricao"]);
-            http_response_code(201);
-            return ["message" => "Item adicionado com sucesso.", "item" => $newItem];
+        // Generate PDF if not exists
+        if (empty($proposal->pdf_path) || !file_exists($proposal->pdf_path)) {
+            $pdfPath = $this->pdfService->generateProposalPdf($proposalId);
+            if (!$pdfPath) {
+                http_response_code(500);
+                return ["error" => "Falha ao gerar PDF."];
+            }
+        } else {
+            $pdfPath = $proposal->pdf_path;
+        }
+
+        // Get client data
+        $clientData = $this->getClientData($proposal);
+        if (empty($clientData['email'])) {
+            http_response_code(400);
+            return ["error" => "E-mail do cliente não encontrado."];
+        }
+
+        // Get manager email
+        $managerEmail = null;
+        $responsibleName = 'Não definido';
+        if ($proposal->responsavel_id) {
+            $manager = User::findById($proposal->responsavel_id);
+            if ($manager) {
+                $managerEmail = $manager->email;
+                $responsibleName = $manager->name;
+            }
+        }
+
+        // Format validity date
+        $validityDate = $proposal->data_validade ? date('d/m/Y', strtotime($proposal->data_validade)) : 'Não definida';
+
+        // Send email
+        $sent = $this->emailService->sendProposal(
+            $clientData['email'],
+            $clientData['contact_name'] ?? 'Cliente',
+            $proposal->titulo,
+            $proposal->id,
+            $proposal->valor_total,
+            $validityDate,
+            $responsibleName,
+            $pdfPath,
+            $managerEmail
+        );
+
+        if ($sent) {
+            // Update proposal status
+            Proposal::update($proposalId, [
+                'status' => 'enviada',
+                'data_envio' => date('Y-m-d H:i:s')
+            ], [], $userData->userId);
+
+            // Add history
+            Proposal::addHistory(
+                $proposalId,
+                $userData->userId,
+                "Proposta Enviada",
+                "Enviada para {$clientData['email']}"
+            );
+
+            http_response_code(200);
+            return [
+                "success" => true,
+                "message" => "Proposta enviada com sucesso.",
+                "sent_to" => $clientData['email'],
+                "cc" => $managerEmail
+            ];
         } else {
             http_response_code(500);
-            return ["error" => "Falha ao adicionar item."];
+            return ["error" => "Falha ao enviar e-mail."];
         }
     }
 
     /**
-     * Update an item in a proposal.
-     *
-     * @param array $headers
-     * @param int $proposalId
-     * @param int $itemId
-     * @param array $requestData
-     * @return array
+     * Get client data from proposal (lead, contact, or company).
      */
-    public function updateItem(array $headers, int $proposalId, int $itemId, array $requestData): array
+    private function getClientData($proposal): array
     {
-         $userData = $this->authMiddleware->handle($headers, ["Admin", "Comercial"]);
-        if (!$userData) { /* ... */ }
+        $data = [
+            'company_name' => null,
+            'contact_name' => null,
+            'email' => null,
+            'phone' => null,
+        ];
 
-        $item = ProposalItem::findById($itemId);
-        if (!$item || $item->proposta_id !== $proposalId) {
-             http_response_code(404);
-             return ["error" => "Item não encontrado ou não pertence a esta proposta."];
+        // Try to get from lead first
+        if ($proposal->lead_id) {
+            $lead = Lead::findById($proposal->lead_id);
+            if ($lead) {
+                $data['contact_name'] = $lead->name;
+                $data['company_name'] = $lead->company;
+                $data['email'] = $lead->email;
+                $data['phone'] = $lead->phone;
+            }
         }
-        // Authorization check...
 
-        if (empty($requestData)) { /* 400 */ }
-
-        if (ProposalItem::update($itemId, $requestData)) {
-            Proposal::recalculateTotal($proposalId); // Recalculate proposal total
-            $updatedItem = ProposalItem::findById($itemId);
-             HistoricoPropostas::logAction($proposalId, $userData->userId, "Item da Proposta Atualizado", "Item ID: " . $itemId);
-            http_response_code(200);
-            return ["message" => "Item atualizado com sucesso.", "item" => $updatedItem];
-        } else {
-            http_response_code(500);
-            return ["error" => "Falha ao atualizar item."];
-        }
-    }
-
-    /**
-     * Remove an item from a proposal.
-     *
-     * @param array $headers
-     * @param int $proposalId
-     * @param int $itemId
-     * @return array
-     */
-    public function removeItem(array $headers, int $proposalId, int $itemId): array
-    {
-        $userData = $this->authMiddleware->handle($headers, ["Admin", "Comercial"]);
-        if (!$userData) { /* ... */ }
-
-        $item = ProposalItem::findById($itemId);
-        if (!$item || $item->proposta_id !== $proposalId) {
-             http_response_code(404);
-             return ["error" => "Item não encontrado ou não pertence a esta proposta."];
-        }
-        // Authorization check...
-
-        if (ProposalItem::delete($itemId)) {
-            Proposal::recalculateTotal($proposalId); // Recalculate proposal total
-            HistoricoPropostas::logAction($proposalId, $userData->userId, "Item Removido da Proposta", "Item ID: " . $itemId);
-            http_response_code(200);
-            return ["message" => "Item removido com sucesso."];
-        } else {
-            http_response_code(500);
-            return ["error" => "Falha ao remover item."];
-        }
+        return $data;
     }
 }
-

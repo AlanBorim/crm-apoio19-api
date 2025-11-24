@@ -1349,6 +1349,22 @@ if ($requestPath === '/kanban/logs' && $requestMethod === 'GET') {
     exit;
 }
 
+// POST /api/kanban/logs - Criar novo log de atividade
+if ($requestPath === '/kanban/logs' && $requestMethod === 'POST') {
+    try {
+        $headers = getallheaders();
+        $requestData = json_decode(file_get_contents('php://input'), true);
+        $controller = new TarefaController();
+        $response = $controller->createLog($headers, $requestData);
+        echo json_encode($response);
+    } catch (\Exception $e) {
+        error_log("Erro em POST /kanban/logs: " . $e->getMessage());
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno ao criar log."]);
+    }
+    exit;
+}
+
 // ============================================================================
 // ROTAS DO WHATSAPP
 // ============================================================================
@@ -1542,6 +1558,87 @@ if (preg_match('#^/whatsapp/templates/(\d+)$#', $requestPath, $matches) && $requ
 // --- Adicione outras rotas aqui ---
 // Exemplo:
 // if ($requestPath === '/leads' && $requestMethod === 'GET') { ... }
+
+// === LEADS API - GET ALL ===
+if ($requestPath === '/leads' && $requestMethod === 'GET') {
+    try {
+        $leadsController = new LeadController();
+        $response = $leadsController->index(getallheaders(), $_GET);
+        echo json_encode($response);
+    } catch (\Throwable $th) {
+        error_log("Erro ao buscar leads: " . $th->getMessage());
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno ao buscar leads."]);
+    }
+    exit;
+}
+
+// === PROPOSALS API ===
+use Apoio19\Crm\Controllers\ProposalController;
+
+// GET proposals
+if ($requestPath === '/proposals' && $requestMethod === 'GET') {
+    try {
+        $proposalController = new ProposalController();
+        $response = $proposalController->index(getallheaders(), $_GET);
+        echo json_encode($response);
+    } catch (\Throwable $th) {
+        error_log("Erro ao buscar propostas: " . $th->getMessage());
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno ao buscar propostas."]);
+    }
+    exit;
+}
+
+// POST proposal - create
+if ($requestPath === '/proposals' && $requestMethod === 'POST') {
+    try {
+        $input = json_decode(file_get_contents('php://input'), true);
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            http_response_code(400);
+            echo json_encode(["error" => "JSON inválido."]);
+            exit;
+        }
+        $proposalController = new ProposalController();
+        $response = $proposalController->store(getallheaders(), $input);
+        echo json_encode($response);
+    } catch (\Throwable $th) {
+        error_log("Erro ao criar proposta: " . $th->getMessage());
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno ao criar proposta."]);
+    }
+    exit;
+}
+
+// POST proposal send - send proposal via email
+if (preg_match('/^\/proposals\/(\d+)\/send$/', $requestPath, $matches) && $requestMethod === 'POST') {
+    try {
+        $proposalId = (int)$matches[1];
+        $proposalController = new ProposalController();
+        $response = $proposalController->sendProposal(getallheaders(), $proposalId);
+        echo json_encode($response);
+    } catch (\Throwable $th) {
+        error_log("Erro ao enviar proposta: " . $th->getMessage());
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno ao enviar proposta."]);
+    }
+    exit;
+}
+
+// POST proposal PDF generation
+if (preg_match('/^\/proposals\/(\d+)\/pdf$/', $requestPath, $matches) && $requestMethod === 'POST') {
+    try {
+        $proposalId = (int)$matches[1];
+        $proposalController = new ProposalController();
+        $response = $proposalController->generatePdf(getallheaders(), $proposalId);
+        echo json_encode($response);
+    } catch (\Throwable $th) {
+        error_log("Erro ao gerar PDF da proposta: " . $th->getMessage());
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno ao gerar PDF."]);
+    }
+    exit;
+}
 
 // --- Fim do Roteamento ---
 

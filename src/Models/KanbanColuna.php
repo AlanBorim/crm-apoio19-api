@@ -89,20 +89,45 @@ class KanbanColuna
      * Update an existing Kanban column.
      *
      * @param int $id
-     * @param string $nome
-     * @param int $ordem
+     * @param string|null $nome
+     * @param int|null $ordem
+     * @param string|null $cor
+     * @param int|null $limite_cards
      * @return bool True on success, false on failure.
      */
-    public static function update(int $id, string $nome, int $ordem): bool
+    public static function update(int $id, ?string $nome = null, ?int $ordem = null, ?string $cor = null, ?int $limite_cards = null): bool
     {
-        $sql = "UPDATE kanban_colunas SET nome = :nome, ordem = :ordem, atualizado_em = NOW() WHERE id = :id";
+        // Build dynamic SQL based on provided fields
+        $updates = [];
+        $params = [':id' => $id];
+
+        if ($nome !== null) {
+            $updates[] = "nome = :nome";
+            $params[':nome'] = $nome;
+        }
+        if ($ordem !== null) {
+            $updates[] = "ordem = :ordem";
+            $params[':ordem'] = $ordem;
+        }
+        if ($cor !== null) {
+            $updates[] = "cor = :cor";
+            $params[':cor'] = $cor;
+        }
+        if ($limite_cards !== null) {
+            $updates[] = "limite_cards = :limite_cards";
+            $params[':limite_cards'] = $limite_cards;
+        }
+
+        if (empty($updates)) {
+            return false; // Nothing to update
+        }
+
+        $sql = "UPDATE kanban_colunas SET " . implode(', ', $updates) . ", atualizado_em = NOW() WHERE id = :id";
+        
         try {
             $pdo = Database::getInstance();
             $stmt = $pdo->prepare($sql);
-            $stmt->bindParam(":nome", $nome);
-            $stmt->bindParam(":ordem", $ordem, PDO::PARAM_INT);
-            $stmt->bindParam(":id", $id, PDO::PARAM_INT);
-            return $stmt->execute();
+            return $stmt->execute($params);
         } catch (PDOException $e) {
             error_log("Erro ao atualizar coluna Kanban ID {$id}: " . $e->getMessage());
             return false;

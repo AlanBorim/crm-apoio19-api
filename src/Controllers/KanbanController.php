@@ -125,10 +125,13 @@ class KanbanController
 
         $nome = $requestData["nome"] ?? null;
         $ordem = isset($requestData["ordem"]) ? (int)$requestData["ordem"] : null;
+        $cor = $requestData["cor"] ?? null;
+        $limite_cards = isset($requestData["limite_cards"]) ? (int)$requestData["limite_cards"] : null;
 
-        if (!$nome && $ordem === null) {
+        // At least one field must be provided
+        if ($nome === null && $ordem === null && $cor === null && $limite_cards === null) {
              http_response_code(400);
-            return ["error" => "Nenhum dado fornecido para atualização (nome ou ordem)."];
+            return ["error" => "Nenhum dado fornecido para atualização."];
         }
         
         $column = KanbanColuna::findById($columnId);
@@ -137,11 +140,7 @@ class KanbanController
             return ["error" => "Coluna Kanban não encontrada."];
         }
 
-        // Use existing values if not provided in request
-        $newName = $nome ?? $column->nome;
-        $newOrder = $ordem ?? $column->ordem;
-
-        if (KanbanColuna::update($columnId, $newName, $newOrder)) {
+        if (KanbanColuna::update($columnId, $nome, $ordem, $cor, $limite_cards)) {
             http_response_code(200);
             $updatedColumn = KanbanColuna::findById($columnId);
             return ["message" => "Coluna Kanban atualizada com sucesso.", "coluna" => $updatedColumn];
