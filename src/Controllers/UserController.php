@@ -165,6 +165,9 @@ class UserController
             return $this->errorResponse(401, "Autenticação necessária ou permissão insuficiente.");
         }
 
+        // Normalizar dados recebidos (aceitar campos em português ou inglês)
+        $requestData = $this->normalizeUserData($requestData);
+
         // Validação básica
         $validation = $this->validateUserData($requestData);
         if (!$validation['valid']) {
@@ -179,12 +182,12 @@ class UserController
         try {
             // Preparar dados para criação
             $userDataToCreate = [
-                'name' => trim($requestData['nome']),
+                'name' => trim($requestData['name']),
                 'email' => strtolower(trim($requestData['email'])),
-                'password' => password_hash($requestData['senha'], PASSWORD_DEFAULT),
-                'role' => $requestData['funcao'],
-                'active' => isset($requestData['ativo']) ? ($requestData['ativo'] ? 1 : 0) : 1,
-                'phone' => $this->formatPhone($requestData['telefone'] ?? null),
+                'password' => password_hash($requestData['password'], PASSWORD_DEFAULT),
+                'role' => $requestData['role'],
+                'active' => isset($requestData['active']) ? ($requestData['active'] ? 1 : 0) : 1,
+                'phone' => $this->formatPhone($requestData['phone'] ?? null),
                 'permissions' => json_encode($this->getPermissionsForUser($requestData)),
                 'created_at' => date('Y-m-d H:i:s'),
                 'updated_at' => date('Y-m-d H:i:s')
@@ -256,6 +259,9 @@ class UserController
             return $this->errorResponse(400, "Nenhum dado fornecido para atualização.");
         }
 
+        // Normalizar dados recebidos (aceitar campos em português ou inglês)
+        $requestData = $this->normalizeUserData($requestData);
+
         try {
             $user = User::findById($userId);
             if (!$user || $user->active === '0') {
@@ -272,30 +278,30 @@ class UserController
             $updateData = [];
 
             if (isset($requestData['name'])) {
-                $updateData['name'] = trim($requestData['nome']);
+                $updateData['name'] = trim($requestData['name']);
             }
 
-            if (isset($requestData['senha']) && !empty($requestData['senha'])) {
-                $updateData['password'] = password_hash($requestData['senha'], PASSWORD_DEFAULT);
+            if (isset($requestData['password']) && !empty($requestData['password'])) {
+                $updateData['password'] = password_hash($requestData['password'], PASSWORD_DEFAULT);
             }
 
-            if (isset($requestData['funcao'])) {
-                $updateData['role'] = $requestData['funcao'];
+            if (isset($requestData['role'])) {
+                $updateData['role'] = $requestData['role'];
             }
 
-            if (isset($requestData['ativo'])) {
-                $updateData['active'] = $requestData['ativo'] ? 1 : 0;
+            if (isset($requestData['active'])) {
+                $updateData['active'] = $requestData['active'] ? 1 : 0;
             }
 
-            if (isset($requestData['telefone'])) {
-                $updateData['phone'] = $this->formatPhone($requestData['telefone']);
+            if (isset($requestData['phone'])) {
+                $updateData['phone'] = $this->formatPhone($requestData['phone']);
             }
 
-            if (isset($requestData['permissoes'])) {
-                $updateData['permissions'] = json_encode($requestData['permissoes']);
-            } elseif (isset($requestData['funcao'])) {
+            if (isset($requestData['permissions'])) {
+                $updateData['permissions'] = json_encode($requestData['permissions']);
+            } elseif (isset($requestData['role'])) {
                 // Se mudou a função mas não especificou permissões, usar padrão da função
-                $updateData['permissions'] = json_encode($this->getDefaultPermissionsForRole($requestData['funcao']));
+                $updateData['permissions'] = json_encode($this->getDefaultPermissionsForRole($requestData['role']));
             }
 
             $updateData['updated_at'] = date('Y-m-d H:i:s');
@@ -444,6 +450,36 @@ class UserController
             }
         } catch (\Exception $e) {
             return $this->errorResponse(500, "Erro interno ao desativar usuário.", $e->getMessage());
+        }
+    }
+
+    /**
+     * Excluir usuário
+     * 
+     * @param array $headers Cabeçalhos da requisição
+     * @param int $userId ID do usuário
+     * @return array Resposta JSON
+     */
+    public function destroy(array $headers, int $userId): array
+    {
+        $userData = $this->authMiddleware->handle($headers, ["admin"]);
+        if (!$userData) {
+            return $this->errorResponse(401, "Autenticação necessária ou permissão insuficiente.");
+        }
+
+        if ($userId == $userData['userId']) {
+            return $this->errorResponse(400, "Você não pode excluir seu próprio usuário.");
+        }
+
+        $user = User::findById($userId);
+        if (!$user) {
+            return $this->errorResponse(404, "Usuário não encontrado.");
+        }
+
+        if (User::delete($userId)) {
+            return $this->successResponse(null, "Usuário excluído com sucesso.");
+        } else {
+            return $this->errorResponse(500, "Falha ao excluir usuário.");
         }
     }
 
@@ -732,6 +768,9 @@ class UserController
             return $this->errorResponse(400, "Nenhum dado fornecido para atualização.");
         }
 
+        // Normalizar dados recebidos
+        $requestData = $this->normalizeUserData($requestData);
+
         try {
             $user = User::findById($userData->userId);
             if (!$user || $user->deleted_at) {
@@ -747,16 +786,16 @@ class UserController
             // Preparar dados para atualização
             $updateData = [];
 
-            if (isset($requestData['nome'])) {
-                $updateData['nome'] = trim($requestData['nome']);
+            if (isset($requestData['name'])) {
+                $updateData['name'] = trim($requestData['name']);
             }
 
-            if (isset($requestData['telefone'])) {
-                $updateData['telefone'] = $this->formatPhone($requestData['telefone']);
+            if (isset($requestData['phone'])) {
+                $updateData['phone'] = $this->formatPhone($requestData['phone']);
             }
 
-            if (isset($requestData['senha']) && !empty($requestData['senha'])) {
-                $updateData['senha_hash'] = password_hash($requestData['senha'], PASSWORD_DEFAULT);
+            if (isset($requestData['password']) && !empty($requestData['password'])) {
+                $updateData['password'] = password_hash($requestData['password'], PASSWORD_DEFAULT);
             }
 
             $updateData['updated_at'] = date('Y-m-d H:i:s');
@@ -783,15 +822,15 @@ class UserController
      */
     private function validateUserData(array $data): array
     {
-        if (empty($data['nome'])) {
+        if (empty($data['name'])) {
             return ["valid" => false, "message" => "O nome é obrigatório."];
         }
 
-        if (strlen($data['nome']) < 2) {
+        if (strlen($data['name']) < 2) {
             return ["valid" => false, "message" => "O nome deve ter pelo menos 2 caracteres."];
         }
 
-        if (!preg_match('/^[a-zA-ZÀ-ÿ\s]+$/', $data['nome'])) {
+        if (!preg_match('/^[a-zA-ZÀ-ÿ\s]+$/', $data['name'])) {
             return ["valid" => false, "message" => "O nome deve conter apenas letras e espaços."];
         }
 
@@ -803,28 +842,27 @@ class UserController
             return ["valid" => false, "message" => "Email inválido."];
         }
 
-        if (empty($data['senha'])) {
+        if (empty($data['password'])) {
             return ["valid" => false, "message" => "A senha é obrigatória."];
         }
 
-        if (strlen($data['senha']) < 8) {
-            return ["valid" => false, "message" => "A senha deve ter pelo menos 8 caracteres."];
+        if (strlen($data['password']) < 6) {
+            return ["valid" => false, "message" => "A senha deve ter pelo menos 6 caracteres."];
         }
 
-        if (!preg_match('/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/', $data['senha'])) {
-            return ["valid" => false, "message" => "A senha deve conter pelo menos: 1 letra minúscula, 1 maiúscula, 1 número e 1 caractere especial."];
-        }
+        // Removida validação de complexidade para permitir senhas mais simples
+        // Validação opcional: senhas fortes são recomendadas mas não obrigatórias
 
-        if (empty($data['funcao'])) {
+        if (empty($data['role'])) {
             return ["valid" => false, "message" => "A função é obrigatória."];
         }
 
-        if (!in_array($data['funcao'], ['admin', 'gerente', 'vendedor', 'suporte', 'comercial', 'financeiro'])) {
+        if (!in_array($data['role'], ['admin', 'gerente', 'vendedor', 'suporte', 'comercial', 'financeiro'])) {
             return ["valid" => false, "message" => "Função inválida."];
         }
 
-        if (isset($data['telefone']) && !empty($data['telefone'])) {
-            $phone = preg_replace('/\D/', '', $data['telefone']);
+        if (isset($data['phone']) && !empty($data['phone'])) {
+            $phone = preg_replace('/\D/', '', $data['phone']);
             if (strlen($phone) < 10 || strlen($phone) > 11) {
                 return ["valid" => false, "message" => "Telefone inválido."];
             }
@@ -869,23 +907,21 @@ class UserController
         }
 
         if (isset($data['password']) && !empty($data['password'])) {
-            if (strlen($data['password']) < 8) {
-                return ["valid" => false, "message" => "A password deve ter pelo menos 8 caracteres."];
+            if (strlen($data['password']) < 6) {
+                return ["valid" => false, "message" => "A senha deve ter pelo menos 6 caracteres."];
             }
-
-            if (!preg_match('/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/', $data['password'])) {
-                return ["valid" => false, "message" => "A password deve conter pelo menos: 1 letra minúscula, 1 maiúscula, 1 número e 1 caractere especial."];
-            }
+            
+            // Removida validação de complexidade para permitir senhas mais simples
         }
 
-        if (isset($data['funcao'])) {
-            if (!in_array($data['funcao'], ['admin', 'gerente', 'vendedor', 'suporte', 'comercial', 'financeiro'])) {
+        if (isset($data['role'])) {
+            if (!in_array($data['role'], ['admin', 'gerente', 'vendedor', 'suporte', 'comercial', 'financeiro'])) {
                 return ["valid" => false, "message" => "Função inválida."];
             }
         }
 
-        if (isset($data['telefone']) && !empty($data['telefone'])) {
-            $phone = preg_replace('/\D/', '', $data['telefone']);
+        if (isset($data['phone']) && !empty($data['phone'])) {
+            $phone = preg_replace('/\D/', '', $data['phone']);
             if (strlen($phone) < 10 || strlen($phone) > 11) {
                 return ["valid" => false, "message" => "Telefone inválido."];
             }
@@ -899,12 +935,12 @@ class UserController
      */
     private function validateProfileUpdateData(array $data, int $userId): array
     {
-        if (isset($data['nome'])) {
-            if (empty($data['nome'])) {
+        if (isset($data['name'])) {
+            if (empty($data['name'])) {
                 return ["valid" => false, "message" => "O nome não pode estar vazio."];
             }
 
-            if (strlen($data['nome']) < 2) {
+            if (strlen($data['name']) < 2) {
                 return ["valid" => false, "message" => "O nome deve ter pelo menos 2 caracteres."];
             }
 
@@ -967,11 +1003,11 @@ class UserController
      */
     private function getPermissionsForUser(array $data): array
     {
-        if (isset($data['permissoes']) && is_array($data['permissoes'])) {
-            return $data['permissoes'];
+        if (isset($data['permissions']) && is_array($data['permissions'])) {
+            return $data['permissions'];
         }
 
-        return $this->getDefaultPermissionsForRole($data['funcao']);
+        return $this->getDefaultPermissionsForRole($data['role']);
     }
 
     /**
@@ -1016,6 +1052,71 @@ class UserController
         ];
 
         return $rolePermissions[$role] ?? [];
+    }
+
+    /**
+     * Normalizar dados do usuário (aceitar campos em português ou inglês)
+     * 
+     * @param array $data Dados do usuário
+     * @return array Dados normalizados
+     */
+    private function normalizeUserData(array $data): array
+    {
+        $normalized = [];
+        
+        // Nome (aceitar 'nome' ou 'name')
+        if (isset($data['nome'])) {
+            $normalized['name'] = $data['nome'];
+        } elseif (isset($data['name'])) {
+            $normalized['name'] = $data['name'];
+        }
+        
+        // Email (já em inglês)
+        if (isset($data['email'])) {
+            $normalized['email'] = $data['email'];
+        }
+        
+        // Senha (aceitar 'senha' ou 'password')
+        if (isset($data['senha'])) {
+            $normalized['password'] = $data['senha'];
+        } elseif (isset($data['password'])) {
+            $normalized['password'] = $data['password'];
+        }
+        
+        // Função (aceitar 'funcao' ou 'role')
+        if (isset($data['funcao'])) {
+            $normalized['role'] = $data['funcao'];
+        } elseif (isset($data['role'])) {
+            $normalized['role'] = $data['role'];
+        }
+        
+        // Telefone (aceitar 'telefone' ou 'phone')
+        if (isset($data['telefone'])) {
+            $normalized['phone'] = $data['telefone'];
+        } elseif (isset($data['phone'])) {
+            $normalized['phone'] = $data['phone'];
+        }
+        
+        // Ativo (aceitar 'ativo' ou 'active')
+        if (isset($data['ativo'])) {
+            $normalized['active'] = $data['ativo'];
+        } elseif (isset($data['active'])) {
+            $normalized['active'] = $data['active'];
+        }
+        
+        // Permissões (aceitar 'permissoes' ou 'permissions')
+        if (isset($data['permissoes'])) {
+            $normalized['permissions'] = $data['permissoes'];
+        } elseif (isset($data['permissions'])) {
+            $normalized['permissions'] = $data['permissions'];
+        }
+        
+        // ID (para atualizações)
+        if (isset($data['id'])) {
+            $normalized['id'] = $data['id'];
+        }
+        
+        return $normalized;
     }
 
     /**

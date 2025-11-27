@@ -856,14 +856,19 @@ if ($requestPath === '/users' && $requestMethod === 'GET') {
         $headers = getallheaders();
         $users = new UserController();
 
-        // Capturar parâmetro type se fornecido
-        $queryParams = [];
+        // Capturar parâmetros da query string
+        $queryParams = $_GET;
 
         // Listar usuários
-        $users = $users->index($headers, $queryParams);
+        $response = $users->index($headers, $queryParams);
 
-        echo json_encode($users);
-        exit;
+        if (is_array($response)) {
+            http_response_code(200);
+            echo json_encode($response);
+        } else {
+            http_response_code(500);
+            echo json_encode(["error" => "Erro interno. Resposta inesperada do servidor."]);
+        }
     } catch (\Exception $e) {
         http_response_code(500);
         echo json_encode([
@@ -872,8 +877,150 @@ if ($requestPath === '/users' && $requestMethod === 'GET') {
         ]);
         error_log("Erro ao listar usuários: " . $e->getMessage());
     }
-    http_response_code(501); // Not Implemented
-    echo json_encode(["error" => "Endpoint de usuários não implementado."]);
+    exit;
+}
+
+// GET /users/profile - Obter perfil do usuário logado
+if ($requestPath === '/users/profile' && $requestMethod === 'GET') {
+    try {
+        $headers = getallheaders();
+        $userController = new UserController();
+        $response = $userController->profile($headers);
+        
+        if (is_array($response)) {
+            http_response_code(200);
+            echo json_encode($response);
+        } else {
+            http_response_code(500);
+            echo json_encode(["error" => "Erro interno."]);
+        }
+    } catch (\Exception $e) {
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno.", "detalhes" => $e->getMessage()]);
+    }
+    exit;
+}
+
+// PUT /users/profile - Atualizar perfil do usuário logado
+if ($requestPath === '/users/profile' && $requestMethod === 'PUT') {
+    try {
+        $headers = getallheaders();
+        $input = json_decode(file_get_contents('php://input'), true);
+        
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            http_response_code(400);
+            echo json_encode(["error" => "JSON inválido."]);
+            exit;
+        }
+
+        $userController = new UserController();
+        $response = $userController->updateProfile($headers, $input);
+        
+        if (is_array($response)) {
+            http_response_code(200);
+            echo json_encode($response);
+        } else {
+            http_response_code(500);
+            echo json_encode(["error" => "Erro interno."]);
+        }
+    } catch (\Exception $e) {
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno.", "detalhes" => $e->getMessage()]);
+    }
+    exit;
+}
+
+// GET /users/permissions - Obter permissões disponíveis
+if ($requestPath === '/users/permissions' && $requestMethod === 'GET') {
+    try {
+        $headers = getallheaders();
+        $userController = new UserController();
+        $response = $userController->getPermissions($headers);
+        
+        if (is_array($response)) {
+            http_response_code(200);
+            echo json_encode($response);
+        } else {
+            http_response_code(500);
+            echo json_encode(["error" => "Erro interno."]);
+        }
+    } catch (\Exception $e) {
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno.", "detalhes" => $e->getMessage()]);
+    }
+    exit;
+}
+
+// GET /users/{id} - Obter usuário específico
+if (preg_match('#^/users/(\d+)$#', $requestPath, $matches) && $requestMethod === 'GET') {
+    $userId = (int)$matches[1];
+    try {
+        $headers = getallheaders();
+        $userController = new UserController();
+        $response = $userController->show($headers, $userId);
+        
+        if (is_array($response)) {
+            http_response_code(200);
+            echo json_encode($response);
+        } else {
+            http_response_code(500);
+            echo json_encode(["error" => "Erro interno."]);
+        }
+    } catch (\Exception $e) {
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno.", "detalhes" => $e->getMessage()]);
+    }
+    exit;
+}
+
+// DELETE /users/{id} - Excluir usuário
+if (preg_match('#^/users/(\d+)$#', $requestPath, $matches) && $requestMethod === 'DELETE') {
+    $userId = (int)$matches[1];
+    try {
+        $headers = getallheaders();
+        $userController = new UserController();
+        $response = $userController->destroy($headers, $userId);
+        
+        if (is_array($response)) {
+            http_response_code(200);
+            echo json_encode($response);
+        } else {
+            http_response_code(500);
+            echo json_encode(["error" => "Erro interno."]);
+        }
+    } catch (\Exception $e) {
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno.", "detalhes" => $e->getMessage()]);
+    }
+    exit;
+}
+
+// POST /users/bulk-action - Ações em lote
+if ($requestPath === '/users/bulk-action' && $requestMethod === 'POST') {
+    try {
+        $headers = getallheaders();
+        $input = json_decode(file_get_contents('php://input'), true);
+        
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            http_response_code(400);
+            echo json_encode(["error" => "JSON inválido."]);
+            exit;
+        }
+
+        $userController = new UserController();
+        $response = $userController->bulkAction($headers, $input);
+        
+        if (is_array($response)) {
+            http_response_code(200);
+            echo json_encode($response);
+        } else {
+            http_response_code(500);
+            echo json_encode(["error" => "Erro interno."]);
+        }
+    } catch (\Exception $e) {
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno.", "detalhes" => $e->getMessage()]);
+    }
     exit;
 }
 
@@ -940,7 +1087,7 @@ if (preg_match('#^/users/deactivate/(\d+)$#', $requestPath, $matches) && $reques
 }
 
 // criar usuário
-if ($requestPath === '/users/create' && $requestMethod === 'POST') {
+if ($requestPath === '/users' && $requestMethod === 'POST') {
     try {
         // Ler o corpo da requisição JSON
         $input = json_decode(file_get_contents('php://input'), true);
@@ -975,7 +1122,7 @@ if ($requestPath === '/users/create' && $requestMethod === 'POST') {
 }
 
 // alterar usuários
-if (preg_match('#^/users/update/(\d+)$#', $requestPath, $matches) && $requestMethod === 'PUT') {
+if (preg_match('#^/users/(\d+)$#', $requestPath, $matches) && $requestMethod === 'PUT') {
     $userId = (int)$matches[1];
 
     try {
