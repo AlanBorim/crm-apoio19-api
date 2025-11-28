@@ -244,7 +244,7 @@ class User
         try {
             $pdo = Database::getInstance();
 
-            $sql = "SELECT COUNT(*) as total FROM users WHERE role = 'Admin' AND ativo = 1 AND deleted_at IS NULL";
+            $sql = "SELECT COUNT(*) AS total FROM users WHERE ACTIVE = '1' AND role = 'admin'";
             $stmt = $pdo->prepare($sql);
             $stmt->execute();
 
@@ -644,7 +644,7 @@ class User
     {
         try {
             $pdo = Database::getInstance();
-            
+
             // Usar uma transação garante que ambas as operações ocorram ou nenhuma ocorra.
             $pdo->beginTransaction();
 
@@ -659,7 +659,7 @@ class User
 
             $stmt->bindParam(':password', $hashedPassword);
             $stmt->bindParam(':id', $userId, PDO::PARAM_INT);
-            
+
             $success = $stmt->execute();
 
             if ($success) {
@@ -678,6 +678,4 @@ class User
             return false;
         }
     }
-
-
 }

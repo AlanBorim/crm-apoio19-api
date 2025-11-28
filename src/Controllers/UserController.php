@@ -408,6 +408,11 @@ class UserController
                 return $this->errorResponse(400, "Usuário já está inativo.");
             }
 
+            // Verificar se não está tentando desativar a si mesmo
+            if ($userId == $userData->userId) {
+                return $this->errorResponse(400, "Você não pode desativar seu próprio usuário.");
+            }
+
             // Verificar se não é o último admin ativo
             if ($user->funcao === 'admin') {
                 $activeAdminCount = User::countActiveAdmins();
@@ -467,7 +472,7 @@ class UserController
             return $this->errorResponse(401, "Autenticação necessária ou permissão insuficiente.");
         }
 
-        if ($userId == $userData['userId']) {
+        if ($userId == $userData->userId) {
             return $this->errorResponse(400, "Você não pode excluir seu próprio usuário.");
         }
 
@@ -910,7 +915,7 @@ class UserController
             if (strlen($data['password']) < 6) {
                 return ["valid" => false, "message" => "A senha deve ter pelo menos 6 caracteres."];
             }
-            
+
             // Removida validação de complexidade para permitir senhas mais simples
         }
 
@@ -1063,59 +1068,59 @@ class UserController
     private function normalizeUserData(array $data): array
     {
         $normalized = [];
-        
+
         // Nome (aceitar 'nome' ou 'name')
         if (isset($data['nome'])) {
             $normalized['name'] = $data['nome'];
         } elseif (isset($data['name'])) {
             $normalized['name'] = $data['name'];
         }
-        
+
         // Email (já em inglês)
         if (isset($data['email'])) {
             $normalized['email'] = $data['email'];
         }
-        
+
         // Senha (aceitar 'senha' ou 'password')
         if (isset($data['senha'])) {
             $normalized['password'] = $data['senha'];
         } elseif (isset($data['password'])) {
             $normalized['password'] = $data['password'];
         }
-        
+
         // Função (aceitar 'funcao' ou 'role')
         if (isset($data['funcao'])) {
             $normalized['role'] = $data['funcao'];
         } elseif (isset($data['role'])) {
             $normalized['role'] = $data['role'];
         }
-        
+
         // Telefone (aceitar 'telefone' ou 'phone')
         if (isset($data['telefone'])) {
             $normalized['phone'] = $data['telefone'];
         } elseif (isset($data['phone'])) {
             $normalized['phone'] = $data['phone'];
         }
-        
+
         // Ativo (aceitar 'ativo' ou 'active')
         if (isset($data['ativo'])) {
             $normalized['active'] = $data['ativo'];
         } elseif (isset($data['active'])) {
             $normalized['active'] = $data['active'];
         }
-        
+
         // Permissões (aceitar 'permissoes' ou 'permissions')
         if (isset($data['permissoes'])) {
             $normalized['permissions'] = $data['permissoes'];
         } elseif (isset($data['permissions'])) {
             $normalized['permissions'] = $data['permissions'];
         }
-        
+
         // ID (para atualizações)
         if (isset($data['id'])) {
             $normalized['id'] = $data['id'];
         }
-        
+
         return $normalized;
     }
 
@@ -1219,7 +1224,8 @@ class UserController
     private function errorResponse(int $code, string $message, string $details = null): array
     {
         http_response_code($code);
-        $response = ["success" => false, "error" => $message];
+        // Incluir ambos 'error' e 'message' para compatibilidade com diferentes clientes
+        $response = ["success" => false, "message" => $message];
 
         if ($details !== null) {
             $response["details"] = $details;

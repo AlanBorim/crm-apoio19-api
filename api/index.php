@@ -18,6 +18,7 @@ use Apoio19\Crm\Controllers\HistoryController;
 use Apoio19\Crm\Controllers\UserController;
 use Apoio19\Crm\Controllers\KanbanController;
 use Apoio19\Crm\Controllers\TarefaController;
+use Apoio19\Crm\Controllers\TarefaUsuarioController;
 use Apoio19\Crm\Controllers\WhatsappCampaignController;
 use Apoio19\Crm\Controllers\WhatsappTemplateController;
 
@@ -121,7 +122,7 @@ if ($requestPath === '/refresh' && $requestMethod === 'POST') {
 }
 
 if ($requestPath === '/forgot-password' && $requestMethod === 'POST') {
-    
+
     $input = json_decode(file_get_contents('php://input'), true);
 
     // Verificar se o JSON foi decodificado corretamente
@@ -138,7 +139,7 @@ if ($requestPath === '/forgot-password' && $requestMethod === 'POST') {
 }
 
 if ($requestPath === '/reset-password' && $requestMethod === 'POST') {
-    
+
     $input = json_decode(file_get_contents('php://input'), true);
 
     // Verificar se o JSON foi decodificado corretamente
@@ -150,7 +151,7 @@ if ($requestPath === '/reset-password' && $requestMethod === 'POST') {
 
     $controller = new AuthController();
     echo json_encode($controller->resetPassword($input));
-      
+
     exit;
 }
 
@@ -886,7 +887,7 @@ if ($requestPath === '/users/profile' && $requestMethod === 'GET') {
         $headers = getallheaders();
         $userController = new UserController();
         $response = $userController->profile($headers);
-        
+
         if (is_array($response)) {
             http_response_code(200);
             echo json_encode($response);
@@ -906,7 +907,7 @@ if ($requestPath === '/users/profile' && $requestMethod === 'PUT') {
     try {
         $headers = getallheaders();
         $input = json_decode(file_get_contents('php://input'), true);
-        
+
         if (json_last_error() !== JSON_ERROR_NONE) {
             http_response_code(400);
             echo json_encode(["error" => "JSON inválido."]);
@@ -915,7 +916,7 @@ if ($requestPath === '/users/profile' && $requestMethod === 'PUT') {
 
         $userController = new UserController();
         $response = $userController->updateProfile($headers, $input);
-        
+
         if (is_array($response)) {
             http_response_code(200);
             echo json_encode($response);
@@ -936,7 +937,7 @@ if ($requestPath === '/users/permissions' && $requestMethod === 'GET') {
         $headers = getallheaders();
         $userController = new UserController();
         $response = $userController->getPermissions($headers);
-        
+
         if (is_array($response)) {
             http_response_code(200);
             echo json_encode($response);
@@ -958,7 +959,7 @@ if (preg_match('#^/users/(\d+)$#', $requestPath, $matches) && $requestMethod ===
         $headers = getallheaders();
         $userController = new UserController();
         $response = $userController->show($headers, $userId);
-        
+
         if (is_array($response)) {
             http_response_code(200);
             echo json_encode($response);
@@ -980,7 +981,7 @@ if (preg_match('#^/users/(\d+)$#', $requestPath, $matches) && $requestMethod ===
         $headers = getallheaders();
         $userController = new UserController();
         $response = $userController->destroy($headers, $userId);
-        
+
         if (is_array($response)) {
             http_response_code(200);
             echo json_encode($response);
@@ -1000,7 +1001,7 @@ if ($requestPath === '/users/bulk-action' && $requestMethod === 'POST') {
     try {
         $headers = getallheaders();
         $input = json_decode(file_get_contents('php://input'), true);
-        
+
         if (json_last_error() !== JSON_ERROR_NONE) {
             http_response_code(400);
             echo json_encode(["error" => "JSON inválido."]);
@@ -1009,7 +1010,7 @@ if ($requestPath === '/users/bulk-action' && $requestMethod === 'POST') {
 
         $userController = new UserController();
         $response = $userController->bulkAction($headers, $input);
-        
+
         if (is_array($response)) {
             http_response_code(200);
             echo json_encode($response);
@@ -1221,13 +1222,13 @@ if ($requestPath === '/kanban/columns' && $requestMethod === 'POST') {
     try {
         $headers = getallheaders();
         $requestData = json_decode(file_get_contents('php://input'), true);
-        
+
         if (json_last_error() !== JSON_ERROR_NONE) {
             http_response_code(400);
             echo json_encode(["error" => "JSON inválido no corpo da requisição."]);
             exit;
         }
-        
+
         $controller = new KanbanController();
         $response = $controller->createColumn($headers, $requestData);
         echo json_encode($response);
@@ -1245,13 +1246,13 @@ if (preg_match('#^/kanban/columns/(\d+)$#', $requestPath, $matches) && $requestM
         $columnId = (int)$matches[1];
         $headers = getallheaders();
         $requestData = json_decode(file_get_contents('php://input'), true);
-        
+
         if (json_last_error() !== JSON_ERROR_NONE) {
             http_response_code(400);
             echo json_encode(["error" => "JSON inválido no corpo da requisição."]);
             exit;
         }
-        
+
         $controller = new KanbanController();
         $response = $controller->updateColumn($headers, $columnId, $requestData);
         echo json_encode($response);
@@ -1284,13 +1285,13 @@ if ($requestPath === '/kanban/tasks/order' && $requestMethod === 'POST') {
     try {
         $headers = getallheaders();
         $requestData = json_decode(file_get_contents('php://input'), true);
-        
+
         if (json_last_error() !== JSON_ERROR_NONE) {
             http_response_code(400);
             echo json_encode(["error" => "JSON inválido no corpo da requisição."]);
             exit;
         }
-        
+
         $controller = new KanbanController();
         $response = $controller->updateTaskOrder($headers, $requestData);
         echo json_encode($response);
@@ -1343,13 +1344,13 @@ if ($requestPath === '/kanban' && $requestMethod === 'POST') {
     try {
         $headers = getallheaders();
         $requestData = json_decode(file_get_contents('php://input'), true);
-        
+
         if (json_last_error() !== JSON_ERROR_NONE) {
             http_response_code(400);
             echo json_encode(["error" => "JSON inválido no corpo da requisição."]);
             exit;
         }
-        
+
         $controller = new TarefaController();
         $response = $controller->store($headers, $requestData);
         echo json_encode($response);
@@ -1366,13 +1367,13 @@ if ($requestPath === '/kanban/tasks' && $requestMethod === 'POST') {
     try {
         $headers = getallheaders();
         $requestData = json_decode(file_get_contents('php://input'), true);
-        
+
         if (json_last_error() !== JSON_ERROR_NONE) {
             http_response_code(400);
             echo json_encode(["error" => "JSON inválido no corpo da requisição."]);
             exit;
         }
-        
+
         $controller = new TarefaController();
         $response = $controller->store($headers, $requestData);
         echo json_encode($response);
@@ -1390,13 +1391,13 @@ if (preg_match('#^/kanban/tasks/(\d+)$#', $requestPath, $matches) && $requestMet
         $taskId = (int)$matches[1];
         $headers = getallheaders();
         $requestData = json_decode(file_get_contents('php://input'), true);
-        
+
         if (json_last_error() !== JSON_ERROR_NONE) {
             http_response_code(400);
             echo json_encode(["error" => "JSON inválido no corpo da requisição."]);
             exit;
         }
-        
+
         $controller = new TarefaController();
         $response = $controller->update($headers, $taskId, $requestData);
         echo json_encode($response);
@@ -1446,13 +1447,13 @@ if (preg_match('#^/kanban/tasks/(\d+)/comments$#', $requestPath, $matches) && $r
         $taskId = (int)$matches[1];
         $headers = getallheaders();
         $requestData = json_decode(file_get_contents('php://input'), true);
-        
+
         if (json_last_error() !== JSON_ERROR_NONE) {
             http_response_code(400);
             echo json_encode(["error" => "JSON inválido no corpo da requisição."]);
             exit;
         }
-        
+
         $controller = new TarefaController();
         $response = $controller->addComment($headers, $taskId, $requestData);
         echo json_encode($response);
@@ -1655,6 +1656,99 @@ if ($requestPath === '/whatsapp/templates' && $requestMethod === 'POST') {
     } catch (\Exception $e) {
         http_response_code(500);
         echo json_encode(["error" => "Erro ao criar template"]);
+    }
+    exit;
+}
+
+// =================================================================================
+// ROTAS DE TAREFAS DE USUÁRIO (NOVO MÓDULO)
+// =================================================================================
+
+// Listar tarefas do usuário
+if ($requestPath === '/tarefas' && $requestMethod === 'GET') {
+    try {
+        $headers = getallheaders();
+        $controller = new TarefaUsuarioController();
+        $response = $controller->index($headers, $_GET);
+        echo json_encode($response);
+    } catch (Exception $e) {
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno do servidor: " . $e->getMessage()]);
+    }
+    exit;
+}
+
+// Criar nova tarefa
+if ($requestPath === '/tarefas' && $requestMethod === 'POST') {
+    try {
+        $headers = getallheaders();
+        $requestData = json_decode(file_get_contents('php://input'), true);
+
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            http_response_code(400);
+            echo json_encode(["error" => "JSON inválido no corpo da requisição."]);
+            exit;
+        }
+
+        $controller = new TarefaUsuarioController();
+        $response = $controller->store($headers, $requestData);
+        echo json_encode($response);
+    } catch (Exception $e) {
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno do servidor: " . $e->getMessage()]);
+    }
+    exit;
+}
+
+// Obter tarefa por ID
+if (preg_match('/^\/tarefas\/(\d+)$/', $requestPath, $matches) && $requestMethod === 'GET') {
+    try {
+        $id = (int)$matches[1];
+        $headers = getallheaders();
+        $controller = new TarefaUsuarioController();
+        $response = $controller->show($headers, $id);
+        echo json_encode($response);
+    } catch (Exception $e) {
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno do servidor: " . $e->getMessage()]);
+    }
+    exit;
+}
+
+// Atualizar tarefa
+if (preg_match('/^\/tarefas\/(\d+)$/', $requestPath, $matches) && $requestMethod === 'PUT') {
+    try {
+        $id = (int)$matches[1];
+        $headers = getallheaders();
+        $requestData = json_decode(file_get_contents('php://input'), true);
+
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            http_response_code(400);
+            echo json_encode(["error" => "JSON inválido no corpo da requisição."]);
+            exit;
+        }
+
+        $controller = new TarefaUsuarioController();
+        $response = $controller->update($headers, $id, $requestData);
+        echo json_encode($response);
+    } catch (Exception $e) {
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno do servidor: " . $e->getMessage()]);
+    }
+    exit;
+}
+
+// Excluir tarefa
+if (preg_match('/^\/tarefas\/(\d+)$/', $requestPath, $matches) && $requestMethod === 'DELETE') {
+    try {
+        $id = (int)$matches[1];
+        $headers = getallheaders();
+        $controller = new TarefaUsuarioController();
+        $response = $controller->destroy($headers, $id);
+        echo json_encode($response);
+    } catch (Exception $e) {
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno do servidor: " . $e->getMessage()]);
     }
     exit;
 }
