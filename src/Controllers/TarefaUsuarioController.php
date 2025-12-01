@@ -5,7 +5,7 @@ namespace Apoio19\Crm\Controllers;
 use Apoio19\Crm\Models\TarefaUsuario;
 use Apoio19\Crm\Middleware\AuthMiddleware;
 
-class TarefaUsuarioController
+class TarefaUsuarioController extends BaseController
 {
     private $authMiddleware;
 

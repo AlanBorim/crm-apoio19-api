@@ -5,9 +5,10 @@ namespace Apoio19\Crm\Controllers;
 use Apoio19\Crm\Models\Contact;
 use Apoio19\Crm\Models\Company;
 use Apoio19\Crm\Middleware\AuthMiddleware;
+use Apoio19\Crm\Utils\DataTransformer;
 
 // Placeholder for Request/Response handling & Validation
-class ContactController
+class ContactController extends BaseController
 {
     private AuthMiddleware $authMiddleware;
 
@@ -81,8 +82,8 @@ class ContactController
             return ["error" => "O nome do contato é obrigatório."];
         }
         if (!empty($requestData["email"]) && !filter_var($requestData["email"], FILTER_VALIDATE_EMAIL)) {
-             http_response_code(400);
-             return ["error" => "Formato de email inválido."];
+            http_response_code(400);
+            return ["error" => "Formato de email inválido."];
         }
         // Validate if empresa_id exists if provided
         if (!empty($requestData["empresa_id"])) {
@@ -93,7 +94,9 @@ class ContactController
         }
 
         try {
-            $contactId = Contact::create($requestData);
+            // Transform Portuguese field names to English for database
+            $transformedData = DataTransformer::transformContactToEnglish($requestData);
+            $contactId = Contact::create($transformedData);
 
             if ($contactId) {
                 // Add initial history entry
@@ -157,7 +160,7 @@ class ContactController
      */
     public function update(array $headers, int $id, array $requestData): array
     {
-        $userData = $this->authMiddleware->handle($headers, ["comercial", "admin"]); 
+        $userData = $this->authMiddleware->handle($headers, ["comercial", "admin"]);
         if (!$userData) {
             http_response_code(401); // Or 403
             return ["error" => "Acesso não autorizado ou autenticação necessária."];
@@ -165,8 +168,8 @@ class ContactController
 
         // Basic Validation
         if (isset($requestData["email"]) && !empty($requestData["email"]) && !filter_var($requestData["email"], FILTER_VALIDATE_EMAIL)) {
-             http_response_code(400);
-             return ["error" => "Formato de email inválido."];
+            http_response_code(400);
+            return ["error" => "Formato de email inválido."];
         }
         // Validate if empresa_id exists if provided
         if (isset($requestData["empresa_id"]) && !empty($requestData["empresa_id"])) {
@@ -182,12 +185,15 @@ class ContactController
                 http_response_code(404);
                 return ["error" => "Contato não encontrado para atualização."];
             }
-            
+
             // Add logic here to check if the user ($userData->userId) is allowed to update this contact
 
-            if (Contact::update($id, $requestData)) {
-                 // Add history entry for update
-                 Contact::addInteractionHistory($id, $userData->userId, "nota", "Contato atualizado.");
+            // Transform Portuguese field names to English for database
+            $transformedData = DataTransformer::transformContactToEnglish($requestData);
+
+            if (Contact::update($id, $transformedData)) {
+                // Add history entry for update
+                Contact::addInteractionHistory($id, $userData->userId, "nota", "Contato atualizado.");
 
                 http_response_code(200);
                 $updatedContact = Contact::findById($id);
@@ -213,7 +219,7 @@ class ContactController
      */
     public function destroy(array $headers, int $id): array
     {
-        $userData = $this->authMiddleware->handle($headers, ["Admin"]); 
+        $userData = $this->authMiddleware->handle($headers, ["Admin"]);
         if (!$userData) {
             http_response_code(403); // Forbidden
             return ["error" => "Acesso negado. Permissão de Administrador necessária."];
@@ -241,7 +247,7 @@ class ContactController
             return ["error" => "Erro interno ao excluir contato."];
         }
     }
-    
+
     /**
      * Add interaction history to a contact.
      *
@@ -288,4 +294,3 @@ class ContactController
         }
     }
 }
-

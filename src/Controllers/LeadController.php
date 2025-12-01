@@ -12,7 +12,7 @@ use League\Csv\Statement;
 /**
  * Controlador para gerenciamento de leads
  */
-class LeadController
+class LeadController extends BaseController
 {
     private AuthMiddleware $authMiddleware;
     private NotificationService $notificationService;
@@ -32,9 +32,10 @@ class LeadController
      */
     public function index(array $headers, array $queryParams = []): array
     {
+        $traceId = bin2hex(random_bytes(8));
         $userData = $this->authMiddleware->handle($headers);
         if (!$userData) {
-            return $this->errorResponse(401, "Autenticação necessária.");
+            return $this->errorResponse(401, "Autenticação necessária.", "UNAUTHENTICATED", $traceId);
         }
 
         try {
@@ -91,9 +92,12 @@ class LeadController
             // Buscar leads filtrados
             $leads = Lead::findAllWithWhere($where, $params);
 
-            return $this->successResponse($leads);
-        } catch (\Exception $e) {
-            return $this->errorResponse(500, "Erro ao buscar leads.", $e->getMessage());
+            return $this->successResponse($leads, null, 200, $traceId);
+        } catch (\PDOException $e) {
+            $mapped = $this->mapPdoError($e);
+            return $this->errorResponse($mapped['status'], $mapped['message'], $mapped['code'], $traceId, $this->debugDetails($e));
+        } catch (\Throwable $e) {
+            return $this->errorResponse(500, "Erro ao buscar leads.", "UNEXPECTED_ERROR", $traceId, $this->debugDetails($e));
         }
     }
 
@@ -106,16 +110,17 @@ class LeadController
      */
     public function store(array $headers, array $requestData): array
     {
+        $traceId = bin2hex(random_bytes(8));
         $userData = $this->authMiddleware->handle($headers, ["admin", "comercial"]);
 
         if (!$userData) {
-            return $this->errorResponse(401, "Autenticação necessária ou permissão insuficiente.");
+            return $this->errorResponse(401, "Autenticação necessária ou permissão insuficiente.", "UNAUTHENTICATED", $traceId);
         }
 
         // Validação básica
         $validation = $this->validateLeadData($requestData);
         if (!$validation['valid']) {
-            return $this->errorResponse(400, $validation['message']);
+            return $this->errorResponse(400, $validation['message'], "VALIDATION_ERROR", $traceId);
         }
 
         // Definir responsável padrão se não fornecido
@@ -142,12 +147,15 @@ class LeadController
                     $this->notifyLeadAssignment($newLead, $userData, "novo_lead_atribuido");
                 }
 
-                return $this->successResponse($newLead, "Lead criado com sucesso.", 201);
+                return $this->successResponse($newLead, "Lead criado com sucesso.", 201, $traceId);
             } else {
-                return $this->errorResponse(500, "Falha ao criar lead.");
+                return $this->errorResponse(500, "Falha ao criar lead.", "CREATE_FAILED", $traceId);
             }
-        } catch (\Exception $e) {
-            return $this->errorResponse(500, "Erro interno ao criar lead.", $e->getMessage());
+        } catch (\PDOException $e) {
+            $mapped = $this->mapPdoError($e);
+            return $this->errorResponse($mapped['status'], $mapped['message'], $mapped['code'], $traceId, $this->debugDetails($e));
+        } catch (\Throwable $e) {
+            return $this->errorResponse(500, "Erro interno ao criar lead.", "UNEXPECTED_ERROR", $traceId, $this->debugDetails($e));
         }
     }
 
@@ -838,36 +846,5 @@ class LeadController
         }
 
         return ["valid" => true, "message" => ""];
-    }
-
-
-    /**
-     * Resposta de sucesso padronizada
-     */
-    private function successResponse($data = null, string $message = "Operação realizada com sucesso.", int $code = 200): array
-    {
-        http_response_code($code);
-        $response = ["success" => true, "message" => $message];
-
-        if ($data !== null) {
-            $response["data"] = $data;
-        }
-
-        return $response;
-    }
-
-    /**
-     * Resposta de erro padronizada
-     */
-    private function errorResponse(int $code, string $message, string $details = null): array
-    {
-        http_response_code($code);
-        $response = ["success" => false, "error" => $message];
-
-        if ($details !== null) {
-            $response["details"] = $details;
-        }
-
-        return $response;
     }
 }

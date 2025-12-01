@@ -120,9 +120,11 @@ class User
                 $user->email = $userData["email"];
                 $user->senha_hash = $userData["password"];
                 $user->funcao  = $userData["role"];
+                $user->active = $userData["active"];
                 $user->ativo = $userData["active"];
                 $user->criado_em = $userData["created_at"];
                 $user->atualizado_em = $userData["updated_at"];
+                $user->last_login = $userData["last_login"] ?? null;
             }
             return $user ?? null;
         } catch (PDOException $e) {
@@ -273,13 +275,13 @@ class User
             $total = $stmt->fetch(PDO::FETCH_OBJ)->total;
 
             // Usuários ativos
-            $sql = "SELECT COUNT(*) as active FROM users WHERE ativo = 1 AND deleted_at IS NULL";
+            $sql = "SELECT COUNT(*) as active FROM users WHERE active = 1 AND deleted_at IS NULL";
             $stmt = $pdo->prepare($sql);
             $stmt->execute();
             $active = $stmt->fetch(PDO::FETCH_OBJ)->active;
 
             // Usuários inativos
-            $sql = "SELECT COUNT(*) as inactive FROM users WHERE ativo = 0 AND deleted_at IS NULL";
+            $sql = "SELECT COUNT(*) as inactive FROM users WHERE active = 0 AND deleted_at IS NULL";
             $stmt = $pdo->prepare($sql);
             $stmt->execute();
             $inactive = $stmt->fetch(PDO::FETCH_OBJ)->inactive;
@@ -296,7 +298,7 @@ class User
             }
 
             // Usuários com login recente (últimos 7 dias)
-            $sql = "SELECT COUNT(*) as recent FROM users WHERE ultimo_login >= DATE_SUB(NOW(), INTERVAL 7 DAY) AND deleted_at IS NULL";
+            $sql = "SELECT COUNT(*) as recent FROM users WHERE last_login >= DATE_SUB(NOW(), INTERVAL 7 DAY) AND deleted_at IS NULL";
             $stmt = $pdo->prepare($sql);
             $stmt->execute();
             $recentLogins = $stmt->fetch(PDO::FETCH_OBJ)->recent;
@@ -331,7 +333,7 @@ class User
     {
         try {
             $user = self::findById($userId);
-            if (!$user || !$user->ativo || $user->deleted_at) {
+            if (!$user || !$user->active || $user->deleted_at) {
                 return false;
             }
 
@@ -363,13 +365,12 @@ class User
      * Atualizar último login do usuário
      *
      * @param int $userId ID do usuário
-     * @return bool Sucesso da operação
      */
     public static function updateLastLogin(int $userId): bool
     {
         try {
             return self::update($userId, [
-                'ultimo_login' => date('Y-m-d H:i:s'),
+                'last_login' => date('Y-m-d H:i:s'),
                 'updated_at' => date('Y-m-d H:i:s')
             ]);
         } catch (\Exception $e) {
@@ -394,7 +395,7 @@ class User
             $params = [':role' => $role];
 
             if ($activeOnly) {
-                $conditions[] = "ativo = 1";
+                $conditions[] = "active = 1";
             }
 
             $sql = "SELECT * FROM users WHERE " . implode(" AND ", $conditions) . " ORDER BY name";
@@ -418,7 +419,7 @@ class User
         try {
             $pdo = Database::getInstance();
 
-            $sql = "SELECT * FROM users WHERE ativo = 1 AND deleted_at IS NULL ORDER BY name";
+            $sql = "SELECT * FROM users WHERE active = 1 AND deleted_at IS NULL ORDER BY name";
             $stmt = $pdo->prepare($sql);
             $stmt->execute();
 
@@ -473,9 +474,9 @@ class User
             $pdo = Database::getInstance();
 
             $sql = "SELECT * FROM users 
-                    WHERE ultimo_login >= DATE_SUB(NOW(), INTERVAL :days DAY) 
+                    WHERE last_login >= DATE_SUB(NOW(), INTERVAL :days DAY) 
                     AND deleted_at IS NULL 
-                    ORDER BY ultimo_login DESC";
+                    ORDER BY last_login DESC";
 
             $stmt = $pdo->prepare($sql);
             $stmt->execute([':days' => $days]);
@@ -571,7 +572,7 @@ class User
             $params = [];
 
             if ($activeOnly) {
-                $conditions[] = "ativo = '1'";
+                $conditions[] = "active = '1'";
             }
 
             $sql = "SELECT id, name as nome, email, role as funcao FROM users WHERE " . implode(" AND ", $conditions) . " ORDER BY name";

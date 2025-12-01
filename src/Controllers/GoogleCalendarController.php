@@ -8,7 +8,7 @@ use Apoio19\Crm\Middleware\AuthMiddleware;
 
 // Placeholder for Request/Response handling & Session management
 // In a real framework, use Request/Response objects, session handling, and proper routing.
-class GoogleCalendarController
+class GoogleCalendarController extends BaseController
 {
     private AuthMiddleware $authMiddleware;
     private GoogleAuthService $googleAuthService;
@@ -19,7 +19,7 @@ class GoogleCalendarController
         $this->authMiddleware = new AuthMiddleware();
         $this->googleAuthService = new GoogleAuthService();
         $this->googleCalendarService = new GoogleCalendarService();
-        
+
         // Session start might be needed here or in a bootstrap file
         if (session_status() == PHP_SESSION_NONE) {
             session_start();
@@ -109,11 +109,11 @@ class GoogleCalendarController
         $events = $this->googleCalendarService->listEvents($userData->userId, $queryParams);
 
         if ($events === null) {
-             // Check if the reason is lack of authentication
-             if (!$this->googleAuthService->getAuthenticatedClientForUser($userData->userId)) {
-                 http_response_code(401); // Or a custom code indicating Google Auth needed
-                 return ["error" => "Integração com Google Calendar não autorizada ou token inválido. Por favor, autorize o acesso.", "needs_google_auth" => true];
-             }
+            // Check if the reason is lack of authentication
+            if (!$this->googleAuthService->getAuthenticatedClientForUser($userData->userId)) {
+                http_response_code(401); // Or a custom code indicating Google Auth needed
+                return ["error" => "Integração com Google Calendar não autorizada ou token inválido. Por favor, autorize o acesso.", "needs_google_auth" => true];
+            }
             http_response_code(500);
             return ["error" => "Falha ao buscar eventos do Google Calendar."];
         }
@@ -150,10 +150,10 @@ class GoogleCalendarController
             http_response_code(201);
             return ["message" => "Evento criado com sucesso no Google Calendar.", "event" => $createdEvent];
         } else {
-             if (!$this->googleAuthService->getAuthenticatedClientForUser($userData->userId)) {
-                 http_response_code(401); 
-                 return ["error" => "Integração com Google Calendar não autorizada ou token inválido. Por favor, autorize o acesso.", "needs_google_auth" => true];
-             }
+            if (!$this->googleAuthService->getAuthenticatedClientForUser($userData->userId)) {
+                http_response_code(401);
+                return ["error" => "Integração com Google Calendar não autorizada ou token inválido. Por favor, autorize o acesso.", "needs_google_auth" => true];
+            }
             http_response_code(500);
             return ["error" => "Falha ao criar evento no Google Calendar."];
         }
@@ -180,10 +180,10 @@ class GoogleCalendarController
             http_response_code(200);
             return ["data" => $event];
         } else {
-             if (!$this->googleAuthService->getAuthenticatedClientForUser($userData->userId)) {
-                 http_response_code(401); 
-                 return ["error" => "Integração com Google Calendar não autorizada ou token inválido. Por favor, autorize o acesso.", "needs_google_auth" => true];
-             }
+            if (!$this->googleAuthService->getAuthenticatedClientForUser($userData->userId)) {
+                http_response_code(401);
+                return ["error" => "Integração com Google Calendar não autorizada ou token inválido. Por favor, autorize o acesso.", "needs_google_auth" => true];
+            }
             // Could be 404 Not Found or 500 Internal Error
             http_response_code(404); // Assuming not found is more likely if service didn't throw other errors
             return ["error" => "Evento não encontrado no Google Calendar ou falha ao buscar."];
@@ -207,7 +207,7 @@ class GoogleCalendarController
         }
 
         if (empty($requestData)) {
-             http_response_code(400);
+            http_response_code(400);
             return ["error" => "Nenhum dado fornecido para atualização."];
         }
 
@@ -217,10 +217,10 @@ class GoogleCalendarController
             http_response_code(200);
             return ["message" => "Evento atualizado com sucesso no Google Calendar.", "event" => $updatedEvent];
         } else {
-             if (!$this->googleAuthService->getAuthenticatedClientForUser($userData->userId)) {
-                 http_response_code(401); 
-                 return ["error" => "Integração com Google Calendar não autorizada ou token inválido. Por favor, autorize o acesso.", "needs_google_auth" => true];
-             }
+            if (!$this->googleAuthService->getAuthenticatedClientForUser($userData->userId)) {
+                http_response_code(401);
+                return ["error" => "Integração com Google Calendar não autorizada ou token inválido. Por favor, autorize o acesso.", "needs_google_auth" => true];
+            }
             http_response_code(500); // Or 404 if event not found during update
             return ["error" => "Falha ao atualizar evento no Google Calendar."];
         }
@@ -245,15 +245,15 @@ class GoogleCalendarController
             http_response_code(200); // Or 204 No Content
             return ["message" => "Evento excluído com sucesso do Google Calendar."];
         } else {
-             if (!$this->googleAuthService->getAuthenticatedClientForUser($userData->userId)) {
-                 http_response_code(401); 
-                 return ["error" => "Integração com Google Calendar não autorizada ou token inválido. Por favor, autorize o acesso.", "needs_google_auth" => true];
-             }
+            if (!$this->googleAuthService->getAuthenticatedClientForUser($userData->userId)) {
+                http_response_code(401);
+                return ["error" => "Integração com Google Calendar não autorizada ou token inválido. Por favor, autorize o acesso.", "needs_google_auth" => true];
+            }
             http_response_code(500); // Or 404 if event not found
             return ["error" => "Falha ao excluir evento do Google Calendar."];
         }
     }
-    
+
     /**
      * Disconnect Google Calendar integration for the user (delete tokens).
      *
@@ -272,7 +272,7 @@ class GoogleCalendarController
             // Optionally, try to revoke the token on Google's side as well
             // $client = $this->googleAuthService->getClient();
             // $client->revokeToken(); // Requires the token to be set first
-            
+
             http_response_code(200);
             return ["message" => "Integração com Google Calendar desconectada com sucesso."];
         } else {
@@ -281,4 +281,3 @@ class GoogleCalendarController
         }
     }
 }
-

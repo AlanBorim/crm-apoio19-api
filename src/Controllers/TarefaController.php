@@ -9,7 +9,7 @@ use Apoio19\Crm\Middleware\AuthMiddleware;
 use Apoio19\Crm\Services\NotificationService; // Import NotificationService
 
 // Placeholder for Request/Response handling
-class TarefaController
+class TarefaController extends BaseController
 {
     private AuthMiddleware $authMiddleware;
     private NotificationService $notificationService; // Add NotificationService instance
@@ -29,83 +29,85 @@ class TarefaController
      */
     public function store(array $headers, array $requestData): array
     {
+        $traceId = bin2hex(random_bytes(8));
         $userData = $this->authMiddleware->handle($headers);
         if (!$userData) {
-            http_response_code(401);
-            return ["error" => "Autenticação do CRM necessária."];
+            return $this->errorResponse(401, "Autenticação do CRM necessária.", "UNAUTHENTICATED", $traceId);
         }
 
         // Basic Validation
         if (empty($requestData["titulo"])) {
-            http_response_code(400);
-            return ["error" => "O título da tarefa é obrigatório."];
+            return $this->errorResponse(400, "O título da tarefa é obrigatório.", "VALIDATION_ERROR", $traceId);
         }
         if (empty($requestData["kanban_coluna_id"])) {
-             http_response_code(400);
-            return ["error" => "A coluna Kanban (kanban_coluna_id) é obrigatória."];
+            return $this->errorResponse(400, "A coluna Kanban (kanban_coluna_id) é obrigatória.", "VALIDATION_ERROR", $traceId);
         }
         // Add more validation (check if column exists, user exists, date format etc.)
 
         // Set the creator ID
         $requestData["criador_id"] = $userData->userId;
 
-        $taskId = Tarefa::create($requestData);
+        try {
+            $taskId = Tarefa::create($requestData);
 
-        if ($taskId) {
-            $newTask = Tarefa::findById($taskId); // Fetch the created task with details
-            
-            if (!$newTask) {
-                // DEBUG: Try the FULL query from findById to see why it fails
-                $debugInfo = "";
-                try {
-                    $pdo = \Apoio19\Crm\Models\Database::getInstance();
-                    $sql = "SELECT t.*, 
-                           kc.nome as kanban_coluna_nome, 
-                           u_resp.name as responsavel_nome, 
-                           u_criador.name as criador_nome
-                    FROM tarefas t
-                    LEFT JOIN kanban_colunas kc ON t.kanban_coluna_id = kc.id
-                    LEFT JOIN users u_resp ON t.responsavel_id = u_resp.id
-                    LEFT JOIN users u_criador ON t.criador_id = u_criador.id
-                    WHERE t.id = " . (int)$taskId;
-                    
-                    $stmt = $pdo->query($sql);
-                    $fullData = $stmt->fetch(\PDO::FETCH_ASSOC);
-                    if ($fullData) {
-                         $debugInfo = "Full query SUCCEEDED. Data: " . json_encode($fullData);
-                    } else {
-                         $debugInfo = "Full query returned EMPTY for ID " . $taskId;
+            if ($taskId) {
+                $newTask = Tarefa::findById($taskId); // Fetch the created task with details
+
+                if (!$newTask) {
+                    // DEBUG: Try the FULL query from findById to see why it fails
+                    $debugInfo = "";
+                    try {
+                        $pdo = \Apoio19\Crm\Models\Database::getInstance();
+                        $sql = "SELECT t.*, 
+                               kc.nome as kanban_coluna_nome, 
+                               u_resp.name as responsavel_nome, 
+                               u_criador.name as criador_nome
+                        FROM tarefas t
+                        LEFT JOIN kanban_colunas kc ON t.kanban_coluna_id = kc.id
+                        LEFT JOIN users u_resp ON t.responsavel_id = u_resp.id
+                        LEFT JOIN users u_criador ON t.criador_id = u_criador.id
+                        WHERE t.id = " . (int)$taskId;
+
+                        $stmt = $pdo->query($sql);
+                        $fullData = $stmt->fetch(\PDO::FETCH_ASSOC);
+                        if ($fullData) {
+                            $debugInfo = "Full query SUCCEEDED. Data: " . json_encode($fullData);
+                        } else {
+                            $debugInfo = "Full query returned EMPTY for ID " . $taskId;
+                        }
+                    } catch (\Exception $e) {
+                        $debugInfo = "Full query FAILED: " . $e->getMessage();
                     }
-                } catch (\Exception $e) {
-                    $debugInfo = "Full query FAILED: " . $e->getMessage();
+
+                    error_log("Erro: Tarefa criada com ID {$taskId} mas não encontrada pelo findById. Debug: " . $debugInfo);
+                    return $this->errorResponse(500, "Tarefa criada com ID {$taskId}, mas erro ao recuperar detalhes. " . $debugInfo, "RETRIEVAL_ERROR", $traceId);
                 }
 
-                error_log("Erro: Tarefa criada com ID {$taskId} mas não encontrada pelo findById. Debug: " . $debugInfo);
-                http_response_code(500);
-                return ["error" => "Tarefa criada com ID {$taskId}, mas erro ao recuperar detalhes. " . $debugInfo];
-            }
+                // --- Notification --- 
+                if ($newTask && $newTask->responsavel_id && $newTask->responsavel_id !== $userData->userId) { // Notify assignee if different from creator
+                    $this->notificationService->createNotification(
+                        "nova_tarefa_atribuida",
+                        "Nova Tarefa Atribuída: " . $newTask->titulo,
+                        "Você foi atribuído(a) à nova tarefa: \"{$newTask->titulo}\" criada por {$userData->userName}.", // Assuming userName is available in $userData
+                        [$newTask->responsavel_id],
+                        "/tarefas/" . $taskId, // Example link
+                        "tarefa",
+                        $taskId,
+                        true // Send email
+                    );
+                }
+                // --- End Notification ---
 
-            // --- Notification --- 
-            if ($newTask && $newTask->responsavel_id && $newTask->responsavel_id !== $userData->userId) { // Notify assignee if different from creator
-                $this->notificationService->createNotification(
-                    "nova_tarefa_atribuida",
-                    "Nova Tarefa Atribuída: " . $newTask->titulo,
-                    "Você foi atribuído(a) à nova tarefa: \"{$newTask->titulo}\" criada por {$userData->userName}.", // Assuming userName is available in $userData
-                    [$newTask->responsavel_id],
-                    "/tarefas/" . $taskId, // Example link
-                    "tarefa",
-                    $taskId,
-                    true // Send email
-                );
+                return $this->successResponse(["tarefa" => $newTask], "Tarefa criada com sucesso.", 201, $traceId);
+            } else {
+                error_log("Erro: Falha ao criar tarefa no banco de dados.");
+                return $this->errorResponse(500, "Falha ao criar tarefa.", "CREATE_FAILED", $traceId);
             }
-            // --- End Notification ---
-            
-            http_response_code(201);
-            return ["message" => "Tarefa criada com sucesso.", "tarefa" => $newTask];
-        } else {
-            error_log("Erro: Falha ao criar tarefa no banco de dados.");
-            http_response_code(500);
-            return ["error" => "Falha ao criar tarefa."];
+        } catch (\PDOException $e) {
+            $mapped = $this->mapPdoError($e);
+            return $this->errorResponse($mapped['status'], $mapped['message'], $mapped['code'], $traceId, $this->debugDetails($e));
+        } catch (\Throwable $e) {
+            return $this->errorResponse(500, "Erro interno ao criar tarefa.", "UNEXPECTED_ERROR", $traceId, $this->debugDetails($e));
         }
     }
 
@@ -160,7 +162,7 @@ class TarefaController
             http_response_code(404);
             return ["error" => "Tarefa não encontrada para atualização."];
         }
-        
+
         // Authorization check: Can this user update this task?
         // ... (implement authorization logic if needed)
 
@@ -179,15 +181,15 @@ class TarefaController
         if (isset($requestData["concluida"]) && $requestData["concluida"] && !$tarefa->concluida) {
             $requestData["data_conclusao"] = date("Y-m-d H:i:s");
         } elseif (isset($requestData["concluida"]) && !$requestData["concluida"]) {
-             $requestData["data_conclusao"] = null;
+            $requestData["data_conclusao"] = null;
         }
 
         if (Tarefa::update($taskId, $requestData)) {
             $updatedTask = Tarefa::findById($taskId);
-            
+
             // --- Notification (After Update) ---
             if ($notifyAssignee && $updatedTask) {
-                 $this->notificationService->createNotification(
+                $this->notificationService->createNotification(
                     "tarefa_atribuida",
                     "Tarefa Atribuída a Você: " . $updatedTask->titulo,
                     "A tarefa \"{$updatedTask->titulo}\" foi atribuída a você por {$userData->userName}.", // Assuming userName is available
@@ -200,7 +202,7 @@ class TarefaController
             }
             // TODO: Add notification for task completion, due date changes, etc. if needed
             // --- End Notification ---
-            
+
             http_response_code(200);
             return ["message" => "Tarefa atualizada com sucesso.", "tarefa" => $updatedTask];
         } else {
@@ -229,7 +231,7 @@ class TarefaController
             http_response_code(404);
             return ["error" => "Tarefa não encontrada para exclusão."];
         }
-        
+
         // Authorization check: Can this user delete this task?
         // ... (implement authorization logic if needed)
 
@@ -284,7 +286,7 @@ class TarefaController
                 $notifyUsers[] = $tarefa->responsavel_id;
             }
             if (!empty($notifyUsers)) {
-                 $this->notificationService->createNotification(
+                $this->notificationService->createNotification(
                     "novo_comentario_tarefa",
                     "Novo Comentário na Tarefa: " . $tarefa->titulo,
                     "{$userData->userName} adicionou um novo comentário na tarefa \"{$tarefa->titulo}\".",
@@ -296,7 +298,7 @@ class TarefaController
                 );
             }
             // --- End Notification ---
-            
+
             http_response_code(201);
             return ["message" => "Comentário adicionado com sucesso.", "comment_id" => $commentId];
         } else {
@@ -459,7 +461,7 @@ class TarefaController
 
         try {
             $logId = AtividadeLog::create($logData);
-            
+
             if ($logId) {
                 http_response_code(201);
                 return [
@@ -478,4 +480,3 @@ class TarefaController
         }
     }
 }
-

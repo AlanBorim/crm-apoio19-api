@@ -5,29 +5,28 @@ namespace Apoio19\Crm\Controllers;
 use Apoio19\Crm\Models\HistoricoInteracoes;
 use Apoio19\Crm\Middleware\AuthMiddleware;
 
-class HistoryController
+class HistoryController extends BaseController
 {
 
     private AuthMiddleware $authMiddleware;
-    
+
 
     public function __construct()
     {
         $this->authMiddleware = new AuthMiddleware();
-        
     }
     public function logAction(array $headers, array $data): array
     {
-        
+
         $userData = $this->authMiddleware->handle($headers);
 
         if (!$userData) {
             return $this->errorResponse(401, "Autenticação necessária.");
         }
-        
+
         // Validar os dados de entrada
         if (empty($data['lead_id']) || empty($data['usuario_id']) || empty($data['acao'])) {
-            return $this->errorResponse(401, "Dados insuficientes para registrar a ação."); 
+            return $this->errorResponse(401, "Dados insuficientes para registrar a ação.");
         }
 
         // Criar uma nova instância do modelo HistoricoInteracoes
@@ -41,7 +40,7 @@ class HistoryController
             $data['acao'],
             $data['observacao']
         );
-        
+
         return $this->successResponse([], "Histórico de interações registrado com sucesso.");
     }
 
@@ -60,7 +59,7 @@ class HistoryController
 
         // Buscar histórico de interações
         $historico = new HistoricoInteracoes();
-        
+
         $historicoResponse = $historico->getHistoryByLeadId($leadId);
 
         if ($historicoResponse === false) {
@@ -68,35 +67,5 @@ class HistoryController
         }
 
         return $this->successResponse($historicoResponse, "Histórico de interações recuperado com sucesso.");
-    }
-
-    /**
-     * Resposta de sucesso padronizada
-     */
-    private function successResponse($data = null, string $message = "Operação realizada com sucesso.", int $code = 200): array
-    {
-        http_response_code($code);
-        $response = ["success" => true, "message" => $message];
-
-        if ($data !== null) {
-            $response["data"] = $data;
-        }
-
-        return $response;
-    }
-    
-    /**
-     * Resposta de erro padronizada
-     */
-    private function errorResponse(int $code, string $message, string $details = null): array
-    {
-        http_response_code($code);
-        $response = ["success" => false, "error" => $message];
-
-        if ($details !== null) {
-            $response["details"] = $details;
-        }
-
-        return $response;
     }
 }

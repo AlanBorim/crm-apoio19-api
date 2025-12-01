@@ -31,9 +31,9 @@ class Contact
     {
         try {
             $pdo = Database::getInstance();
-            $stmt = $pdo->prepare("SELECT c.*, e.nome as empresa_nome 
-                                   FROM contatos c 
-                                   LEFT JOIN empresas e ON c.empresa_id = e.id 
+            $stmt = $pdo->prepare("SELECT c.*, e.name as empresa_nome 
+                                   FROM contacts c 
+                                   LEFT JOIN companies e ON c.company_id = e.id 
                                    WHERE c.id = :id LIMIT 1");
             $stmt->bindParam(":id", $id, PDO::PARAM_INT);
             $stmt->execute();
@@ -59,7 +59,7 @@ class Contact
         $contacts = [];
         try {
             $pdo = Database::getInstance();
-            $stmt = $pdo->prepare("SELECT * FROM contatos WHERE empresa_id = :company_id ORDER BY nome ASC");
+            $stmt = $pdo->prepare("SELECT * FROM contacts WHERE company_id = :company_id ORDER BY name ASC");
             $stmt->bindParam(":company_id", $companyId, PDO::PARAM_INT);
             $stmt->execute();
             $results = $stmt->fetchAll();
@@ -86,10 +86,10 @@ class Contact
         try {
             $pdo = Database::getInstance();
             // Join with empresas to get company name
-            $stmt = $pdo->prepare("SELECT c.*, e.nome as empresa_nome 
-                                   FROM contatos c 
-                                   LEFT JOIN empresas e ON c.empresa_id = e.id 
-                                   ORDER BY c.nome ASC LIMIT :limit OFFSET :offset");
+            $stmt = $pdo->prepare("SELECT c.*, e.name as empresa_nome 
+                                   FROM contacts c 
+                                   LEFT JOIN companies e ON c.company_id = e.id 
+                                   ORDER BY c.name ASC LIMIT :limit OFFSET :offset");
             $stmt->bindParam(":limit", $limit, PDO::PARAM_INT);
             $stmt->bindParam(":offset", $offset, PDO::PARAM_INT);
             $stmt->execute();
@@ -113,7 +113,7 @@ class Contact
     {
         try {
             $pdo = Database::getInstance();
-            $stmt = $pdo->query("SELECT COUNT(*) FROM contatos");
+            $stmt = $pdo->query("SELECT COUNT(*) FROM contacts");
             return (int) $stmt->fetchColumn();
         } catch (PDOException $e) {
             error_log("Erro ao contar contatos: " . $e->getMessage());
@@ -129,21 +129,21 @@ class Contact
      */
     public static function create(array $data): int|false
     {
-        $sql = "INSERT INTO contatos (nome, empresa_id, cargo, email, telefone, notas_privadas) 
-                VALUES (:nome, :empresa_id, :cargo, :email, :telefone, :notas_privadas)";
-        
+        $sql = "INSERT INTO contacts (name, company_id, position, email, phone, notes) 
+                VALUES (:name, :company_id, :position, :email, :phone, :notes)";
+
         try {
             $pdo = Database::getInstance();
             $stmt = $pdo->prepare($sql);
 
             // Bind parameters
-            $empresaId = isset($data["empresa_id"]) && !empty($data["empresa_id"]) ? (int)$data["empresa_id"] : null;
-            $stmt->bindParam(":nome", $data["nome"]);
-            $stmt->bindParam(":empresa_id", $empresaId, PDO::PARAM_INT);
-            $stmt->bindParam(":cargo", $data["cargo"]);
+            $companyId = isset($data["company_id"]) && !empty($data["company_id"]) ? (int)$data["company_id"] : null;
+            $stmt->bindParam(":name", $data["name"]);
+            $stmt->bindParam(":company_id", $companyId, PDO::PARAM_INT);
+            $stmt->bindParam(":position", $data["position"]);
             $stmt->bindParam(":email", $data["email"]);
-            $stmt->bindParam(":telefone", $data["telefone"]);
-            $stmt->bindParam(":notas_privadas", $data["notas_privadas"]);
+            $stmt->bindParam(":phone", $data["phone"]);
+            $stmt->bindParam(":notes", $data["notes"]);
 
             if ($stmt->execute()) {
                 return (int)$pdo->lastInsertId();
@@ -165,13 +165,13 @@ class Contact
     {
         $fields = [];
         $params = [":id" => $id];
-        $allowedFields = ["nome", "empresa_id", "cargo", "email", "telefone", "notas_privadas"];
+        $allowedFields = ["name", "company_id", "position", "email", "phone", "notes"];
 
         foreach ($data as $key => $value) {
             if (in_array($key, $allowedFields)) {
                 $fields[] = "`{$key}` = :{$key}";
                 $paramType = PDO::PARAM_STR;
-                if ($key === "empresa_id") {
+                if ($key === "company_id") {
                     $paramType = PDO::PARAM_INT;
                     $value = empty($value) ? null : (int)$value;
                 }
@@ -183,7 +183,7 @@ class Contact
             return false; // No valid fields to update
         }
 
-        $sql = "UPDATE contatos SET " . implode(", ", $fields) . " WHERE id = :id";
+        $sql = "UPDATE contacts SET " . implode(", ", $fields) . " WHERE id = :id";
 
         try {
             $pdo = Database::getInstance();
@@ -205,7 +205,7 @@ class Contact
     {
         // Consider implications: deleting a contact might affect leads, proposals, etc.
         // FK constraints (ON DELETE SET NULL) handle some cases.
-        $sql = "DELETE FROM contatos WHERE id = :id";
+        $sql = "DELETE FROM contacts WHERE id = :id";
         try {
             $pdo = Database::getInstance();
             $stmt = $pdo->prepare($sql);
@@ -216,7 +216,7 @@ class Contact
         }
         return false;
     }
-    
+
     /**
      * Add an interaction history record for this contact.
      * Reuses the method from Lead model for simplicity, assuming historico_interacoes table structure.
@@ -294,4 +294,3 @@ class Contact
         return $contact;
     }
 }
-

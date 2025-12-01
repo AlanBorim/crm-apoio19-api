@@ -12,7 +12,7 @@ use Firebase\JWT\Key;
 /**
  * Controlador para gerenciamento de usuários
  */
-class UserController
+class UserController extends BaseController
 {
     private AuthMiddleware $authMiddleware;
     private NotificationService $notificationService;
@@ -68,10 +68,12 @@ class UserController
      */
     public function index(array $headers, array $queryParams = []): array
     {
+        $traceId = bin2hex(random_bytes(8));
         $userData = $this->authMiddleware->handle($headers, ["admin", "gerente"]);
         if (!$userData) {
             return $this->errorResponse(401, "Autenticação necessária ou permissão insuficiente.");
         }
+
 
         try {
             // Montar condições dinâmicas
@@ -80,381 +82,120 @@ class UserController
 
             // Filtro por função
             if (!empty($queryParams['funcao'])) {
-                $conditions[] = "funcao = :funcao";
+                $conditions[] = "role = :funcao";
                 $params[':funcao'] = $queryParams['funcao'];
             }
 
             // Filtro por status ativo
             if (isset($queryParams['ativo']) && $queryParams['ativo'] !== '') {
-                $conditions[] = "ativo = :ativo";
+                $conditions[] = "active = :ativo";
                 $params[':ativo'] = $queryParams['ativo'] ? '1' : '0';
             }
 
             // Filtro de busca textual (nome, email)
             if (!empty($queryParams['search'])) {
                 $search = '%' . $queryParams['search'] . '%';
-                $conditions[] = "(nome LIKE :search1 OR email LIKE :search2)";
+                $conditions[] = "(name LIKE :search1 OR email LIKE :search2)";
                 $params[':search1'] = $search;
                 $params[':search2'] = $search;
             }
 
-
-
-            // Construir WHERE
-            $where = '';
-
-            if (!empty($conditions)) {
-                $where .= " WHERE " . implode(" AND ", $conditions);
-            }
-
-            // Paginação
-            $page = isset($queryParams['page']) ? max(1, (int)$queryParams['page']) : 1;
-            $limit = isset($queryParams['limit']) ? min(100, max(1, (int)$queryParams['limit'])) : 10;
-            $offset = ($page - 1) * $limit;
+            $where = $conditions ? "WHERE " . implode(" AND ", $conditions) : "";
 
             // Ordenação
-            $sortBy = $queryParams['sort_by'] ?? 'created_at';
-            $sortOrder = strtoupper($queryParams['sort_order'] ?? 'DESC');
-            $sortOrder = in_array($sortOrder, ['ASC', 'DESC']) ? $sortOrder : 'DESC';
+            $orderBy = "ORDER BY name ASC";
 
-            // Validar campo de ordenação
-            $allowedSortFields = ['id', 'name', 'email', 'role', 'active', 'created_at', 'last_login'];
-            if (!in_array($sortBy, $allowedSortFields)) {
-                $sortBy = 'created_at';
-            }
+            $users = User::findAllWithWhere($where . " " . $orderBy, $params);
 
-            $orderBy = "ORDER BY {$sortBy} {$sortOrder}";
-            $limitClause = "LIMIT {$limit} OFFSET {$offset}";
+            // Formatar resposta (remover senhas, etc)
+            $formattedUsers = array_map(function ($user) {
+                return $this->formatUserForResponse($user);
+            }, $users);
 
-            // Buscar usuários filtrados
-            $users = User::findAllWithWhere($where . " " . $orderBy . " " . $limitClause, $params);
+            // Paginação
+            $page = isset($queryParams['page']) ? (int)$queryParams['page'] : 1;
+            $limit = isset($queryParams['limit']) ? (int)$queryParams['limit'] : 10;
+            $total = count($formattedUsers);
+            $totalPages = $limit > 0 ? (int)ceil($total / $limit) : 1;
 
-            // Contar total para paginação
-            $totalUsers = User::countWithWhere($where, $params);
-            $totalPages = ceil($totalUsers / $limit);
-
-            // Formatar dados para resposta
-            $formattedUsers = [];
-            foreach ($users as $user) {
-                $formattedUsers[] = $this->formatUserForResponse($user);
-            }
-
-            return $this->successResponse([
+            // Estrutura de resposta esperada pelo frontend
+            $responseData = [
                 'users' => $formattedUsers,
-                'total' => $totalUsers,
+                'total' => $total,
                 'page' => $page,
-                'totalPages' => $totalPages,
-                'perPage' => $limit
-            ]);
-        } catch (\Exception $e) {
-            return $this->errorResponse(500, "Erro ao buscar usuários.", $e->getMessage());
+                'totalPages' => $totalPages
+            ];
+
+            return $this->successResponse($responseData, null, 200, $traceId);
+        } catch (\PDOException $e) {
+            $mapped = $this->mapPdoError($e);
+            return $this->errorResponse($mapped['status'], $mapped['message'], $mapped['code'], $traceId, $this->debugDetails($e));
+        } catch (\Throwable $e) {
+            return $this->errorResponse(500, "Erro ao listar usuários.", "UNEXPECTED_ERROR", $traceId, $this->debugDetails($e));
         }
     }
 
     /**
      * Criar novo usuário
-     *
+     * 
      * @param array $headers Cabeçalhos da requisição
      * @param array $requestData Dados do usuário
      * @return array Resposta JSON
      */
     public function store(array $headers, array $requestData): array
     {
+        $traceId = bin2hex(random_bytes(8));
         $userData = $this->authMiddleware->handle($headers, ["admin"]);
+
         if (!$userData) {
-            return $this->errorResponse(401, "Autenticação necessária ou permissão insuficiente.");
+            return $this->errorResponse(401, "Apenas administradores podem criar usuários.", "UNAUTHORIZED", $traceId);
         }
 
-        // Normalizar dados recebidos (aceitar campos em português ou inglês)
-        $requestData = $this->normalizeUserData($requestData);
+        // Normalizar dados (aceitar português ou inglês)
+        $data = $this->normalizeUserData($requestData);
 
-        // Validação básica
-        $validation = $this->validateUserData($requestData);
+        // Validação
+        $validation = $this->validateUserData($data);
         if (!$validation['valid']) {
-            return $this->errorResponse(400, $validation['message']);
-        }
-
-        // Verificar se email já existe
-        if (User::findByEmail($requestData['email'])) {
-            return $this->errorResponse(409, "Este email já está em uso por outro usuário.");
+            return $this->errorResponse(400, $validation['message'], "VALIDATION_ERROR", $traceId);
         }
 
         try {
-            // Preparar dados para criação
-            $userDataToCreate = [
-                'name' => trim($requestData['name']),
-                'email' => strtolower(trim($requestData['email'])),
-                'password' => password_hash($requestData['password'], PASSWORD_DEFAULT),
-                'role' => $requestData['role'],
-                'active' => isset($requestData['active']) ? ($requestData['active'] ? 1 : 0) : 1,
-                'phone' => $this->formatPhone($requestData['phone'] ?? null),
-                'permissions' => json_encode($this->getPermissionsForUser($requestData)),
-                'created_at' => date('Y-m-d H:i:s'),
-                'updated_at' => date('Y-m-d H:i:s')
-            ];
+            // Verificar se email já existe
+            if (User::findByEmail($data['email'])) {
+                return $this->errorResponse(409, "Email já cadastrado no sistema.", "EMAIL_EXISTS", $traceId);
+            }
 
-            $userId = User::create($userDataToCreate);
+            // Hash da senha
+            $data['password'] = password_hash($data['password'], PASSWORD_DEFAULT);
+
+            // Definir permissões padrão se não fornecidas
+            if (empty($data['permissions'])) {
+                $data['permissions'] = $this->getDefaultPermissionsForRole($data['role']);
+            }
+
+            // Converter array de permissões para JSON se necessário
+            if (is_array($data['permissions'])) {
+                $data['permissions'] = json_encode($data['permissions']);
+            }
+
+            $userId = User::create($data);
 
             if ($userId) {
                 $newUser = User::findById($userId);
 
-                // Notificar usuário criado (opcional)
-                $this->notifyUserCreated($newUser, $userData);
+                // Notificar criação
+                $this->notifyUserCreated($newUser, ['userId' => $userData->userId, 'name' => $userData->userName]);
 
-                return $this->successResponse(
-                    $this->formatUserForResponse($newUser),
-                    "Usuário criado com sucesso.",
-                    201
-                );
+                return $this->successResponse($this->formatUserForResponse($newUser), "Usuário criado com sucesso.", 201, $traceId);
             } else {
-                return $this->errorResponse(500, "Falha ao criar usuário.");
+                return $this->errorResponse(500, "Falha ao criar usuário.", "CREATE_FAILED", $traceId);
             }
-        } catch (\Exception $e) {
-            return $this->errorResponse(500, "Erro interno ao criar usuário.", $e->getMessage());
-        }
-    }
-
-    /**
-     * Exibir detalhes de um usuário específico
-     *
-     * @param array $headers Cabeçalhos da requisição
-     * @param int $userId ID do usuário
-     * @return array Resposta JSON
-     */
-    public function show(array $headers, int $userId): array
-    {
-        $userData = $this->authMiddleware->handle($headers, ["admin", "gerente"]);
-        if (!$userData) {
-            return $this->errorResponse(401, "Autenticação necessária ou permissão insuficiente.");
-        }
-
-        try {
-            $user = User::findById($userId);
-            if (!$user || $user->deleted_at) {
-                return $this->errorResponse(404, "Usuário não encontrado.");
-            }
-
-            return $this->successResponse($this->formatUserForResponse($user));
-        } catch (\Exception $e) {
-            return $this->errorResponse(500, "Erro ao buscar usuário.", $e->getMessage());
-        }
-    }
-
-    /**
-     * Atualizar usuário existente
-     *
-     * @param array $headers Cabeçalhos da requisição
-     * @param int $userId ID do usuário
-     * @param array $requestData Dados para atualização
-     * @return array Resposta JSON
-     */
-    public function update(array $headers, int $userId, array $requestData): array
-    {
-        $userData = $this->authMiddleware->handle($headers, ["admin"]);
-        if (!$userData) {
-            return $this->errorResponse(401, "Autenticação necessária ou permissão insuficiente.");
-        }
-
-        if (empty($requestData)) {
-            return $this->errorResponse(400, "Nenhum dado fornecido para atualização.");
-        }
-
-        // Normalizar dados recebidos (aceitar campos em português ou inglês)
-        $requestData = $this->normalizeUserData($requestData);
-
-        try {
-            $user = User::findById($userId);
-            if (!$user || $user->active === '0') {
-                return $this->errorResponse(404, "Usuário não encontrado.");
-            }
-
-            // Validar dados de atualização
-            $validation = $this->validateUserUpdateData($requestData, $userId);
-            if (!$validation['valid']) {
-                return $this->errorResponse(400, $validation['message']);
-            }
-
-            // Preparar dados para atualização
-            $updateData = [];
-
-            if (isset($requestData['name'])) {
-                $updateData['name'] = trim($requestData['name']);
-            }
-
-            if (isset($requestData['password']) && !empty($requestData['password'])) {
-                $updateData['password'] = password_hash($requestData['password'], PASSWORD_DEFAULT);
-            }
-
-            if (isset($requestData['role'])) {
-                $updateData['role'] = $requestData['role'];
-            }
-
-            if (isset($requestData['active'])) {
-                $updateData['active'] = $requestData['active'] ? 1 : 0;
-            }
-
-            if (isset($requestData['phone'])) {
-                $updateData['phone'] = $this->formatPhone($requestData['phone']);
-            }
-
-            if (isset($requestData['permissions'])) {
-                $updateData['permissions'] = json_encode($requestData['permissions']);
-            } elseif (isset($requestData['role'])) {
-                // Se mudou a função mas não especificou permissões, usar padrão da função
-                $updateData['permissions'] = json_encode($this->getDefaultPermissionsForRole($requestData['role']));
-            }
-
-            $updateData['updated_at'] = date('Y-m-d H:i:s');
-
-            if (User::update($userId, $updateData)) {
-                $updatedUser = User::findById($userId);
-
-                return $this->successResponse(
-                    $this->formatUserForResponse($updatedUser),
-                    "Usuário atualizado com sucesso."
-                );
-            } else {
-                return $this->errorResponse(500, "Falha ao atualizar usuário.");
-            }
-        } catch (\Exception $e) {
-            return $this->errorResponse(500, "Erro interno ao atualizar usuário.", $e->getMessage());
-        }
-    }
-
-    /**
-     * Ativar usuário
-     *
-     * @param array $headers Cabeçalhos da requisição
-     * @param int $userId ID do usuário para ativar
-     * @param array $creatorData Dados do usuário que está realizando a ativação
-     * @return array Resposta JSON
-     */
-    public function activate(array $headers, int $userId): array
-    {
-        $userData = $this->authMiddleware->handle($headers, ["admin"]);
-        if (!$userData) {
-            return $this->errorResponse(401, "Autenticação necessária ou permissão insuficiente.");
-        }
-
-        try {
-            $user = User::findById($userId);
-            if (!$user) {
-                return $this->errorResponse(404, "Usuário não encontrado.");
-            }
-
-            if ($user->ativo) {
-                return $this->errorResponse(400, "Usuário já está ativo.");
-            }
-
-            $updateData = [
-                'active' => '1',
-                'updated_at' => date('Y-m-d H:i:s')
-            ];
-
-            if (User::update($userId, $updateData)) {
-                $updatedUser = User::findById($userId);
-                $token      = preg_replace('/^Bearer\s+/i', '', $headers['Authorization']);
-
-                $decoded = JWT::decode($token, new Key($this->secretKey, $this->algo));
-
-                $dados       = $decoded->data ?? null;
-                $loggedUid   = (int) ($dados->userId ?? 0);
-                $loggedName  = $dados->userName ?? 'Usuário';
-
-                $activatedName = $updatedUser->nome ?? $updatedUser->name ?? 'Usuário';
-
-                $this->notificationService->createNotification(
-                    $loggedUid,
-                    'activate_user',
-                    "Usuário {$activatedName} ativado no CRM por {$loggedName}",
-                    'success',
-                    '/activate',
-                    '0'
-                );
-
-                return $this->successResponse(
-                    $this->formatUserForResponse($updatedUser),
-                    "Usuário ativado com sucesso."
-                );
-            } else {
-                return $this->errorResponse(500, "Falha ao ativar usuário.");
-            }
-        } catch (\Exception $e) {
-            return $this->errorResponse(500, "Erro interno ao ativar usuário.", $e->getMessage());
-        }
-    }
-
-    /**
-     * Desativar usuário
-     *
-     * @param array $headers Cabeçalhos da requisição
-     * @param int $userId ID do usuário
-     * @return array Resposta JSON
-     */
-    public function deactivate(array $headers, int $userId): array
-    {
-        $userData = $this->authMiddleware->handle($headers, ["admin"]);
-        if (!$userData) {
-            return $this->errorResponse(401, "Autenticação necessária ou permissão insuficiente.");
-        }
-
-        try {
-            $user = User::findById($userId);
-            if (!$user) {
-                return $this->errorResponse(404, "Usuário não encontrado.");
-            }
-
-            if (!$user->active) {
-                return $this->errorResponse(400, "Usuário já está inativo.");
-            }
-
-            // Verificar se não está tentando desativar a si mesmo
-            if ($userId == $userData->userId) {
-                return $this->errorResponse(400, "Você não pode desativar seu próprio usuário.");
-            }
-
-            // Verificar se não é o último admin ativo
-            if ($user->funcao === 'admin') {
-                $activeAdminCount = User::countActiveAdmins();
-                if ($activeAdminCount <= 1) {
-                    return $this->errorResponse(400, "Não é possível desativar o último administrador.");
-                }
-            }
-
-            $updateData = [
-                'active' => '0',
-                'updated_at' => date('Y-m-d H:i:s')
-            ];
-
-            if (User::update($userId, $updateData)) {
-                $updatedUser = User::findById($userId);
-                $token      = preg_replace('/^Bearer\s+/i', '', $headers['Authorization']);
-
-                $decoded = JWT::decode($token, new Key($this->secretKey, $this->algo));
-
-                $dados       = $decoded->data ?? null;
-                $loggedUid   = (int) ($dados->userId ?? 0);
-                $loggedName  = $dados->userName ?? 'Usuário';
-
-                $activatedName = $updatedUser->nome ?? $updatedUser->name ?? 'Usuário';
-                $this->notificationService->createNotification(
-                    $loggedUid,
-                    'deactivate_user',
-                    "Usuário {$activatedName} desativado no CRM por {$loggedName}",
-                    'success',
-                    '/deactivate',
-                    '0'
-                );
-
-                return $this->successResponse(
-                    $this->formatUserForResponse($updatedUser),
-                    "Usuário desativado com sucesso."
-                );
-            } else {
-                return $this->errorResponse(500, "Falha ao desativar usuário.");
-            }
-        } catch (\Exception $e) {
-            return $this->errorResponse(500, "Erro interno ao desativar usuário.", $e->getMessage());
+        } catch (\PDOException $e) {
+            $mapped = $this->mapPdoError($e);
+            return $this->errorResponse($mapped['status'], $mapped['message'], $mapped['code'], $traceId, $this->debugDetails($e));
+        } catch (\Throwable $e) {
+            return $this->errorResponse(500, "Erro interno ao criar usuário.", "UNEXPECTED_ERROR", $traceId, $this->debugDetails($e));
         }
     }
 
@@ -485,6 +226,121 @@ class UserController
             return $this->successResponse(null, "Usuário excluído com sucesso.");
         } else {
             return $this->errorResponse(500, "Falha ao excluir usuário.");
+        }
+    }
+
+    /**
+     * Ativar usuário
+     * 
+     * @param array $headers Cabeçalhos da requisição
+     * @param int $userId ID do usuário
+     * @return array Resposta JSON
+     */
+    public function activate(array $headers, int $userId): array
+    {
+        $traceId = bin2hex(random_bytes(8));
+        $userData = $this->authMiddleware->handle($headers, ["admin"]);
+
+        if (!$userData) {
+            return $this->errorResponse(401, "Apenas administradores podem ativar usuários.", "UNAUTHORIZED", $traceId);
+        }
+
+        try {
+            $user = User::findById($userId);
+            if (!$user) {
+                return $this->errorResponse(404, "Usuário não encontrado.", "USER_NOT_FOUND", $traceId);
+            }
+
+            if ($user->active == 1) {
+                return $this->errorResponse(400, "Usuário já está ativo.", "ALREADY_ACTIVE", $traceId);
+            }
+
+            $updateData = [
+                'active' => 1,
+                'updated_at' => date('Y-m-d H:i:s')
+            ];
+
+            if (User::update($userId, $updateData)) {
+                $updatedUser = User::findById($userId);
+
+                return $this->successResponse(
+                    $this->formatUserForResponse($updatedUser),
+                    "Usuário ativado com sucesso.",
+                    200,
+                    $traceId
+                );
+            } else {
+                return $this->errorResponse(500, "Falha ao ativar usuário.", "UPDATE_FAILED", $traceId);
+            }
+        } catch (\PDOException $e) {
+            $mapped = $this->mapPdoError($e);
+            return $this->errorResponse($mapped['status'], $mapped['message'], $mapped['code'], $traceId, $this->debugDetails($e));
+        } catch (\Throwable $e) {
+            return $this->errorResponse(500, "Erro interno ao ativar usuário.", "UNEXPECTED_ERROR", $traceId, $this->debugDetails($e));
+        }
+    }
+
+    /**
+     * Desativar usuário
+     * 
+     * @param array $headers Cabeçalhos da requisição
+     * @param int $userId ID do usuário
+     * @return array Resposta JSON
+     */
+    public function deactivate(array $headers, int $userId): array
+    {
+        $traceId = bin2hex(random_bytes(8));
+        $userData = $this->authMiddleware->handle($headers, ["admin"]);
+
+        if (!$userData) {
+            return $this->errorResponse(401, "Apenas administradores podem desativar usuários.", "UNAUTHORIZED", $traceId);
+        }
+
+        try {
+            // Verificar se não está tentando desativar a si mesmo
+            if ($userId == $userData->userId) {
+                return $this->errorResponse(400, "Você não pode desativar seu próprio usuário.", "SELF_DEACTIVATION", $traceId);
+            }
+
+            $user = User::findById($userId);
+            if (!$user) {
+                return $this->errorResponse(404, "Usuário não encontrado.", "USER_NOT_FOUND", $traceId);
+            }
+
+            if ($user->active == 0) {
+                return $this->errorResponse(400, "Usuário já está inativo.", "ALREADY_INACTIVE", $traceId);
+            }
+
+            // Verificar se é o último admin ativo
+            if ($user->funcao === 'Admin') {
+                $activeAdminCount = User::countActiveAdmins();
+                if ($activeAdminCount <= 1) {
+                    return $this->errorResponse(400, "Não é possível desativar o último administrador ativo do sistema.", "LAST_ADMIN", $traceId);
+                }
+            }
+
+            $updateData = [
+                'active' => 0,
+                'updated_at' => date('Y-m-d H:i:s')
+            ];
+
+            if (User::update($userId, $updateData)) {
+                $updatedUser = User::findById($userId);
+
+                return $this->successResponse(
+                    $this->formatUserForResponse($updatedUser),
+                    "Usuário desativado com sucesso.",
+                    200,
+                    $traceId
+                );
+            } else {
+                return $this->errorResponse(500, "Falha ao desativar usuário.", "UPDATE_FAILED", $traceId);
+            }
+        } catch (\PDOException $e) {
+            $mapped = $this->mapPdoError($e);
+            return $this->errorResponse($mapped['status'], $mapped['message'], $mapped['code'], $traceId, $this->debugDetails($e));
+        } catch (\Throwable $e) {
+            return $this->errorResponse(500, "Erro interno ao desativar usuário.", "UNEXPECTED_ERROR", $traceId, $this->debugDetails($e));
         }
     }
 
@@ -544,14 +400,14 @@ class UserController
                 switch ($action) {
                     case 'activate':
                         $success = User::update($userId, [
-                            'ativo' => 1,
+                            'active' => 1,
                             'updated_at' => date('Y-m-d H:i:s')
                         ]);
                         break;
 
                     case 'deactivate':
                         $success = User::update($userId, [
-                            'ativo' => 0,
+                            'active' => 0,
                             'updated_at' => date('Y-m-d H:i:s')
                         ]);
                         break;
@@ -559,7 +415,7 @@ class UserController
                     case 'delete':
                         $success = User::update($userId, [
                             'deleted_at' => date('Y-m-d H:i:s'),
-                            'ativo' => 0,
+                            'active' => 0,
                             'updated_at' => date('Y-m-d H:i:s')
                         ]);
                         break;
@@ -1185,52 +1041,19 @@ class UserController
     /**
      * Notificar redefinição de senha
      */
-    private function notifyPasswordReset($user, string $temporaryPassword): void
+    private function notifyPasswordReset(object $user, string $temporaryPassword): void
     {
         try {
             $this->notificationService->createNotification(
-                'password_reset',
-                'Senha Redefinida',
-                "Sua senha foi redefinida. Nova senha temporária: {$temporaryPassword}",
-                [$user->id],
-                '/profile',
-                'user',
                 $user->id,
-                true
+                'password_reset',
+                "Sua senha foi redefinida. Nova senha temporária: {$temporaryPassword}",
+                "info",
+                '/profile',
+                '0'
             );
         } catch (\Exception $e) {
             error_log("Erro ao enviar notificação de redefinição de senha: " . $e->getMessage());
         }
-    }
-
-    /**
-     * Resposta de sucesso padronizada
-     */
-    private function successResponse($data = null, string $message = "Operação realizada com sucesso.", int $code = 200): array
-    {
-        http_response_code($code);
-        $response = ["success" => true, "message" => $message];
-
-        if ($data !== null) {
-            $response["data"] = $data;
-        }
-
-        return $response;
-    }
-
-    /**
-     * Resposta de erro padronizada
-     */
-    private function errorResponse(int $code, string $message, string $details = null): array
-    {
-        http_response_code($code);
-        // Incluir ambos 'error' e 'message' para compatibilidade com diferentes clientes
-        $response = ["success" => false, "message" => $message];
-
-        if ($details !== null) {
-            $response["details"] = $details;
-        }
-
-        return $response;
     }
 }

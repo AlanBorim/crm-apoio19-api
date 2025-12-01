@@ -5,7 +5,7 @@ namespace Apoio19\Crm\Controllers;
 use Apoio19\Crm\Models\WhatsappTemplate;
 use Apoio19\Crm\Middleware\AuthMiddleware;
 
-class WhatsappTemplateController
+class WhatsappTemplateController extends BaseController
 {
     private WhatsappTemplate $templateModel;
     private AuthMiddleware $authMiddleware;
@@ -28,9 +28,9 @@ class WhatsappTemplateController
             $filters = [];
             if (isset($_GET['status'])) $filters['status'] = $_GET['status'];
             if (isset($_GET['category'])) $filters['category'] = $_GET['category'];
-            
+
             $templates = $this->templateModel->getAll($filters);
-            
+
             http_response_code(200);
             return ["success" => true, "data" => $templates];
         } catch (\Exception $e) {
@@ -49,12 +49,12 @@ class WhatsappTemplateController
 
         try {
             $template = $this->templateModel->findById($id);
-            
+
             if (!$template) {
                 http_response_code(404);
                 return ["error" => "Template não encontrado"];
             }
-            
+
             http_response_code(200);
             return ["success" => true, "data" => $template];
         } catch (\Exception $e) {
@@ -76,9 +76,9 @@ class WhatsappTemplateController
                 http_response_code(400);
                 return ["error" => "Dados obrigatórios ausentes"];
             }
-            
+
             $id = $this->templateModel->create($requestData);
-            
+
             http_response_code(201);
             return ["success" => true, "data" => ["id" => $id], "message" => "Template criado"];
         } catch (\Exception $e) {
@@ -101,9 +101,9 @@ class WhatsappTemplateController
                 http_response_code(404);
                 return ["error" => "Template não encontrado"];
             }
-            
+
             $this->templateModel->update($id, $requestData);
-            
+
             http_response_code(200);
             return ["success" => true, "message" => "Template atualizado"];
         } catch (\Exception $e) {

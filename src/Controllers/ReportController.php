@@ -6,7 +6,7 @@ use Apoio19\Crm\Services\ReportService;
 use Apoio19\Crm\Middleware\AuthMiddleware;
 
 // Placeholder for Request/Response handling
-class ReportController
+class ReportController extends BaseController
 {
     private AuthMiddleware $authMiddleware;
     private ReportService $reportService;
@@ -26,7 +26,7 @@ class ReportController
     public function getDashboardSummary(array $headers): array
     {
         // Define roles allowed to see the full dashboard
-        $allowedRoles = ["Admin", "Comercial", "Financeiro"]; 
+        $allowedRoles = ["Admin", "Comercial", "Financeiro"];
         $userData = $this->authMiddleware->handle($headers, $allowedRoles);
         if (!$userData) {
             http_response_code(401); // Or 403 Forbidden
@@ -45,7 +45,6 @@ class ReportController
 
             http_response_code(200);
             return ["data" => $summary];
-
         } catch (\Exception $e) {
             error_log("Erro ao gerar sumário do dashboard: " . $e->getMessage());
             http_response_code(500);
@@ -124,7 +123,7 @@ class ReportController
         http_response_code(200);
         return ["data" => $data];
     }
-    
+
     /**
      * Get Task Status by User Report.
      *
@@ -146,4 +145,3 @@ class ReportController
     // Add endpoints for other specific reports if needed
 
 }
-

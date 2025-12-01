@@ -6,7 +6,7 @@ use Apoio19\Crm\Models\Company;
 use Apoio19\Crm\Middleware\AuthMiddleware;
 
 // Placeholder for Request/Response handling & Validation
-class CompanyController
+class CompanyController extends BaseController
 {
     private AuthMiddleware $authMiddleware;
 
@@ -144,7 +144,7 @@ class CompanyController
      */
     public function update(array $headers, int $id, array $requestData): array
     {
-        $userData = $this->authMiddleware->handle($headers, ["comercial", "admin"]); 
+        $userData = $this->authMiddleware->handle($headers, ["comercial", "admin"]);
         if (!$userData) {
             http_response_code(401); // Or 403
             return ["error" => "Acesso não autorizado ou autenticação necessária."];
@@ -158,7 +158,7 @@ class CompanyController
                 http_response_code(404);
                 return ["error" => "Empresa não encontrada para atualização."];
             }
-            
+
             // Add logic here to check if the user ($userData->userId) is allowed to update this company
 
             if (Company::update($id, $requestData)) {
@@ -186,7 +186,7 @@ class CompanyController
      */
     public function destroy(array $headers, int $id): array
     {
-        $userData = $this->authMiddleware->handle($headers, ["Admin"]); 
+        $userData = $this->authMiddleware->handle($headers, ["Admin"]);
         if (!$userData) {
             http_response_code(403); // Forbidden
             return ["error" => "Acesso negado. Permissão de Administrador necessária."];
@@ -215,4 +215,3 @@ class CompanyController
         }
     }
 }
-

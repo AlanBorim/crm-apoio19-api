@@ -28,7 +28,7 @@ class Company
     {
         try {
             $pdo = Database::getInstance();
-            $stmt = $pdo->prepare("SELECT * FROM empresas WHERE id = :id LIMIT 1");
+            $stmt = $pdo->prepare("SELECT * FROM companies WHERE id = :id LIMIT 1");
             $stmt->bindParam(":id", $id, PDO::PARAM_INT);
             $stmt->execute();
             $companyData = $stmt->fetch();
@@ -54,7 +54,7 @@ class Company
         $companies = [];
         try {
             $pdo = Database::getInstance();
-            $stmt = $pdo->prepare("SELECT * FROM empresas ORDER BY nome ASC LIMIT :limit OFFSET :offset");
+            $stmt = $pdo->prepare("SELECT * FROM companies ORDER BY name ASC LIMIT :limit OFFSET :offset");
             $stmt->bindParam(":limit", $limit, PDO::PARAM_INT);
             $stmt->bindParam(":offset", $offset, PDO::PARAM_INT);
             $stmt->execute();
@@ -78,7 +78,7 @@ class Company
     {
         try {
             $pdo = Database::getInstance();
-            $stmt = $pdo->query("SELECT COUNT(*) FROM empresas");
+            $stmt = $pdo->query("SELECT COUNT(*) FROM companies");
             return (int) $stmt->fetchColumn();
         } catch (PDOException $e) {
             error_log("Erro ao contar empresas: " . $e->getMessage());
@@ -94,20 +94,22 @@ class Company
      */
     public static function create(array $data): int|false
     {
-        $sql = "INSERT INTO empresas (nome, cnpj, endereco, telefone, email, segmento) 
-                VALUES (:nome, :cnpj, :endereco, :telefone, :email, :segmento)";
-        
+        $sql = "INSERT INTO companies (name, cnpj, address, phone, email, city, state, zip_code) 
+                VALUES (:name, :cnpj, :address, :phone, :email, :city, :state, :zip_code)";
+
         try {
             $pdo = Database::getInstance();
             $stmt = $pdo->prepare($sql);
 
             // Bind parameters
-            $stmt->bindParam(":nome", $data["nome"]);
+            $stmt->bindParam(":name", $data["name"]);
             $stmt->bindParam(":cnpj", $data["cnpj"]);
-            $stmt->bindParam(":endereco", $data["endereco"]);
-            $stmt->bindParam(":telefone", $data["telefone"]);
+            $stmt->bindParam(":address", $data["address"]);
+            $stmt->bindParam(":phone", $data["phone"]);
             $stmt->bindParam(":email", $data["email"]);
-            $stmt->bindParam(":segmento", $data["segmento"]);
+            $stmt->bindParam(":city", $data["city"]);
+            $stmt->bindParam(":state", $data["state"]);
+            $stmt->bindParam(":zip_code", $data["zip_code"]);
 
             if ($stmt->execute()) {
                 return (int)$pdo->lastInsertId();
@@ -130,7 +132,7 @@ class Company
     {
         $fields = [];
         $params = [":id" => $id];
-        $allowedFields = ["nome", "cnpj", "endereco", "telefone", "email", "segmento"];
+        $allowedFields = ["name", "cnpj", "address", "phone", "email", "city", "state", "zip_code"];
 
         foreach ($data as $key => $value) {
             if (in_array($key, $allowedFields)) {
@@ -143,7 +145,7 @@ class Company
             return false; // No valid fields to update
         }
 
-        $sql = "UPDATE empresas SET " . implode(", ", $fields) . " WHERE id = :id";
+        $sql = "UPDATE companies SET " . implode(", ", $fields) . " WHERE id = :id";
 
         try {
             $pdo = Database::getInstance();
@@ -165,7 +167,7 @@ class Company
     {
         // Consider implications: deleting a company might affect contacts, proposals, etc.
         // FK constraints (ON DELETE SET NULL) will handle some cases, but business logic might be needed.
-        $sql = "DELETE FROM empresas WHERE id = :id";
+        $sql = "DELETE FROM companies WHERE id = :id";
         try {
             $pdo = Database::getInstance();
             $stmt = $pdo->prepare($sql);
@@ -176,7 +178,7 @@ class Company
         }
         return false;
     }
-    
+
     /**
      * Get contacts associated with this company.
      *
@@ -212,4 +214,3 @@ class Company
         return $company;
     }
 }
-

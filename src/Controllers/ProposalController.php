@@ -9,7 +9,7 @@ use Apoio19\Crm\Services\PdfService;
 use Apoio19\Crm\Services\EmailService;
 use Apoio19\Crm\Middleware\AuthMiddleware;
 
-class ProposalController
+class ProposalController extends BaseController
 {
     private AuthMiddleware $authMiddleware;
     private PdfService $pdfService;
@@ -66,33 +66,98 @@ class ProposalController
      */
     public function store(array $headers, array $requestData): array
     {
-        $userData = $this->authMiddleware->handle($headers, ["Admin", "Comercial", "gerente"]);
-        if (!$userData) {
-            http_response_code(401);
-            return ["error" => "Autenticação necessária."];
-        }
+        $traceId = bin2hex(random_bytes(8));
 
-        if (empty($requestData["titulo"])) {
-            http_response_code(400);
-            return ["error" => "Título é obrigatório."];
-        }
+        try {
+            $userData = $this->authMiddleware->handle($headers, ["admin", "comercial", "gerente"]);
+            if (!$userData) {
+                http_response_code(401);
+                return [
+                    "success" => false,
+                    "error" => "Autenticação necessária.",
+                    "code" => "UNAUTHENTICATED",
+                    "trace_id" => $traceId
+                ];
+            }
 
-        $requestData["responsavel_id"] = $requestData["responsavel_id"] ?? $userData->userId;
-        $items = $requestData["itens"] ?? [];
+            if (empty($requestData["titulo"])) {
+                http_response_code(400);
+                return [
+                    "success" => false,
+                    "error" => "Título é obrigatório.",
+                    "code" => "VALIDATION_ERROR",
+                    "trace_id" => $traceId
+                ];
+            }
 
-        $proposalId = Proposal::create($requestData, $items);
+            $requestData["responsavel_id"] = $requestData["responsavel_id"] ?? $userData->userId;
+            $items = $requestData["itens"] ?? [];
 
-        if ($proposalId) {
+            // Dica: garanta que o PDO esteja em modo de exceção:
+            // $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+
+            $proposalId = Proposal::create($requestData, $items);
+
+            if (!$proposalId) {
+                // Se a camada de modelo não lançar exceção, forçamos um erro aqui para capturar como "Unexpected"
+                throw new \RuntimeException("Create retornou ID inválido/falsy.");
+            }
+
             $newProposal = Proposal::findById($proposalId);
+
             http_response_code(201);
             return [
                 "success" => true,
                 "message" => "Proposta criada com sucesso.",
-                "data" => $newProposal
+                "data" => $newProposal,
+                "trace_id" => $traceId
             ];
-        } else {
+        } catch (\PDOException $e) {
+            $mapped = $this->mapPdoError($e);
+
+            // Log detalhado (PSR-3 se disponível)
+            if (property_exists($this, 'logger') && $this->logger) {
+                $this->logger->error('DB error on Proposal::create', [
+                    'trace_id' => $traceId,
+                    'sqlstate' => $e->getCode(),
+                    'errorInfo' => $e->errorInfo ?? null,
+                    'message' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString(),
+                ]);
+            } else {
+                error_log("[{$traceId}] DB error: " . $e->getMessage());
+            }
+
+            http_response_code($mapped['status']);
+            return [
+                "success" => false,
+                "error" => $mapped['message'],
+                "code" => $mapped['code'],
+                "trace_id" => $traceId,
+                // Só expõe detalhes técnicos se APP_DEBUG=true
+                "details" => $this->debugDetails($e),
+            ];
+        } catch (\Throwable $e) {
+            // Log detalhado
+            if (property_exists($this, 'logger') && $this->logger) {
+                $this->logger->error('Unexpected error on Proposal::store', [
+                    'trace_id' => $traceId,
+                    'message' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString(),
+                    'class' => get_class($e),
+                ]);
+            } else {
+                error_log("[{$traceId}] Unexpected error: " . $e->getMessage());
+            }
+
             http_response_code(500);
-            return ["error" => "Falha ao criar proposta."];
+            return [
+                "success" => false,
+                "error" => "Erro interno ao criar proposta.",
+                "code" => "UNEXPECTED_ERROR",
+                "trace_id" => $traceId,
+                "details" => $this->debugDetails($e),
+            ];
         }
     }
 
@@ -132,7 +197,7 @@ class ProposalController
      */
     public function update(array $headers, int $proposalId, array $requestData): array
     {
-        $userData = $this->authMiddleware->handle($headers, ["Admin", "Comercial", "gerente"]);
+        $userData = $this->authMiddleware->handle($headers, ["admin", "comercial", "gerente"]);
         if (!$userData) {
             http_response_code(401);
             return ["error" => "Autenticação necessária."];
@@ -166,7 +231,7 @@ class ProposalController
      */
     public function destroy(array $headers, int $proposalId): array
     {
-        $userData = $this->authMiddleware->handle($headers, ["Admin"]);
+        $userData = $this->authMiddleware->handle($headers, ["admin"]);
         if (!$userData) {
             http_response_code(401);
             return ["error" => "Apenas administradores podem excluir propostas."];
@@ -209,10 +274,10 @@ class ProposalController
 
         try {
             $pdfPath = $this->pdfService->generateProposalPdf($proposalId);
-            
+
             if ($pdfPath) {
                 Proposal::addHistory($proposalId, $userData->userId, "PDF Gerado", "PDF da proposta foi gerado.");
-                
+
                 http_response_code(200);
                 return [
                     "success" => true,
@@ -235,7 +300,7 @@ class ProposalController
      */
     public function sendProposal(array $headers, int $proposalId): array
     {
-        $userData = $this->authMiddleware->handle($headers, ["Admin", "Comercial", "gerente"]);
+        $userData = $this->authMiddleware->handle($headers, ["admin", "comercial", "gerente"]);
         if (!$userData) {
             http_response_code(401);
             return ["error" => "Autenticação necessária."];

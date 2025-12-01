@@ -10,7 +10,7 @@ use Apoio19\Crm\Models\Database; // For history retrieval
 use \PDO;
 
 // Placeholder for Request/Response handling
-class WhatsappController
+class WhatsappController extends BaseController
 {
     private AuthMiddleware $authMiddleware;
     private WhatsappService $whatsappService;
@@ -68,30 +68,30 @@ class WhatsappController
             $phoneNumber = $contact->telefone;
             $contactId = $targetId;
         }
-        
+
         // Format phone number if necessary for ZDG API (e.g., add @c.us)
         // This depends heavily on how the ZDG API expects the number.
         // Assuming it needs the format 55119XXXXXXXX@c.us
         $formattedPhoneNumber = preg_replace("/[^0-9]/", "", $phoneNumber); // Remove non-digits
         if (strlen($formattedPhoneNumber) >= 10) { // Basic check for BR numbers
-             if (strlen($formattedPhoneNumber) == 10) { // Add 9 for mobile without it
-                 $formattedPhoneNumber = substr($formattedPhoneNumber, 0, 2) . '9' . substr($formattedPhoneNumber, 2);
-             }
-             if (substr($formattedPhoneNumber, 0, 2) !== '55') { // Add country code if missing
-                 $formattedPhoneNumber = '55' . $formattedPhoneNumber;
-             }
-             $formattedPhoneNumber .= "@c.us";
+            if (strlen($formattedPhoneNumber) == 10) { // Add 9 for mobile without it
+                $formattedPhoneNumber = substr($formattedPhoneNumber, 0, 2) . '9' . substr($formattedPhoneNumber, 2);
+            }
+            if (substr($formattedPhoneNumber, 0, 2) !== '55') { // Add country code if missing
+                $formattedPhoneNumber = '55' . $formattedPhoneNumber;
+            }
+            $formattedPhoneNumber .= "@c.us";
         } else {
-             http_response_code(400);
-             return ["error" => "Número de telefone inválido ou não formatado corretamente para WhatsApp: {$phoneNumber}"];
+            http_response_code(400);
+            return ["error" => "Número de telefone inválido ou não formatado corretamente para WhatsApp: {$phoneNumber}"];
         }
-        
+
 
         $result = $this->whatsappService->sendMessage(
-            $formattedPhoneNumber, 
-            $message, 
-            $userData->userId, 
-            $leadId, 
+            $formattedPhoneNumber,
+            $message,
+            $userData->userId,
+            $leadId,
             $contactId
         );
 
@@ -152,7 +152,6 @@ class WhatsappController
 
             http_response_code(200);
             return ["data" => $history];
-
         } catch (PDOException $e) {
             error_log("Erro ao buscar histórico do WhatsApp para {$targetType} ID {$targetId}: " . $e->getMessage());
             http_response_code(500);
@@ -164,4 +163,3 @@ class WhatsappController
     // This would require a public endpoint in the CRM accessible by the ZDG API server.
     // public function handleWebhook(array $requestData): array { ... }
 }
-

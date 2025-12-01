@@ -22,7 +22,7 @@ class AuditLogService
      * @return bool                      true em caso de sucesso, false em caso de erro
      */
     public static function log(
-        ?int $usuarioId = null,
+        ?int $usuarioId,
         string $acao,
         ?string $tabelaNome = null,
         ?int $registroId = null,

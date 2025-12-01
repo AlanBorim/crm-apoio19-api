@@ -1,8 +1,8 @@
 <?php
 
-// ini_set('display_errors', 1);
-// ini_set('display_startup_errors', 1);
-// error_reporting(E_ALL);
+ini_set('display_errors', 1);
+ini_set('display_startup_errors', 1);
+error_reporting(E_ALL);
 // Define o cabeçalho de resposta como JSON
 header("Content-Type: application/json");
 // Define o diretório base da aplicação
@@ -21,6 +21,7 @@ use Apoio19\Crm\Controllers\TarefaController;
 use Apoio19\Crm\Controllers\TarefaUsuarioController;
 use Apoio19\Crm\Controllers\WhatsappCampaignController;
 use Apoio19\Crm\Controllers\WhatsappTemplateController;
+use Apoio19\Crm\Controllers\ProposalController;
 
 // --- Lógica de Extração de Caminho Corrigida ---
 $requestUri = $_SERVER['REQUEST_URI']; // ex: /api/login?param=1
@@ -1796,6 +1797,120 @@ if (preg_match('#^/whatsapp/templates/(\d+)$#', $requestPath, $matches) && $requ
     exit;
 }
 
+// =================================================================================
+// ROTAS DE PROPOSTAS
+// =================================================================================
+
+// Listar propostas
+if ($requestPath === '/proposals' && $requestMethod === 'GET') {
+    try {
+        $headers = getallheaders();
+        $controller = new ProposalController();
+        $response = $controller->index($headers, $_GET);
+        echo json_encode($response);
+    } catch (\Exception $e) {
+        http_response_code(500);
+        echo json_encode(["error" => "Erro ao listar propostas: " . $e->getMessage()]);
+    }
+    exit;
+}
+
+// Criar proposta
+if ($requestPath === '/proposals' && $requestMethod === 'POST') {
+    try {
+        $headers = getallheaders();
+        $input = json_decode(file_get_contents('php://input'), true);
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            http_response_code(400);
+            echo json_encode(["error" => "JSON inválido"]);
+            exit;
+        }
+        $controller = new ProposalController();
+        $response = $controller->store($headers, $input);
+        echo json_encode($response);
+    } catch (\Exception $e) {
+        http_response_code(500);
+        echo json_encode(["error" => "Erro ao criar proposta: " . $e->getMessage()]);
+    }
+    exit;
+}
+
+// Obter proposta por ID
+if (preg_match('#^/proposals/(\d+)$#', $requestPath, $matches) && $requestMethod === 'GET') {
+    try {
+        $headers = getallheaders();
+        $controller = new ProposalController();
+        $response = $controller->show($headers, (int)$matches[1]);
+        echo json_encode($response);
+    } catch (\Exception $e) {
+        http_response_code(500);
+        echo json_encode(["error" => "Erro ao buscar proposta: " . $e->getMessage()]);
+    }
+    exit;
+}
+
+// Atualizar proposta
+if (preg_match('#^/proposals/(\d+)$#', $requestPath, $matches) && $requestMethod === 'PUT') {
+    try {
+        $headers = getallheaders();
+        $input = json_decode(file_get_contents('php://input'), true);
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            http_response_code(400);
+            echo json_encode(["error" => "JSON inválido"]);
+            exit;
+        }
+        $controller = new ProposalController();
+        $response = $controller->update($headers, (int)$matches[1], $input);
+        echo json_encode($response);
+    } catch (\Exception $e) {
+        http_response_code(500);
+        echo json_encode(["error" => "Erro ao atualizar proposta: " . $e->getMessage()]);
+    }
+    exit;
+}
+
+// Excluir proposta
+if (preg_match('#^/proposals/(\d+)$#', $requestPath, $matches) && $requestMethod === 'DELETE') {
+    try {
+        $headers = getallheaders();
+        $controller = new ProposalController();
+        $response = $controller->destroy($headers, (int)$matches[1]);
+        echo json_encode($response);
+    } catch (\Exception $e) {
+        http_response_code(500);
+        echo json_encode(["error" => "Erro ao excluir proposta: " . $e->getMessage()]);
+    }
+    exit;
+}
+
+// Gerar PDF da proposta
+if (preg_match('#^/proposals/(\d+)/pdf$#', $requestPath, $matches) && $requestMethod === 'POST') {
+    try {
+        $headers = getallheaders();
+        $controller = new ProposalController();
+        $response = $controller->generatePdf($headers, (int)$matches[1]);
+        echo json_encode($response);
+    } catch (\Exception $e) {
+        http_response_code(500);
+        echo json_encode(["error" => "Erro ao gerar PDF: " . $e->getMessage()]);
+    }
+    exit;
+}
+
+// Enviar proposta por e-mail
+if (preg_match('#^/proposals/(\d+)/send$#', $requestPath, $matches) && $requestMethod === 'POST') {
+    try {
+        $headers = getallheaders();
+        $controller = new ProposalController();
+        $response = $controller->sendProposal($headers, (int)$matches[1]);
+        echo json_encode($response);
+    } catch (\Exception $e) {
+        http_response_code(500);
+        echo json_encode(["error" => "Erro ao enviar proposta: " . $e->getMessage()]);
+    }
+    exit;
+}
+
 // --- Adicione outras rotas aqui ---
 // Exemplo:
 // if ($requestPath === '/leads' && $requestMethod === 'GET') { ... }
@@ -1814,8 +1929,6 @@ if ($requestPath === '/leads' && $requestMethod === 'GET') {
     exit;
 }
 
-// === PROPOSALS API ===
-use Apoio19\Crm\Controllers\ProposalController;
 
 // GET proposals
 if ($requestPath === '/proposals' && $requestMethod === 'GET') {
@@ -1878,6 +1991,44 @@ if (preg_match('/^\/proposals\/(\d+)\/pdf$/', $requestPath, $matches) && $reques
         http_response_code(500);
         echo json_encode(["error" => "Erro interno ao gerar PDF."]);
     }
+    exit;
+}
+
+// Rotas de Templates de Propostas
+use Apoio19\Crm\Controllers\ProposalTemplateController;
+
+// GET /proposal-templates - Listar todos os templates ativos
+if ($requestPath === '/proposal-templates' && $requestMethod === 'GET') {
+    $controller = new ProposalTemplateController();
+    $controller->index();
+    exit;
+}
+
+// GET /propos al-templates/{id} - Buscar template por ID
+if (preg_match('/^\/proposal-templates\/(\d+)$/', $requestPath, $matches) && $requestMethod === 'GET') {
+    $controller = new ProposalTemplateController();
+    $controller->show((int)$matches[1]);
+    exit;
+}
+
+// POST /proposal-templates - Criar novo template
+if ($requestPath === '/proposal-templates' && $requestMethod === 'POST') {
+    $controller = new ProposalTemplateController();
+    $controller->store();
+    exit;
+}
+
+// PUT /proposal-templates/{id} - Atualizar template
+if (preg_match('/^\/proposal-templates\/(\d+)$/', $requestPath, $matches) && $requestMethod === 'PUT') {
+    $controller = new ProposalTemplateController();
+    $controller->update((int)$matches[1]);
+    exit;
+}
+
+// DELETE /proposal-templates/{id} - Desativar template
+if (preg_match('/^\/proposal-templates\/(\d+)$/', $requestPath, $matches) && $requestMethod === 'DELETE') {
+    $controller = new ProposalTemplateController();
+    $controller->destroy((int)$matches[1]);
     exit;
 }
 

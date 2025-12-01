@@ -7,7 +7,7 @@ use Apoio19\Crm\Middleware\AuthMiddleware;
 use \PDO;
 use \PDOException;
 
-class NotificationController
+class NotificationController extends BaseController
 {
     private AuthMiddleware $authMiddleware;
 
@@ -22,13 +22,10 @@ class NotificationController
      */
     public function index(array $headers, array $queryParams = []): array
     {
+        $traceId = bin2hex(random_bytes(8));
         $userData = $this->authMiddleware->handle($headers);
         if (!$userData) {
-            http_response_code(401);
-            return [
-                "success" => false,
-                "error" => "Autenticação necessária."
-            ];
+            return $this->errorResponse(401, "Autenticação necessária.", "UNAUTHENTICATED", $traceId);
         }
 
         $page = max(1, (int)($queryParams['page'] ?? 1));
@@ -101,27 +98,21 @@ class NotificationController
 
             $lastPage = ceil($total / $limit);
 
-            http_response_code(200);
-            return [
-                "success" => true,
-                "data" => [
-                    "notifications" => $notifications,
-                    "total" => $total,
-                    "unread_count" => $unreadCount,
-                    "current_page" => $page,
-                    "per_page" => $limit,
-                    "last_page" => $lastPage,
-                    "sql" => $sql,
-                    "params" => $params
-                ]
+            $data = [
+                "notifications" => $notifications,
+                "total" => $total,
+                "unread_count" => $unreadCount,
+                "current_page" => $page,
+                "per_page" => $limit,
+                "last_page" => $lastPage
             ];
+
+            return $this->successResponse($data, null, 200, $traceId);
         } catch (PDOException $e) {
-            error_log("Erro ao buscar notificações: " . $e->getMessage());
-            http_response_code(500);
-            return [
-                "success" => false,
-                "error" => "Erro interno ao buscar notificações"
-            ];
+            $mapped = $this->mapPdoError($e);
+            return $this->errorResponse($mapped['status'], $mapped['message'], $mapped['code'], $traceId, $this->debugDetails($e));
+        } catch (\Throwable $e) {
+            return $this->errorResponse(500, "Erro interno ao buscar notificações", "UNEXPECTED_ERROR", $traceId, $this->debugDetails($e));
         }
     }
 
@@ -135,24 +126,16 @@ class NotificationController
      */
     public function store(array $headers, array $data): array
     {
+        $traceId = bin2hex(random_bytes(8));
         $userData = $this->authMiddleware->handle($headers);
         if (!$userData) {
-            http_response_code(401);
-            return [
-                "success" => false,
-                "error" => "Autenticação necessária."
-            ];
+            return $this->errorResponse(401, "Autenticação necessária.", "UNAUTHENTICATED", $traceId);
         }
 
         // Validação dos dados de entrada
         $validation = $this->validateNotificationData($data);
         if (!$validation['valid']) {
-            http_response_code(400);
-            return [
-                "success" => false,
-                "error" => "Dados inválidos",
-                "errors" => $validation['errors']
-            ];
+            return $this->errorResponse(400, "Dados inválidos", "VALIDATION_ERROR", $traceId, $validation['errors']);
         }
 
         $title = $data['title'];
@@ -186,26 +169,15 @@ class NotificationController
                 // Converter is_read para boolean
                 $notification['is_read'] = (bool)$notification['is_read'];
 
-                http_response_code(201);
-                return [
-                    "success" => true,
-                    "data" => $notification,
-                    "message" => "Notificação criada com sucesso"
-                ];
+                return $this->successResponse($notification, "Notificação criada com sucesso", 201, $traceId);
             } else {
-                http_response_code(500);
-                return [
-                    "success" => false,
-                    "error" => "Falha ao criar notificação"
-                ];
+                return $this->errorResponse(500, "Falha ao criar notificação", "CREATE_FAILED", $traceId);
             }
         } catch (PDOException $e) {
-            error_log("Erro ao criar notificação: " . $e->getMessage());
-            http_response_code(500);
-            return [
-                "success" => false,
-                "error" => "Erro interno ao criar notificação"
-            ];
+            $mapped = $this->mapPdoError($e);
+            return $this->errorResponse($mapped['status'], $mapped['message'], $mapped['code'], $traceId, $this->debugDetails($e));
+        } catch (\Throwable $e) {
+            return $this->errorResponse(500, "Erro interno ao criar notificação", "UNEXPECTED_ERROR", $traceId, $this->debugDetails($e));
         }
     }
 
@@ -218,64 +190,56 @@ class NotificationController
      */
     public function markAsRead(array $headers, int $notificationId): array
     {
+        $traceId = bin2hex(random_bytes(8));
         $userData = $this->authMiddleware->handle($headers);
         if (!$userData) {
-            http_response_code(401);
-            return ["error" => "Autenticação do CRM necessária."];
+            return $this->errorResponse(401, "Autenticação do CRM necessária.", "UNAUTHENTICATED", $traceId);
         }
-        // se já estiver lido marca como não lido
-        // busca a notificação
-        $sqlBusca = "SELECT is_read FROM notifications WHERE id = :notificacao_id AND user_id = :usuario_id AND active = '1'";
+
         try {
             $pdo = Database::getInstance();
+
+            // se já estiver lido marca como não lido
+            // busca a notificação
+            $sqlBusca = "SELECT is_read FROM notifications WHERE id = :notificacao_id AND user_id = :usuario_id AND active = '1'";
             $stmtBusca = $pdo->prepare($sqlBusca);
             $stmtBusca->bindParam(":notificacao_id", $notificationId, PDO::PARAM_INT);
             $stmtBusca->bindParam(":usuario_id", $userData->userId, PDO::PARAM_INT);
             $stmtBusca->execute();
             $notification = $stmtBusca->fetch(PDO::FETCH_ASSOC);
+
             if (!$notification) {
-                http_response_code(404);
-                return ["error" => "Notificação não encontrada."];
+                return $this->errorResponse(404, "Notificação não encontrada.", "NOT_FOUND", $traceId);
             }
+
             if ($notification['is_read'] == 1) {
                 $sql = "UPDATE notifications 
-                                    SET is_read = 0, readed_at = NULL 
-                                    WHERE id = :notificacao_id AND user_id = :usuario_id AND is_read = 1";
+                        SET is_read = 0, readed_at = NULL 
+                        WHERE id = :notificacao_id AND user_id = :usuario_id AND is_read = 1";
             } else {
                 $sql = "UPDATE notifications 
-                SET is_read = 1, readed_at = NOW() 
-                WHERE id = :notificacao_id AND user_id = :usuario_id AND is_read = 0";
+                        SET is_read = 1, readed_at = NOW() 
+                        WHERE id = :notificacao_id AND user_id = :usuario_id AND is_read = 0";
             }
-        } catch (PDOException $e) {
-            error_log("Erro ao buscar notificação {$notificationId} para usuário ID {$userData->userId}: " . $e->getMessage());
-            http_response_code(500);
-            return ["error" => "Erro interno ao buscar notificação."];
-        }
 
-
-        try {
-            $pdo = Database::getInstance();
             $stmt = $pdo->prepare($sql);
             $stmt->bindParam(":notificacao_id", $notificationId, PDO::PARAM_INT);
             $stmt->bindParam(":usuario_id", $userData->userId, PDO::PARAM_INT);
 
             if ($stmt->execute()) {
                 if ($stmt->rowCount() > 0) {
-                    http_response_code(200);
-                    return ["message" => "Notificação marcada como lida."];
+                    return $this->successResponse(null, "Notificação atualizada.", 200, $traceId);
                 } else {
-                    // Notification might already be read or doesn't belong to the user
-                    http_response_code(200); // Or 404 if we want to be strict
-                    return ["message" => "Nenhuma notificação não lida encontrada para marcar."];
+                    return $this->successResponse(null, "Nenhuma alteração realizada.", 200, $traceId);
                 }
             } else {
-                http_response_code(500);
-                return ["error" => "Falha ao marcar notificação como lida."];
+                return $this->errorResponse(500, "Falha ao marcar notificação como lida.", "UPDATE_FAILED", $traceId);
             }
         } catch (PDOException $e) {
-            error_log("Erro ao marcar notificação {$notificationId} como lida para usuário ID {$userData->userId}: " . $e->getMessage());
-            http_response_code(500);
-            return ["error" => "Erro interno ao marcar notificação como lida."];
+            $mapped = $this->mapPdoError($e);
+            return $this->errorResponse($mapped['status'], $mapped['message'], $mapped['code'], $traceId, $this->debugDetails($e));
+        } catch (\Throwable $e) {
+            return $this->errorResponse(500, "Erro interno ao marcar notificação como lida.", "UNEXPECTED_ERROR", $traceId, $this->debugDetails($e));
         }
     }
 
@@ -287,10 +251,10 @@ class NotificationController
      */
     public function markAllAsRead(array $headers): array
     {
+        $traceId = bin2hex(random_bytes(8));
         $userData = $this->authMiddleware->handle($headers);
         if (!$userData) {
-            http_response_code(401);
-            return ["error" => "Autenticação do CRM necessária."];
+            return $this->errorResponse(401, "Autenticação do CRM necessária.", "UNAUTHENTICATED", $traceId);
         }
 
         $sql = "UPDATE notifications 
@@ -304,25 +268,24 @@ class NotificationController
 
             if ($stmt->execute()) {
                 $rowCount = $stmt->rowCount();
-                http_response_code(200);
-                return ["message" => "{$rowCount} notificações marcadas como lidas."];
+                return $this->successResponse(null, "{$rowCount} notificações marcadas como lidas.", 200, $traceId);
             } else {
-                http_response_code(500);
-                return ["error" => "Falha ao marcar todas as notificações como lidas."];
+                return $this->errorResponse(500, "Falha ao marcar todas as notificações como lidas.", "UPDATE_FAILED", $traceId);
             }
         } catch (PDOException $e) {
-            error_log("Erro ao marcar todas as notificações como lidas para usuário ID {$userData->userId}: " . $e->getMessage());
-            http_response_code(500);
-            return ["error" => "Erro interno ao marcar todas as notificações como lidas."];
+            $mapped = $this->mapPdoError($e);
+            return $this->errorResponse($mapped['status'], $mapped['message'], $mapped['code'], $traceId, $this->debugDetails($e));
+        } catch (\Throwable $e) {
+            return $this->errorResponse(500, "Erro interno ao marcar todas as notificações como lidas.", "UNEXPECTED_ERROR", $traceId, $this->debugDetails($e));
         }
     }
 
     public function delete(array $headers, int $notificationId): array
     {
+        $traceId = bin2hex(random_bytes(8));
         $userData = $this->authMiddleware->handle($headers);
         if (!$userData) {
-            http_response_code(401);
-            return ["error" => "Autenticação do CRM necessária."];
+            return $this->errorResponse(401, "Autenticação do CRM necessária.", "UNAUTHENTICATED", $traceId);
         }
 
         $sql = "UPDATE notifications 
@@ -337,29 +300,27 @@ class NotificationController
 
             if ($stmt->execute()) {
                 if ($stmt->rowCount() > 0) {
-                    http_response_code(200);
-                    return ["message" => "Notificação excluída com sucesso."];
+                    return $this->successResponse(null, "Notificação excluída com sucesso.", 200, $traceId);
                 } else {
-                    http_response_code(404);
-                    return ["error" => "Notificação não encontrada ou já excluída."];
+                    return $this->errorResponse(404, "Notificação não encontrada ou já excluída.", "NOT_FOUND", $traceId);
                 }
             } else {
-                http_response_code(500);
-                return ["error" => "Falha ao excluir notificação."];
+                return $this->errorResponse(500, "Falha ao excluir notificação.", "DELETE_FAILED", $traceId);
             }
         } catch (PDOException $e) {
-            error_log("Erro ao excluir notificação {$notificationId} para usuário ID {$userData->userId}: " . $e->getMessage());
-            http_response_code(500);
-            return ["error" => "Erro ao excluir notificação {$notificationId} para usuário ID {$userData->userId}:"];
+            $mapped = $this->mapPdoError($e);
+            return $this->errorResponse($mapped['status'], $mapped['message'], $mapped['code'], $traceId, $this->debugDetails($e));
+        } catch (\Throwable $e) {
+            return $this->errorResponse(500, "Erro ao excluir notificação.", "UNEXPECTED_ERROR", $traceId, $this->debugDetails($e));
         }
     }
 
     public function deleteAll(array $headers): array
     {
+        $traceId = bin2hex(random_bytes(8));
         $userData = $this->authMiddleware->handle($headers);
         if (!$userData) {
-            http_response_code(401);
-            return ["error" => "Autenticação do CRM necessária."];
+            return $this->errorResponse(401, "Autenticação do CRM necessária.", "UNAUTHENTICATED", $traceId);
         }
 
         $sql = "UPDATE notifications 
@@ -373,20 +334,18 @@ class NotificationController
 
             if ($stmt->execute()) {
                 if ($stmt->rowCount() > 0) {
-                    http_response_code(200);
-                    return ["message" => "Notificação excluída com sucesso."];
+                    return $this->successResponse(null, "Notificações excluídas com sucesso.", 200, $traceId);
                 } else {
-                    http_response_code(404);
-                    return ["error" => "Notificação não encontrada ou já excluída."];
+                    return $this->errorResponse(404, "Nenhuma notificação encontrada para excluir.", "NOT_FOUND", $traceId);
                 }
             } else {
-                http_response_code(500);
-                return ["error" => "Falha ao excluir notificação."];
+                return $this->errorResponse(500, "Falha ao excluir notificações.", "DELETE_FAILED", $traceId);
             }
         } catch (PDOException $e) {
-            error_log("Erro ao excluir notificações para usuário ID {$userData->userId}: " . $e->getMessage());
-            http_response_code(500);
-            return ["error" => "Erro interno ao excluir notificações."];
+            $mapped = $this->mapPdoError($e);
+            return $this->errorResponse($mapped['status'], $mapped['message'], $mapped['code'], $traceId, $this->debugDetails($e));
+        } catch (\Throwable $e) {
+            return $this->errorResponse(500, "Erro interno ao excluir notificações.", "UNEXPECTED_ERROR", $traceId, $this->debugDetails($e));
         }
     }
     /**

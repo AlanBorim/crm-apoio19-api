@@ -7,7 +7,7 @@ use Apoio19\Crm\Models\Tarefa;
 use Apoio19\Crm\Middleware\AuthMiddleware;
 
 // Placeholder for Request/Response handling
-class KanbanController
+class KanbanController extends BaseController
 {
     private AuthMiddleware $authMiddleware;
 
@@ -45,9 +45,9 @@ class KanbanController
             foreach ($colunas as $coluna) {
                 $columnFilters = $taskFilters; // Start with general filters
                 $columnFilters["kanban_coluna_id"] = $coluna->id;
-                
+
                 $tasks = Tarefa::findBy($columnFilters, "ordem_na_coluna ASC");
-                
+
                 // Return raw column data matching database schema
                 $boardData[] = [
                     "id" => (string)$coluna->id,
@@ -61,7 +61,6 @@ class KanbanController
 
             http_response_code(200);
             return ["success" => true, "data" => $boardData];
-
         } catch (\Exception $e) {
             error_log("Erro ao buscar quadro Kanban: " . $e->getMessage());
             http_response_code(500);
@@ -117,7 +116,7 @@ class KanbanController
      */
     public function updateColumn(array $headers, int $columnId, array $requestData): array
     {
-         $userData = $this->authMiddleware->handle($headers, ["admin"]); // Only Admins?
+        $userData = $this->authMiddleware->handle($headers, ["admin"]); // Only Admins?
         if (!$userData) {
             http_response_code(403);
             return ["error" => "Acesso negado. Permissão de Administrador necessária."];
@@ -130,10 +129,10 @@ class KanbanController
 
         // At least one field must be provided
         if ($nome === null && $ordem === null && $cor === null && $limite_cards === null) {
-             http_response_code(400);
+            http_response_code(400);
             return ["error" => "Nenhum dado fornecido para atualização."];
         }
-        
+
         $column = KanbanColuna::findById($columnId);
         if (!$column) {
             http_response_code(404);
@@ -164,13 +163,13 @@ class KanbanController
             http_response_code(403);
             return ["error" => "Acesso negado. Permissão de Administrador necessária."];
         }
-        
+
         $column = KanbanColuna::findById($columnId);
         if (!$column) {
             http_response_code(404);
             return ["error" => "Coluna Kanban não encontrada."];
         }
-        
+
         // Add logic here to handle tasks in the column before deletion
         // E.g., Check if column is empty, or move tasks to a default column.
         $tasksInColumn = Tarefa::findBy(["kanban_coluna_id" => $columnId]);
@@ -187,7 +186,7 @@ class KanbanController
             return ["error" => "Falha ao excluir coluna Kanban."];
         }
     }
-    
+
     /**
      * Update the order of tasks within and between columns.
      *
@@ -224,7 +223,7 @@ class KanbanController
 
                 $columnId = (int)$columnData["columnId"];
                 $taskIdsInOrder = $columnData["taskIds"];
-                
+
                 $taskOrderMap = [];
                 foreach ($taskIdsInOrder as $index => $taskId) {
                     $taskOrderMap[(int)$taskId] = $index; // Map taskId to its 0-based order
@@ -241,9 +240,9 @@ class KanbanController
             // if ($success) { $pdo->commit(); } else { $pdo->rollBack(); }
 
         } catch (\InvalidArgumentException $e) {
-             // $pdo->rollBack();
-             http_response_code(400);
-             return ["error" => $e->getMessage()];
+            // $pdo->rollBack();
+            http_response_code(400);
+            return ["error" => $e->getMessage()];
         } catch (\Exception $e) {
             // $pdo->rollBack();
             error_log("Erro geral ao atualizar ordem das tarefas: " . $e->getMessage());
@@ -260,4 +259,3 @@ class KanbanController
         }
     }
 }
-

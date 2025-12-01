@@ -6,7 +6,7 @@ use Apoio19\Crm\Services\EmailService;
 use Apoio19\Crm\Views\EmailView;
 use Error;
 
-class EmailController
+class EmailController extends BaseController
 {
     private EmailService $emailService;
 
@@ -15,7 +15,7 @@ class EmailController
         $this->emailService = new EmailService();
     }
 
-     /**
+    /**
      * Exemplo de método para enviar um e-mail de boas-vindas.
      *
      * @param array $requestData Deve conter 'user_id' ou 'email' e 'nome'.

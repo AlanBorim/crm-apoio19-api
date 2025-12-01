@@ -8,7 +8,7 @@ use Apoio19\Crm\Models\User;
 /**
  * Controlador para verificação de saúde da API
  */
-class HealthController
+class HealthController extends BaseController
 {
     /**
      * Verificação básica de saúde da API
@@ -488,35 +488,5 @@ class HealthController
             default:
                 return (int) $limit;
         }
-    }
-
-    /**
-     * Resposta de sucesso padronizada
-     */
-    private function successResponse($data = null, string $message = "Operação realizada com sucesso.", int $code = 200): array
-    {
-        http_response_code($code);
-        $response = ["success" => true, "message" => $message];
-
-        if ($data !== null) {
-            $response["data"] = $data;
-        }
-
-        return $response;
-    }
-
-    /**
-     * Resposta de erro padronizada
-     */
-    private function errorResponse(int $code, string $message, string $details = null): array
-    {
-        http_response_code($code);
-        $response = ["success" => false, "error" => $message];
-
-        if ($details !== null) {
-            $response["details"] = $details;
-        }
-
-        return $response;
     }
 }

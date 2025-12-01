@@ -17,12 +17,8 @@ class PdfService
     public function __construct()
     {
         // Define paths - these should ideally be configurable
-        $this->templatePath = __DIR__ . 
-'/../../templates/proposal_template.html
-';
-        $this->storagePath = __DIR__ . 
-'/../../storage/proposals
-'; // Ensure this directory exists and is writable
+        $this->templatePath = __DIR__ . '/../../templates/proposal_template.html';
+        $this->storagePath = __DIR__ . '/../../storage/proposals'; // Ensure this directory exists and is writable
 
         // Create storage directory if it doesn't exist
         if (!is_dir($this->storagePath)) {
@@ -45,7 +41,7 @@ class PdfService
             }
 
             $items = Proposal::getItems($proposalId);
-            
+
             // Fetch related data (client, responsible user)
             $clientData = $this->getClientData($proposal);
             $responsibleUser = $proposal->responsavel_id ? User::findById($proposal->responsavel_id) : null;
@@ -53,75 +49,66 @@ class PdfService
             // Prepare data for the template
             $templateData = [
                 '{{proposal_id}}' => $proposal->id,
-                '{{proposal_title}}' => htmlspecialchars($proposal->titulo ?? 
-''),
+                '{{proposal_title}}' => htmlspecialchars($proposal->titulo ??
+                    ''),
                 '{{proposal_date}}' => date("d/m/Y"), // Or use proposal creation date?
                 '{{proposal_validity}}' => $proposal->data_validade ? date("d/m/Y", strtotime($proposal->data_validade)) : 'N/A',
                 '{{proposal_responsible}}' => $responsibleUser ? htmlspecialchars($responsibleUser->nome) : 'N/A',
-                '{{client_company_name}}' => htmlspecialchars($clientData[
-'company_name
-'] ?? 
-'N/A'),
-                '{{client_contact_name}}' => htmlspecialchars($clientData[
-'contact_name
-'] ?? 
-'N/A'),
-                '{{client_email}}' => htmlspecialchars($clientData[
-'email
-'] ?? 
-'N/A'),
-                '{{client_phone}}' => htmlspecialchars($clientData[
-'phone
-'] ?? 
-'N/A'),
-                '{{proposal_description}}' => nl2br(htmlspecialchars($proposal->descricao ?? 
-'')), // Use nl2br for line breaks
-                '{{proposal_conditions}}' => nl2br(htmlspecialchars($proposal->condicoes ?? 
-'')), // Use nl2br for line breaks
+                '{{client_company_name}}' => htmlspecialchars($clientData['company_name
+'] ??
+                    'N/A'),
+                '{{client_contact_name}}' => htmlspecialchars($clientData['contact_name
+'] ??
+                    'N/A'),
+                '{{client_email}}' => htmlspecialchars($clientData['email
+'] ??
+                    'N/A'),
+                '{{client_phone}}' => htmlspecialchars($clientData['phone
+'] ??
+                    'N/A'),
+                '{{proposal_description}}' => nl2br(htmlspecialchars($proposal->descricao ??
+                    '')), // Use nl2br for line breaks
+                '{{proposal_conditions}}' => nl2br(htmlspecialchars($proposal->condicoes ??
+                    '')), // Use nl2br for line breaks
                 '{{proposal_total_value_formatted}}' => number_format($proposal->valor_total, 2, ',', '.'),
             ];
 
             // Prepare items HTML block
-            $itemsHtml = 
-'';
+            $itemsHtml =
+                '';
             foreach ($items as $item) {
-                $itemsHtml .= 
-'<tr>
+                $itemsHtml .=
+                    '<tr>
 ';
-                $itemsHtml .= 
-'    <td>
-' . htmlspecialchars($item[
-'descricao
-']) . 
-'</td>
+                $itemsHtml .=
+                    '    <td>
+' . htmlspecialchars($item['descricao
+']) .
+                    '</td>
 ';
-                $itemsHtml .= 
-'    <td>
-' . number_format((float)$item[
-'quantidade
-'], 2, ',', '.') . 
-'</td>
+                $itemsHtml .=
+                    '    <td>
+' . number_format((float)$item['quantidade
+'], 2, ',', '.') .
+                    '</td>
 ';
-                $itemsHtml .= 
-'    <td>
-' . number_format((float)$item[
-'valor_unitario
-'], 2, ',', '.') . 
-'</td>
+                $itemsHtml .=
+                    '    <td>
+' . number_format((float)$item['valor_unitario
+'], 2, ',', '.') .
+                    '</td>
 ';
-                $itemsHtml .= 
-'    <td>
-' . number_format((float)$item[
-'valor_total_item
-'], 2, ',', '.') . 
-'</td>
+                $itemsHtml .=
+                    '    <td>
+' . number_format((float)$item['valor_total_item
+'], 2, ',', '.') .
+                    '</td>
 ';
-                $itemsHtml .= 
-'</tr>
+                $itemsHtml .=
+                    '</tr>
 ';
             }
-            $templateData[
-'{{#each proposal_items}}...{{/each}}
+            $templateData['{{#each proposal_items}}...{{/each}}
 '] = $itemsHtml; // Simple replacement for the loop block
 
             // Read and render the template
@@ -174,7 +161,6 @@ class PdfService
             Proposal::update($proposalId, ['pdf_path' => $pdfPath], [], null); // Pass empty items and null user ID as we only update pdf_path
 
             return $pdfPath;
-
         } catch (Exception $e) {
             error_log("Erro na geração do PDF da proposta ID {$proposalId}: " . $e->getMessage());
             // Clean up temp file if it exists and an error occurred before unlink
@@ -214,13 +200,12 @@ class PdfService
             $data['phone'] = $company->telefone;
             // Maybe find a primary contact for the company?
         } elseif ($proposal->lead_id && ($lead = Lead::findById($proposal->lead_id))) {
-            $data['contact_name'] = $lead->nome; // Lead name as contact
-            $data['company_name'] = $lead->empresa_nome;
+            $data['contact_name'] = $lead->name; // Lead name as contact
+            $data['company_name'] = $lead->company;
             $data['email'] = $lead->email;
-            $data['phone'] = $lead->telefone;
+            $data['phone'] = $lead->phone;
         }
 
         return $data;
     }
 }
-

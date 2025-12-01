@@ -6,11 +6,10 @@ use Apoio19\Crm\Models\User;
 use Apoio19\Crm\Services\AuthService;
 use Apoio19\Crm\Services\AuditLogService;
 use Apoio19\Crm\Services\RateLimitingService;
-
 use Apoio19\Crm\Services\EmailService;
 use Apoio19\Crm\Views\EmailView;
 
-class AuthController
+class AuthController extends BaseController
 {
     private AuthService $authService;
     private RateLimitingService $rateLimiter;
@@ -107,6 +106,10 @@ class AuthController
                     $ipAddress,
                     $_SERVER['HTTP_USER_AGENT'] ?? null
                 );
+
+                // Atualizar último login
+                User::updateLastLogin($user->id);
+
                 return [
                     "token" => $token,
                     "user" => [
@@ -358,7 +361,7 @@ class AuthController
             http_response_code(400);
             return ['status' => 'error', 'message' => 'Usuário não localizado.'];
         }
-        
+
         // 1. Gerar Token Seguro
         $token = bin2hex(random_bytes(32)); // Gera um token de 64 caracteres
         $expiresAt = (new \DateTime())->modify('+1 hour')->format('Y-m-d H:i:s');
@@ -368,11 +371,11 @@ class AuthController
             http_response_code(500);
             return ['status' => 'error', 'message' => 'Não foi possível iniciar o processo de recuperação.'];
         }
-        
+
         // 3. Montar o Link e o Corpo do E-mail
         $resetLink = 'https://crm.apoio19.com.br/reset-password?token=' . $token;
         $emailBody = EmailView::render('recuperacao_senha.html', [
-            'nome_usuario' => $user->nome, 
+            'nome_usuario' => $user->nome,
             'link_recuperacao' => $resetLink
         ]);
 
@@ -405,7 +408,7 @@ class AuthController
         $token = $requestData['token'] ?? null;
 
         if (!$token) {
-            http_response_code(400 ); // Bad Request
+            http_response_code(400); // Bad Request
             return ['status' => 'error', 'message' => 'Token não fornecido.'];
         }
 
@@ -415,7 +418,7 @@ class AuthController
         if ($user) {
             return ['status' => 'success', 'message' => 'Token válido.'];
         } else {
-            http_response_code(404 ); // Not Found
+            http_response_code(404); // Not Found
             return ['status' => 'error', 'message' => 'Token inválido ou expirado.'];
         }
     }
@@ -452,10 +455,10 @@ class AuthController
         $success = User::updatePasswordAndInvalidateToken($user['id'], $hashedPassword);
 
         if ($success) {
-            
+
             return ['status' => 'success', 'message' => 'Senha alterada com sucesso!'];
         } else {
-            http_response_code(500 );
+            http_response_code(500);
             return ['status' => 'error', 'message' => 'Ocorreu um erro ao atualizar sua senha.'];
         }
     }

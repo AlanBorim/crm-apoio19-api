@@ -33,6 +33,11 @@ class Tarefa
     public $criador_nome;
     public $kanban_coluna_nome;
 
+    // Propriedades para relações carregadas dinamicamente
+    public $responsaveis;
+    public $comentarios;
+    public $tags_array;
+
     /**
      * Buscar tarefas com filtros.
      *
@@ -50,7 +55,7 @@ class Tarefa
                 LEFT JOIN kanban_colunas kc ON t.kanban_coluna_id = kc.id
                 LEFT JOIN users u_resp ON t.responsavel_id = u_resp.id
                 LEFT JOIN users u_criador ON t.criador_id = u_criador.id";
-        
+
         $whereClauses = [];
         $params = [];
 
@@ -61,8 +66,8 @@ class Tarefa
                     $whereClauses[] = "t." . $key . " = " . $paramName;
                     $params[$paramName] = $value;
                 } elseif ($key === "titulo_like" && is_string($value)) {
-                     $whereClauses[] = "t.titulo LIKE :titulo_like";
-                     $params[":titulo_like"] = "%" . $value . "%";
+                    $whereClauses[] = "t.titulo LIKE :titulo_like";
+                    $params[":titulo_like"] = "%" . $value . "%";
                 }
             }
             if (!empty($whereClauses)) {
@@ -77,12 +82,12 @@ class Tarefa
             $stmt = $pdo->prepare($sql);
             $stmt->execute($params);
             $tarefas = $stmt->fetchAll(PDO::FETCH_CLASS, self::class);
-            
+
             // Adicionar responsáveis e comentários para cada tarefa
             foreach ($tarefas as $tarefa) {
                 $tarefa->loadRelations();
             }
-            
+
             return $tarefas;
         } catch (PDOException $e) {
             error_log("Erro ao buscar tarefas: " . $e->getMessage());
@@ -99,7 +104,7 @@ class Tarefa
     public static function findById(int $id)
     {
         error_log("DEBUG: findById called for ID: " . $id);
-         $sql = "SELECT t.*, 
+        $sql = "SELECT t.*, 
                        kc.nome as kanban_coluna_nome, 
                        u_resp.name as responsavel_nome, 
                        u_criador.name as criador_nome
@@ -112,13 +117,13 @@ class Tarefa
             $pdo = Database::getInstance();
             $stmt = $pdo->prepare($sql);
             $stmt->bindParam(":id", $id, PDO::PARAM_INT);
-            
+
             error_log("DEBUG: Executing query...");
             $stmt->execute();
-            
+
             error_log("DEBUG: Fetching data...");
             $data = $stmt->fetch(PDO::FETCH_ASSOC);
-            
+
             if ($data) {
                 error_log("DEBUG: Data found. Hydrating...");
                 $tarefa = new self();
@@ -134,7 +139,7 @@ class Tarefa
             } else {
                 error_log("DEBUG: No data found for ID: " . $id);
             }
-            
+
             return null;
         } catch (PDOException $e) {
             error_log("Erro ao buscar tarefa ID {$id}: " . $e->getMessage());
@@ -152,10 +157,10 @@ class Tarefa
     {
         // Carregar responsáveis
         $this->responsaveis = TarefaResponsavel::findByTarefa($this->id);
-        
+
         // Carregar comentários
         $this->comentarios = TarefaComentario::findByTaskId($this->id);
-        
+
         // Decodificar tags JSON
         if ($this->tags) {
             $this->tags_array = json_decode($this->tags, true) ?? [];
@@ -174,18 +179,18 @@ class Tarefa
     {
         $sql = "INSERT INTO tarefas (titulo, descricao, kanban_coluna_id, responsavel_id, criador_id, lead_id, contato_id, proposta_id, data_vencimento, prioridade, ordem_na_coluna, tags) 
                 VALUES (:titulo, :descricao, :kanban_coluna_id, :responsavel_id, :criador_id, :lead_id, :contato_id, :proposta_id, :data_vencimento, :prioridade, :ordem_na_coluna, :tags)";
-        
+
         try {
             $pdo = Database::getInstance();
             $stmt = $pdo->prepare($sql);
 
             $ordem = $data["ordem_na_coluna"] ?? self::getNextOrderInColumn($data["kanban_coluna_id"] ?? null);
-            
+
             // Se responsavel_id não foi enviado, mas responsaveis sim, usar o primeiro como principal
             if (empty($data["responsavel_id"]) && !empty($data["responsaveis"]) && is_array($data["responsaveis"])) {
                 $data["responsavel_id"] = $data["responsaveis"][0];
             }
-            
+
             // Processar tags
             $tags = null;
             if (isset($data["tags"]) && is_array($data["tags"])) {
@@ -207,12 +212,12 @@ class Tarefa
 
             if ($stmt->execute()) {
                 $tarefaId = (int)$pdo->lastInsertId();
-                
+
                 // Adicionar responsáveis se fornecidos
                 if (isset($data["responsaveis"]) && is_array($data["responsaveis"])) {
                     TarefaResponsavel::updateAll($tarefaId, $data["responsaveis"]);
                 }
-                
+
                 return $tarefaId;
             }
             return false;
@@ -235,12 +240,12 @@ class Tarefa
         $params = [":id" => $id];
 
         $allowedFields = ["titulo", "descricao", "kanban_coluna_id", "responsavel_id", "lead_id", "contato_id", "proposta_id", "data_vencimento", "prioridade", "concluida", "data_conclusao", "ordem_na_coluna", "tags"];
-        
+
         foreach ($data as $key => $value) {
             if (in_array($key, $allowedFields)) {
                 $paramName = ":" . $key;
                 $setClauses[] = $key . " = " . $paramName;
-                
+
                 if ($key === "concluida") {
                     $params[$paramName] = (bool)$value;
                 } elseif ($key === "tags" && is_array($value)) {
@@ -261,12 +266,12 @@ class Tarefa
             $pdo = Database::getInstance();
             $stmt = $pdo->prepare($sql);
             $success = $stmt->execute($params);
-            
+
             // Atualizar responsáveis se fornecidos
             if ($success && isset($data["responsaveis"]) && is_array($data["responsaveis"])) {
                 TarefaResponsavel::updateAll($id, $data["responsaveis"]);
             }
-            
+
             return $success;
         } catch (PDOException $e) {
             error_log("Erro ao atualizar tarefa ID {$id}: " . $e->getMessage());
@@ -322,7 +327,7 @@ class Tarefa
             return 0;
         }
     }
-    
+
     /**
      * Atualizar ordem das tarefas.
      *
@@ -338,7 +343,7 @@ class Tarefa
 
         $sql = "UPDATE tarefas SET ordem_na_coluna = :ordem, kanban_coluna_id = :coluna_id, atualizado_em = NOW() WHERE id = :id";
         $pdo = Database::getInstance();
-        
+
         try {
             $pdo->beginTransaction();
             $stmt = $pdo->prepare($sql);
@@ -360,4 +365,3 @@ class Tarefa
         }
     }
 }
-

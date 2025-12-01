@@ -3,6 +3,7 @@
 namespace Apoio19\Crm\Models;
 
 use Apoio19\Crm\Models\Database;
+use InvalidArgumentException;
 use \PDO;
 use \PDOException;
 
@@ -43,7 +44,7 @@ class Proposal
     {
         try {
             $pdo = Database::getInstance();
-            $stmt = $pdo->prepare("SELECT * FROM propostas WHERE id = :id LIMIT 1");
+            $stmt = $pdo->prepare("SELECT * FROM proposals WHERE id = :id LIMIT 1");
             $stmt->bindParam(":id", $id, PDO::PARAM_INT);
             $stmt->execute();
             $proposalData = $stmt->fetch();
@@ -69,10 +70,10 @@ class Proposal
     {
         $proposals = [];
         $sql = "SELECT p.*, l.nome as lead_nome, c.nome as contato_nome, e.nome as empresa_nome, u.name as responsavel_nome 
-               FROM propostas p
+               FROM proposals p
                LEFT JOIN leads l ON p.lead_id = l.id
-               LEFT JOIN contatos c ON p.contato_id = c.id
-               LEFT JOIN empresas e ON p.empresa_id = e.id
+               LEFT JOIN contacts c ON p.contact_id = c.id
+               LEFT JOIN companies e ON p.company_id = e.id
                LEFT JOIN users u ON p.responsavel_id = u.id";
         $whereClauses = [];
         $params = [];
@@ -98,15 +99,15 @@ class Proposal
         try {
             $pdo = Database::getInstance();
             $stmt = $pdo->prepare($sql);
-            
+
             // Bind parameters dynamically
             foreach ($params as $key => &$val) {
-                 // Determine the PDO type based on the key or value type
-                 $paramType = PDO::PARAM_STR;
-                 if ($key === ':limit' || $key === ':offset' || $key === ':responsavel_id') {
-                     $paramType = PDO::PARAM_INT;
-                 }
-                 $stmt->bindParam($key, $val, $paramType);
+                // Determine the PDO type based on the key or value type
+                $paramType = PDO::PARAM_STR;
+                if ($key === ':limit' || $key === ':offset' || $key === ':responsavel_id') {
+                    $paramType = PDO::PARAM_INT;
+                }
+                $stmt->bindParam($key, $val, $paramType);
             }
             unset($val); // Unset reference
 
@@ -115,7 +116,7 @@ class Proposal
 
             foreach ($results as $proposalData) {
                 // We don't use hydrate here because we have joined data
-                $proposals[] = $proposalData; 
+                $proposals[] = $proposalData;
             }
         } catch (PDOException $e) {
             error_log("Erro ao buscar todas as propostas: " . $e->getMessage());
@@ -131,7 +132,7 @@ class Proposal
      */
     public static function countAll(array $filters = []): int
     {
-        $sql = "SELECT COUNT(*) FROM propostas p";
+        $sql = "SELECT COUNT(*) FROM proposals p";
         $whereClauses = [];
         $params = [];
 
@@ -169,9 +170,11 @@ class Proposal
      */
     public static function create(array $data, array $items = []): int|false
     {
-        $sql = "INSERT INTO propostas (titulo, lead_id, contato_id, empresa_id, responsavel_id, descricao, condicoes, valor_total, status, data_validade, modelo_id) 
-                VALUES (:titulo, :lead_id, :contato_id, :empresa_id, :responsavel_id, :descricao, :condicoes, :valor_total, :status, :data_validade, :modelo_id)";
-        
+
+
+        $sql = "INSERT INTO proposals (titulo, lead_id, contact_id, company_id, responsavel_id, descricao, condicoes, valor_total, status, data_validade, modelo_id) 
+                VALUES (:titulo, :lead_id, :contact_id, :company_id, :responsavel_id, :descricao, :condicoes, :valor_total, :status, :data_validade, :modelo_id)";
+
         $pdo = Database::getInstance();
         try {
             $pdo->beginTransaction();
@@ -181,40 +184,90 @@ class Proposal
             $valorTotal = self::calculateTotalValue($items);
             $status = $data['status'] ?? self::STATUS_RASCUNHO;
 
+            // Valores obrigatórios
+            $leadId = $data['lead_id'];
+            $titulo = $data['titulo'] ?? 'Proposta sem título';
+            $descricao = $data['descricao'] ?? '';
+            $condicoes = $data['condicoes'] ?? '';
+            $responsavelId = $data['responsavel_id'] ?? null;
+
+            // Valores opcionais (contact_id e company_id não são mais necessários)
+            $contactId = $data['contact_id'] ?? $data['contato_id'] ?? null;
+            $companyId = $data['company_id'] ?? $data['empresa_id'] ?? null;
+            $modeloId = $data['modelo_id'] ?? null;
+
+            // Converter string vazia em NULL para data_validade
+            $dataValidade = $data['data_validade'] ?? null;
+            if ($dataValidade === '' || $dataValidade === '0000-00-00') {
+                $dataValidade = null;
+            }
+
+            // Log para debug
+            error_log("Creating proposal with data: " . json_encode([
+                'titulo' => $titulo,
+                'lead_id' => $leadId,
+                'contact_id' => $contactId,
+                'company_id' => $companyId,
+                'responsavel_id' => $responsavelId,
+                'valor_total' => $valorTotal,
+                'status' => $status,
+                'data_validade' => $dataValidade,
+                'modelo_id' => $modeloId,
+                'items_count' => count($items)
+            ]));
+
             // Bind parameters
-            $stmt->bindParam(":titulo", $data['titulo']);
-            $stmt->bindParam(":lead_id", $data['lead_id'], PDO::PARAM_INT);
-            $stmt->bindParam(":contato_id", $data['contato_id'], PDO::PARAM_INT);
-            $stmt->bindParam(":empresa_id", $data['empresa_id'], PDO::PARAM_INT);
-            $stmt->bindParam(":responsavel_id", $data['responsavel_id'], PDO::PARAM_INT);
-            $stmt->bindParam(":descricao", $data['descricao']);
-            $stmt->bindParam(":condicoes", $data['condicoes']);
+            $stmt->bindParam(":titulo", $titulo);
+            $stmt->bindParam(":lead_id", $leadId, PDO::PARAM_INT);
+            $stmt->bindParam(":contact_id", $contactId, $contactId !== null ? PDO::PARAM_INT : PDO::PARAM_NULL);
+            $stmt->bindParam(":company_id", $companyId, $companyId !== null ? PDO::PARAM_INT : PDO::PARAM_NULL);
+            $stmt->bindParam(":responsavel_id", $responsavelId, $responsavelId !== null ? PDO::PARAM_INT : PDO::PARAM_NULL);
+            $stmt->bindParam(":descricao", $descricao);
+            $stmt->bindParam(":condicoes", $condicoes);
             $stmt->bindParam(":valor_total", $valorTotal);
             $stmt->bindParam(":status", $status);
-            $stmt->bindParam(":data_validade", $data['data_validade']); // Ensure YYYY-MM-DD
-            $stmt->bindParam(":modelo_id", $data['modelo_id'], PDO::PARAM_INT);
+            $stmt->bindParam(":data_validade", $dataValidade, $dataValidade !== null ? PDO::PARAM_STR : PDO::PARAM_NULL);
+            $stmt->bindParam(":modelo_id", $modeloId, $modeloId !== null ? PDO::PARAM_INT : PDO::PARAM_NULL);
 
             if ($stmt->execute()) {
                 $proposalId = (int)$pdo->lastInsertId();
-                
+                error_log("Proposal created successfully with ID: {$proposalId}");
+
                 // Insert items
-                if (!self::syncItems($proposalId, $items)) {
-                    throw new PDOException("Falha ao inserir itens da proposta.");
+                if (!empty($items)) {
+                    error_log("Syncing " . count($items) . " items for proposal ID: {$proposalId}");
+                    if (!self::syncItems($proposalId, $items)) {
+                        error_log("Failed to sync items for proposal ID: {$proposalId}");
+                        throw new PDOException("Falha ao inserir itens da proposta.");
+                    }
+                    error_log("Items synced successfully for proposal ID: {$proposalId}");
+                } else {
+                    error_log("No items to sync for proposal ID: {$proposalId}");
                 }
 
                 // Add history
-                self::addHistory($proposalId, $data['responsavel_id'], 'Criada', 'Proposta criada.');
+                self::addHistory($proposalId, $responsavelId, 'Criada', 'Proposta criada.');
 
                 $pdo->commit();
+                error_log("Transaction committed successfully for proposal ID: {$proposalId}");
                 return $proposalId;
             } else {
                 $pdo->rollBack();
+                $errorInfo = $stmt->errorInfo();
+                error_log("Failed to execute INSERT: SQLSTATE[{$errorInfo[0]}] [{$errorInfo[1]}] {$errorInfo[2]}");
+                return false;
             }
         } catch (PDOException $e) {
             $pdo->rollBack();
-            error_log("Erro ao criar proposta: " . $e->getMessage());
+            error_log("PDOException ao criar proposta: " . $e->getMessage());
+            error_log("Stack trace: " . $e->getTraceAsString());
+            return false;
+        } catch (Exception $e) {
+            $pdo->rollBack();
+            error_log("Exception ao criar proposta: " . $e->getMessage());
+            error_log("Stack trace: " . $e->getTraceAsString());
+            return false;
         }
-        return false;
     }
 
     /**
@@ -236,13 +289,13 @@ class Proposal
 
         // Get old status if status is being updated
         if (isset($data['status'])) {
-             $currentProposal = self::findById($id);
-             if ($currentProposal) {
-                 $oldStatus = $currentProposal->status;
-                 if ($oldStatus !== $data['status']) {
-                     $statusChanged = true;
-                 }
-             }
+            $currentProposal = self::findById($id);
+            if ($currentProposal) {
+                $oldStatus = $currentProposal->status;
+                if ($oldStatus !== $data['status']) {
+                    $statusChanged = true;
+                }
+            }
         }
 
         // Calculate new total value based on provided items
@@ -264,39 +317,39 @@ class Proposal
         if (empty($fields)) {
             // If only items are updated, still proceed to syncItems
             if (!empty($items)) {
-                 // Need to ensure transaction wraps this logic if only items change
-                 $pdo = Database::getInstance();
-                 try {
-                     $pdo->beginTransaction();
-                     if (!self::syncItems($id, $items)) {
-                         throw new PDOException("Falha ao atualizar itens da proposta.");
-                     }
-                     // Update valor_total based on new items even if no other fields changed
-                     $newTotal = self::calculateTotalValue($items);
-                     $stmtTotal = $pdo->prepare("UPDATE propostas SET valor_total = :valor_total WHERE id = :id");
-                     $stmtTotal->bindParam(':valor_total', $newTotal);
-                     $stmtTotal->bindParam(':id', $id, PDO::PARAM_INT);
-                     $stmtTotal->execute();
-                     
-                     self::addHistory($id, $userId, 'Itens Atualizados', 'Itens da proposta foram atualizados.');
-                     $pdo->commit();
-                     return true;
-                 } catch (PDOException $e) {
-                     $pdo->rollBack();
-                     error_log("Erro ao atualizar itens da proposta ID {$id}: " . $e->getMessage());
-                     return false;
-                 }
+                // Need to ensure transaction wraps this logic if only items change
+                $pdo = Database::getInstance();
+                try {
+                    $pdo->beginTransaction();
+                    if (!self::syncItems($id, $items)) {
+                        throw new PDOException("Falha ao atualizar itens da proposta.");
+                    }
+                    // Update valor_total based on new items even if no other fields changed
+                    $newTotal = self::calculateTotalValue($items);
+                    $stmtTotal = $pdo->prepare("UPDATE proposals SET valor_total = :valor_total WHERE id = :id");
+                    $stmtTotal->bindParam(':valor_total', $newTotal);
+                    $stmtTotal->bindParam(':id', $id, PDO::PARAM_INT);
+                    $stmtTotal->execute();
+
+                    self::addHistory($id, $userId, 'Itens Atualizados', 'Itens da proposta foram atualizados.');
+                    $pdo->commit();
+                    return true;
+                } catch (PDOException $e) {
+                    $pdo->rollBack();
+                    error_log("Erro ao atualizar itens da proposta ID {$id}: " . $e->getMessage());
+                    return false;
+                }
             }
             return false; // No fields or items to update
         }
 
-        $sql = "UPDATE propostas SET " . implode(", ", $fields) . " WHERE id = :id";
+        $sql = "UPDATE proposals SET " . implode(", ", $fields) . " WHERE id = :id";
         $pdo = Database::getInstance();
 
         try {
             $pdo->beginTransaction();
             $stmt = $pdo->prepare($sql);
-            
+
             if ($stmt->execute($params)) {
                 // Sync items (delete old, insert new)
                 if (!self::syncItems($id, $items)) {
@@ -315,7 +368,7 @@ class Proposal
                 $pdo->commit();
                 return true;
             } else {
-                 $pdo->rollBack();
+                $pdo->rollBack();
             }
         } catch (PDOException $e) {
             $pdo->rollBack();
@@ -333,7 +386,7 @@ class Proposal
     public static function delete(int $id): bool
     {
         // Consider soft deletes
-        $sql = "DELETE FROM propostas WHERE id = :id";
+        $sql = "DELETE FROM proposals WHERE id = :id";
         $pdo = Database::getInstance();
         try {
             // Deletion cascades to items and history due to FK constraints ON DELETE CASCADE
@@ -359,7 +412,7 @@ class Proposal
     public static function getItems(int $proposalId): array
     {
         $items = [];
-        $sql = "SELECT * FROM proposta_itens WHERE proposta_id = :proposal_id ORDER BY id ASC";
+        $sql = "SELECT * FROM proposta_itens WHERE proposal_id = :proposal_id ORDER BY id ASC";
         try {
             $pdo = Database::getInstance();
             $stmt = $pdo->prepare($sql);
@@ -437,34 +490,38 @@ class Proposal
         $pdo = Database::getInstance();
         try {
             // Delete existing items
-            $stmtDelete = $pdo->prepare("DELETE FROM proposta_itens WHERE proposta_id = :proposal_id");
+            $stmtDelete = $pdo->prepare("DELETE FROM proposta_itens WHERE proposal_id = :proposal_id");
             $stmtDelete->bindParam(":proposal_id", $proposalId, PDO::PARAM_INT);
             $stmtDelete->execute();
 
             // Insert new items
             if (!empty($items)) {
-                $sqlInsert = "INSERT INTO proposta_itens (proposta_id, descricao, quantidade, valor_unitario, valor_total_item) VALUES (:proposta_id, :descricao, :quantidade, :valor_unitario, :valor_total_item)";
+                $sqlInsert = "INSERT INTO proposta_itens (proposal_id, description, quantity, unit_price, total_price) 
+                              VALUES (:proposal_id, :description, :quantity, :unit_price, :total_price)";
                 $stmtInsert = $pdo->prepare($sqlInsert);
 
                 foreach ($items as $item) {
-                    if (empty($item['descricao']) || !isset($item['valor_unitario'])) continue; // Skip invalid items
-                    
-                    $quantidade = $item['quantidade'] ?? 1.00;
-                    $valorUnitario = $item['valor_unitario'] ?? 0.00;
-                    $valorTotalItem = (float)$quantidade * (float)$valorUnitario;
+                    // Aceitar tanto 'descricao' quanto 'description'
+                    $description = $item['description'] ?? $item['descricao'] ?? '';
+                    $unitPrice = $item['unit_price'] ?? $item['valor_unitario'] ?? 0.00;
 
-                    $stmtInsert->bindParam(":proposta_id", $proposalId, PDO::PARAM_INT);
-                    $stmtInsert->bindParam(":descricao", $item['descricao']);
-                    $stmtInsert->bindParam(":quantidade", $quantidade);
-                    $stmtInsert->bindParam(":valor_unitario", $valorUnitario);
-                    $stmtInsert->bindParam(":valor_total_item", $valorTotalItem);
-                    
+                    if (empty($description)) continue; // Skip invalid items
+
+                    $quantity = $item['quantity'] ?? $item['quantidade'] ?? 1.00;
+                    $totalPrice = (float)$quantity * (float)$unitPrice;
+
+                    $stmtInsert->bindParam(":proposal_id", $proposalId, PDO::PARAM_INT);
+                    $stmtInsert->bindParam(":description", $description);
+                    $stmtInsert->bindParam(":quantity", $quantity);
+                    $stmtInsert->bindParam(":unit_price", $unitPrice);
+                    $stmtInsert->bindParam(":total_price", $totalPrice);
+
                     if (!$stmtInsert->execute()) {
                         // Log error for specific item insertion failure
-                        error_log("Falha ao inserir item para proposta ID {$proposalId}: " . $item['descricao']);
+                        error_log("Falha ao inserir item para proposta ID {$proposalId}: " . $description);
                         // Depending on requirements, you might want to continue or fail the whole sync
                         // For now, let's consider it a failure for the sync operation
-                        return false; 
+                        return false;
                     }
                 }
             }
@@ -486,39 +543,55 @@ class Proposal
     {
         $total = 0.00;
         foreach ($items as $item) {
-             $quantidade = $item['quantidade'] ?? 1.00;
-             $valorUnitario = $item['valor_unitario'] ?? 0.00;
-             $total += (float)$quantidade * (float)$valorUnitario;
+            $quantidade = $item['quantidade'] ?? 1.00;
+            $valorUnitario = $item['valor_unitario'] ?? 0.00;
+            $total += (float)$quantidade * (float)$valorUnitario;
         }
         return $total;
     }
 
-    /**
-     * Hydrate a Proposal object from database data.
-     *
-     * @param array $data
-     * @return Proposal
-     */
+    private static function intOrNull(array $data, string $key): ?int
+    {
+        if (!array_key_exists($key, $data)) return null;
+        $v = $data[$key];
+        if ($v === '' || $v === null) return null;
+        $int = filter_var($v, FILTER_VALIDATE_INT);
+        return $int === false ? null : (int)$int;
+    }
+
     private static function hydrate(array $data): Proposal
     {
-        $proposal = new self();
-        $proposal->id = (int)$data["id"];
-        $proposal->titulo = $data["titulo"];
-        $proposal->lead_id = $data["lead_id"] ? (int)$data["lead_id"] : null;
-        $proposal->contato_id = $data["contato_id"] ? (int)$data["contato_id"] : null;
-        $proposal->empresa_id = $data["empresa_id"] ? (int)$data["empresa_id"] : null;
-        $proposal->responsavel_id = $data["responsavel_id"] ? (int)$data["responsavel_id"] : null;
-        $proposal->descricao = $data["descricao"];
-        $proposal->condicoes = $data["condicoes"];
-        $proposal->valor_total = (float)$data["valor_total"];
-        $proposal->status = $data["status"];
-        $proposal->data_envio = $data["data_envio"];
-        $proposal->data_validade = $data["data_validade"];
-        $proposal->pdf_path = $data["pdf_path"];
-        $proposal->modelo_id = $data["modelo_id"] ? (int)$data["modelo_id"] : null;
-        $proposal->criado_em = $data["criado_em"];
-        $proposal->atualizado_em = $data["atualizado_em"];
-        return $proposal;
+        $p = new self();
+
+        // Defina aqui quais são realmente obrigatórios no seu domínio
+        foreach (['id', 'titulo', 'valor_total', 'status'] as $req) {
+            if (!array_key_exists($req, $data)) {
+                throw new InvalidArgumentException("Campo obrigatório ausente: {$req}");
+            }
+        }
+
+        // Obrigatórios
+        $p->id          = (int)$data['id'];
+        $p->titulo      = (string)$data['titulo'];
+        $p->valor_total = isset($data['valor_total']) && $data['valor_total'] !== '' ? (float)$data['valor_total'] : 0.0;
+        $p->status      = (string)$data['status'];
+
+        // Inteiros opcionais (preservando 0)
+        $p->lead_id        = self::intOrNull($data, 'lead_id');
+        $p->contato_id     = self::intOrNull($data, 'contato_id');
+        $p->empresa_id     = self::intOrNull($data, 'empresa_id');
+        $p->responsavel_id = self::intOrNull($data, 'responsavel_id');
+        $p->modelo_id      = self::intOrNull($data, 'modelo_id');
+
+        // Opcionais string/datetime
+        $p->descricao     = $data['descricao']     ?? null;
+        $p->condicoes     = $data['condicoes']     ?? null;
+        $p->data_envio    = $data['data_envio']    ?? null;
+        $p->data_validade = $data['data_validade'] ?? null;
+        $p->pdf_path      = $data['pdf_path']      ?? null;
+        $p->criado_em     = $data['criado_em']     ?? null;
+        $p->atualizado_em = $data['atualizado_em'] ?? null;
+
+        return $p;
     }
 }
-
