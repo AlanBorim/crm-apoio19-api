@@ -385,18 +385,29 @@ class Proposal
             }
         }
 
-        // Calculate new total value based on provided items
-        $data['valor_total'] = self::calculateTotalValue($items);
-        $allowedFields[] = 'valor_total'; // Allow updating calculated total value
+        // Only calculate new total value if items are provided
+        // This prevents overwriting valor_total to 0 when only updating status/observacoes
+        if (!empty($items)) {
+            $data['valor_total'] = self::calculateTotalValue($items);
+            $allowedFields[] = 'valor_total'; // Allow updating calculated total value
+        }
 
         foreach ($data as $key => $value) {
             if (in_array($key, $allowedFields)) {
                 $fields[] = "`{$key}` = :{$key}";
                 $paramType = PDO::PARAM_STR;
+
+                // Handle integer fields
                 if (in_array($key, ['lead_id', 'contato_id', 'empresa_id', 'responsavel_id', 'modelo_id'])) {
                     $paramType = PDO::PARAM_INT;
                     $value = empty($value) ? null : (int)$value;
                 }
+
+                // Handle date fields - convert empty strings to NULL
+                if (in_array($key, ['data_envio', 'data_validade'])) {
+                    $value = (empty($value) || $value === '') ? null : $value;
+                }
+
                 $params[":{$key}"] = $value;
             }
         }
@@ -438,9 +449,12 @@ class Proposal
             $stmt = $pdo->prepare($sql);
 
             if ($stmt->execute($params)) {
-                // Sync items (delete old, insert new)
-                if (!self::syncItems($id, $items)) {
-                    throw new PDOException("Falha ao atualizar itens da proposta.");
+                // Only sync items if items are provided
+                // This prevents deleting all items when only updating status/observacoes
+                if (!empty($items)) {
+                    if (!self::syncItems($id, $items)) {
+                        throw new PDOException("Falha ao atualizar itens da proposta.");
+                    }
                 }
 
                 // Add history

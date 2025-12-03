@@ -22,6 +22,7 @@ use Apoio19\Crm\Controllers\TarefaUsuarioController;
 use Apoio19\Crm\Controllers\WhatsappCampaignController;
 use Apoio19\Crm\Controllers\WhatsappTemplateController;
 use Apoio19\Crm\Controllers\ProposalController;
+use Apoio19\Crm\Controllers\DashboardController;
 
 // --- Lógica de Extração de Caminho Corrigida ---
 $requestUri = $_SERVER['REQUEST_URI']; // ex: /api/login?param=1
@@ -2029,6 +2030,30 @@ if (preg_match('/^\/proposal-templates\/(\d+)$/', $requestPath, $matches) && $re
 if (preg_match('/^\/proposal-templates\/(\d+)$/', $requestPath, $matches) && $requestMethod === 'DELETE') {
     $controller = new ProposalTemplateController();
     $controller->destroy((int)$matches[1]);
+}
+
+// Dashboard Routes
+if ($requestPath === '/dashboard/metrics' && $requestMethod === 'GET') {
+    try {
+        $headers = getallheaders();
+        $dashboardController = new DashboardController();
+
+        $response = $dashboardController->getMetrics($headers);
+
+        if (is_array($response)) {
+            echo json_encode($response);
+        } else {
+            http_response_code(500);
+            echo json_encode(["error" => "Erro interno. Resposta inesperada do servidor."]);
+        }
+    } catch (\Throwable $th) {
+        error_log("Erro no DashboardController->getMetrics: " . $th->getMessage() . "\n" . $th->getTraceAsString());
+        http_response_code(500);
+        echo json_encode([
+            "error" => "Erro interno ao processar métricas do dashboard.",
+            "details" => $th->getMessage()
+        ]);
+    }
     exit;
 }
 
