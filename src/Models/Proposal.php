@@ -3,6 +3,8 @@
 namespace Apoio19\Crm\Models;
 
 use Apoio19\Crm\Models\Database;
+use Apoio19\Crm\Models\Lead;
+use Apoio19\Crm\Models\HistoricoInteracoes;
 use InvalidArgumentException;
 use \PDO;
 use \PDOException;
@@ -25,6 +27,8 @@ class Proposal
     public ?int $modelo_id;
     public string $criado_em;
     public string $atualizado_em;
+    public ?string $lead_nome = null;
+    public ?string $observacoes;
 
     // Constants for proposal status
     const STATUS_RASCUNHO = 'rascunho';
@@ -44,7 +48,11 @@ class Proposal
     {
         try {
             $pdo = Database::getInstance();
-            $stmt = $pdo->prepare("SELECT * FROM proposals WHERE id = :id LIMIT 1");
+            $sql = "SELECT p.*, l.name as lead_nome 
+                    FROM proposals p 
+                    LEFT JOIN leads l ON p.lead_id = l.id 
+                    WHERE p.id = :id LIMIT 1";
+            $stmt = $pdo->prepare($sql);
             $stmt->bindParam(":id", $id, PDO::PARAM_INT);
             $stmt->execute();
             $proposalData = $stmt->fetch();
@@ -69,12 +77,17 @@ class Proposal
     public static function findAll(array $filters = [], int $limit = 25, int $offset = 0): array
     {
         $proposals = [];
-        $sql = "SELECT p.*, l.nome as lead_nome, c.nome as contato_nome, e.nome as empresa_nome, u.name as responsavel_nome 
-               FROM proposals p
-               LEFT JOIN leads l ON p.lead_id = l.id
-               LEFT JOIN contacts c ON p.contact_id = c.id
-               LEFT JOIN companies e ON p.company_id = e.id
-               LEFT JOIN users u ON p.responsavel_id = u.id";
+        $sql = "SELECT 
+                        p.*, 
+                        l.name as lead_nome, 
+                        c.name as contato_nome, 
+                        e.name as empresa_nome, 
+                        u.name as responsavel_nome 
+                    FROM proposals p
+                    LEFT JOIN leads l ON p.lead_id = l.id
+                    LEFT JOIN contacts c ON p.contact_id = c.id
+                    LEFT JOIN companies e ON p.company_id = e.id
+                    LEFT JOIN users u ON p.responsavel_id = u.id";
         $whereClauses = [];
         $params = [];
 
@@ -170,14 +183,87 @@ class Proposal
      */
     public static function create(array $data, array $items = []): int|false
     {
-
-
-        $sql = "INSERT INTO proposals (titulo, lead_id, contact_id, company_id, responsavel_id, descricao, condicoes, valor_total, status, data_validade, modelo_id) 
-                VALUES (:titulo, :lead_id, :contact_id, :company_id, :responsavel_id, :descricao, :condicoes, :valor_total, :status, :data_validade, :modelo_id)";
-
         $pdo = Database::getInstance();
         try {
             $pdo->beginTransaction();
+
+            // Log detalhado dos dados recebidos
+            error_log("Dados recebidos para criar proposta: " . json_encode([
+                'lead_id' => $data['lead_id'] ?? 'not_set',
+                'lead_name' => $data['lead_name'] ?? 'not_set',
+                'titulo' => $data['titulo'] ?? 'not_set'
+            ]));
+
+            // Se lead_id não foi fornecido, tentar criar um novo lead com os dados fornecidos
+            // Considerar "", null, 0 como vazios
+            $leadId = $data['lead_id'] ?? null;
+            if ($leadId === '' || $leadId === 0 || $leadId === '0') {
+                $leadId = null;
+            }
+
+            if (empty($leadId) && !empty($data['lead_name'])) {
+                // Validar dados mínimos do lead (seguindo padrão do LeadController)
+                $leadName = trim($data['lead_name']);
+                if (empty($leadName)) {
+                    error_log("Lead name vazio após trim");
+                    $pdo->rollBack();
+                    return false;
+                }
+
+                // Validar email se fornecido
+                $leadEmail = $data['lead_email'] ?? null;
+                if (!empty($leadEmail) && !filter_var($leadEmail, FILTER_VALIDATE_EMAIL)) {
+                    error_log("Email inválido fornecido: {$leadEmail}");
+                    $pdo->rollBack();
+                    return false;
+                }
+
+                // Preparar dados do lead (seguindo padrão do LeadController)
+                $leadData = [
+                    'name' => $leadName,
+                    'email' => $leadEmail,
+                    'phone' => $data['lead_phone'] ?? null,
+                    'company' => $data['lead_company'] ?? null,
+                    'stage' => 'novo',
+                    'assigned_to' => $data['responsavel_id'] ?? null,
+                    'created_at' => date('Y-m-d H:i:s')
+                ];
+
+                // Criar o lead usando o método do modelo
+                $leadId = Lead::create($leadData);
+
+                if (!$leadId) {
+                    error_log("Erro ao criar lead automaticamente para proposta");
+                    $pdo->rollBack();
+                    return false;
+                }
+
+                error_log("Lead criado automaticamente com ID: {$leadId} para proposta");
+
+                // Registrar no histórico do lead (seguindo padrão do Lead Controller)
+                try {
+                    HistoricoInteracoes::logAction(
+                        $leadId,
+                        null,
+                        $data['responsavel_id'] ?? null,
+                        "Lead Criado",
+                        "Lead criado automaticamente a partir de proposta."
+                    );
+                } catch (\Exception $e) {
+                    error_log("Erro ao registrar histórico do lead: " . $e->getMessage());
+                    // Não falhar a criação da proposta por isso
+                }
+            }
+
+            // Se ainda não temos lead_id, falhar
+            if (empty($leadId)) {
+                error_log("Erro ao criar proposta: lead_id é obrigatório ou dados de lead devem ser fornecidos. Recebido lead_id: " . json_encode($data['lead_id'] ?? 'not_set') . ", lead_name: " . json_encode($data['lead_name'] ?? 'not_set'));
+                $pdo->rollBack();
+                return false;
+            }
+
+            $sql = "INSERT INTO proposals (titulo, lead_id, contact_id, company_id, responsavel_id, descricao, condicoes, observacoes, valor_total, status, data_validade, modelo_id) 
+                    VALUES (:titulo, :lead_id, :contact_id, :company_id, :responsavel_id, :descricao, :condicoes, :observacoes, :valor_total, :status, :data_validade, :modelo_id)";
 
             $stmt = $pdo->prepare($sql);
 
@@ -185,10 +271,10 @@ class Proposal
             $status = $data['status'] ?? self::STATUS_RASCUNHO;
 
             // Valores obrigatórios
-            $leadId = $data['lead_id'];
             $titulo = $data['titulo'] ?? 'Proposta sem título';
             $descricao = $data['descricao'] ?? '';
             $condicoes = $data['condicoes'] ?? '';
+            $observacoes = $data['observacoes'] ?? null;
             $responsavelId = $data['responsavel_id'] ?? null;
 
             // Valores opcionais (contact_id e company_id não são mais necessários)
@@ -224,6 +310,7 @@ class Proposal
             $stmt->bindParam(":responsavel_id", $responsavelId, $responsavelId !== null ? PDO::PARAM_INT : PDO::PARAM_NULL);
             $stmt->bindParam(":descricao", $descricao);
             $stmt->bindParam(":condicoes", $condicoes);
+            $stmt->bindParam(":observacoes", $observacoes);
             $stmt->bindParam(":valor_total", $valorTotal);
             $stmt->bindParam(":status", $status);
             $stmt->bindParam(":data_validade", $dataValidade, $dataValidade !== null ? PDO::PARAM_STR : PDO::PARAM_NULL);
@@ -283,7 +370,7 @@ class Proposal
     {
         $fields = [];
         $params = [":id" => $id];
-        $allowedFields = ['titulo', 'lead_id', 'contato_id', 'empresa_id', 'responsavel_id', 'descricao', 'condicoes', 'status', 'data_envio', 'data_validade', 'pdf_path', 'modelo_id'];
+        $allowedFields = ['titulo', 'lead_id', 'contato_id', 'empresa_id', 'responsavel_id', 'descricao', 'condicoes', 'observacoes', 'status', 'data_envio', 'data_validade', 'pdf_path', 'modelo_id'];
         $statusChanged = false;
         $oldStatus = null;
 
@@ -586,11 +673,13 @@ class Proposal
         // Opcionais string/datetime
         $p->descricao     = $data['descricao']     ?? null;
         $p->condicoes     = $data['condicoes']     ?? null;
+        $p->observacoes   = $data['observacoes']   ?? null;
         $p->data_envio    = $data['data_envio']    ?? null;
         $p->data_validade = $data['data_validade'] ?? null;
         $p->pdf_path      = $data['pdf_path']      ?? null;
         $p->criado_em     = $data['criado_em']     ?? null;
         $p->atualizado_em = $data['atualizado_em'] ?? null;
+        $p->lead_nome     = $data['lead_nome']     ?? null;
 
         return $p;
     }

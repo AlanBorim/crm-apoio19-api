@@ -8,18 +8,21 @@ use Apoio19\Crm\Models\User;
 use Apoio19\Crm\Services\PdfService;
 use Apoio19\Crm\Services\EmailService;
 use Apoio19\Crm\Middleware\AuthMiddleware;
+use Apoio19\Crm\Services\NotificationService;
 
 class ProposalController extends BaseController
 {
     private AuthMiddleware $authMiddleware;
     private PdfService $pdfService;
     private EmailService $emailService;
+    private NotificationService $notificationService;
 
     public function __construct()
     {
         $this->authMiddleware = new AuthMiddleware();
         $this->pdfService = new PdfService();
         $this->emailService = new EmailService();
+        $this->notificationService = new NotificationService();
     }
 
     /**
@@ -105,6 +108,34 @@ class ProposalController extends BaseController
 
             $newProposal = Proposal::findById($proposalId);
 
+            // Criar notificação
+            try {
+                $leadName = "Cliente";
+                if ($newProposal->lead_id) {
+                    $lead = Lead::findById($newProposal->lead_id);
+                    if ($lead) {
+                        $leadName = $lead->name;
+                    }
+                }
+
+                $message = "Nova proposta criada para {$leadName}.";
+                // Se lead_id não veio no request, assumimos que foi criado um novo lead (ou era intencional sem lead, mas Proposal::create lida com isso)
+                if (empty($requestData['lead_id'])) {
+                    $message = "Nova proposta e novo lead criados: {$leadName}.";
+                }
+
+                $this->notificationService->createNotification(
+                    $userData->userId,
+                    "Nova Proposta",
+                    $message,
+                    "proposta",
+                    "/propostas/{$proposalId}"
+                );
+            } catch (\Exception $e) {
+                error_log("Erro ao criar notificação de proposta: " . $e->getMessage());
+                // Não falhar a request por causa da notificação
+            }
+
             http_response_code(201);
             return [
                 "success" => true,
@@ -179,6 +210,18 @@ class ProposalController extends BaseController
         }
 
         $items = Proposal::getItems($proposalId);
+
+        // Map items to match frontend expectations
+        $mappedItems = array_map(function ($item) {
+            return [
+                'id' => $item['id'],
+                'descricao' => $item['description'],
+                'quantidade' => (float)$item['quantity'],
+                'valor_unitario' => (float)$item['unit_price'],
+                'valor_total' => (float)$item['total_price']
+            ];
+        }, $items);
+
         $history = Proposal::getHistory($proposalId);
 
         http_response_code(200);
@@ -186,7 +229,7 @@ class ProposalController extends BaseController
             "success" => true,
             "data" => [
                 "proposta" => $proposal,
-                "itens" => $items,
+                "itens" => $mappedItems,
                 "historico" => $history
             ]
         ];
