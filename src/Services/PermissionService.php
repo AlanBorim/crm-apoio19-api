@@ -15,13 +15,14 @@ class PermissionService
      */
     private const ROLE_PERMISSIONS = [
         'admin' => [
-            'users' => ['view' => true, 'create' => true, 'edit' => true, 'delete' => true],
-            'leads' => ['view' => true, 'create' => true, 'edit' => true, 'delete' => true],
-            'proposals' => ['view' => true, 'create' => true, 'edit' => true, 'delete' => true],
-            'tasks' => ['view' => true, 'create' => true, 'edit' => true, 'delete' => true],
-            'campaigns' => ['view' => true, 'create' => true, 'edit' => true, 'delete' => true],
+            'usuarios' => ['view' => true, 'create' => true, 'edit' => true, 'delete' => true],
+            'leads' => ['view' => true, 'create' => true, 'edit' => true, 'delete' => true, 'assign' => true],
+            'proposals' => ['view' => true, 'create' => true, 'edit' => true, 'delete' => true, 'approve' => true],
+            'whatsapp' => ['view' => true, 'create' => true, 'edit' => true, 'delete' => true],
+            'configuracoes' => ['view' => true, 'create' => true, 'edit' => true, 'delete' => true],
+            'relatorios' => ['view' => true, 'export' => true],
+            'kanban' => ['view' => true, 'create' => true, 'edit' => true, 'delete' => true, 'assign' => true],
             'dashboard' => ['view' => true],
-            'reports' => ['view' => true, 'export' => true],
         ],
         'gerente' => [
             'users' => ['view' => true, 'create' => true, 'edit' => true, 'delete' => false],
@@ -81,14 +82,20 @@ class PermissionService
      */
     public function can(object $user, string $resource, string $action, ?int $resourceOwnerId = null): bool
     {
-        // Parse permissions from JSON if string
-        $permissions = is_string($user->permissions)
-            ? json_decode($user->permissions, true)
-            : $user->permissions;
+        // Check if user has permissions property
+        if (!property_exists($user, 'permissions')) {
+            // If no permissions property, use role defaults
+            $permissions = $this->getDefaultPermissions($user->role ?? 'comercial');
+        } else {
+            // Parse permissions from JSON if string
+            $permissions = is_string($user->permissions)
+                ? json_decode($user->permissions, true)
+                : $user->permissions;
 
-        // If no permissions set, use role defaults
-        if (empty($permissions)) {
-            $permissions = $this->getDefaultPermissions($user->role);
+            // If no permissions set, use role defaults
+            if (empty($permissions)) {
+                $permissions = $this->getDefaultPermissions($user->role ?? 'comercial');
+            }
         }
 
         // Check if resource exists in permissions
@@ -147,11 +154,16 @@ class PermissionService
      */
     public function getUserPermissions(object $user): array
     {
+        // Check if user has permissions property
+        if (!property_exists($user, 'permissions')) {
+            return $this->getDefaultPermissions($user->role ?? 'comercial');
+        }
+
         $permissions = is_string($user->permissions)
             ? json_decode($user->permissions, true)
             : $user->permissions;
 
-        return $permissions ?? $this->getDefaultPermissions($user->role);
+        return $permissions ?? $this->getDefaultPermissions($user->role ?? 'comercial');
     }
 
     /**
@@ -174,7 +186,7 @@ class PermissionService
      */
     public function isAdmin(object $user): bool
     {
-        return strtolower($user->role) === 'admin';
+        return strtolower($user->role ?? '') === 'admin';
     }
 
     /**

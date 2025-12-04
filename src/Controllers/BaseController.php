@@ -134,6 +134,24 @@ class BaseController
     }
 
     /**
+     * Require permission or send forbidden response and exit
+     * 
+     * @param object $user User object with permissions
+     * @param string $resource Resource name (e.g., 'usuarios', 'leads')
+     * @param string $action Action name (e.g., 'view', 'create', 'edit', 'delete')
+     * @param int|null $resourceOwnerId Optional resource owner ID for 'own' permissions
+     * @return void Exits with 403 if permission denied
+     */
+    protected function requirePermission(object $user, string $resource, string $action, ?int $resourceOwnerId = null): void
+    {
+        if (!$this->can($user, $resource, $action, $resourceOwnerId)) {
+            http_response_code(403);
+            echo json_encode($this->forbidden('Usuário sem permissão para executar essa ação'));
+            exit;
+        }
+    }
+
+    /**
      * Return unauthorized response (401)
      */
     protected function unauthorized(string $message = 'Não autorizado.', ?string $traceId = null): array

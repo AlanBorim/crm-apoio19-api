@@ -120,6 +120,7 @@ class User
                 $user->email = $userData["email"];
                 $user->senha_hash = $userData["password"];
                 $user->funcao  = $userData["role"];
+                $user->permissions = $userData["permissions"] ?? null;
                 $user->active = $userData["active"];
                 $user->ativo = $userData["active"];
                 $user->criado_em = $userData["created_at"];

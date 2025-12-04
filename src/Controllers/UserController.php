@@ -74,6 +74,8 @@ class UserController extends BaseController
             return $this->errorResponse(401, "Autenticação necessária ou permissão insuficiente.");
         }
 
+        // Check permission
+        $this->requirePermission($userData, 'usuarios', 'view');
 
         try {
             // Montar condições dinâmicas
@@ -151,6 +153,9 @@ class UserController extends BaseController
             return $this->errorResponse(401, "Apenas administradores podem criar usuários.", "UNAUTHORIZED", $traceId);
         }
 
+        // Check permission
+        $this->requirePermission($userData, 'usuarios', 'create');
+
         // Normalizar dados (aceitar português ou inglês)
         $data = $this->normalizeUserData($requestData);
 
@@ -212,6 +217,9 @@ class UserController extends BaseController
         if (!$userData) {
             return $this->errorResponse(401, "Autenticação necessária ou permissão insuficiente.");
         }
+
+        // Check permission
+        $this->requirePermission($userData, 'usuarios', 'delete');
 
         if ($userId == $userData->userId) {
             return $this->errorResponse(400, "Você não pode excluir seu próprio usuário.");

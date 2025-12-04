@@ -39,6 +39,9 @@ class LeadController extends BaseController
             return $this->errorResponse(401, "Autenticação necessária.", "UNAUTHENTICATED", $traceId);
         }
 
+        // Check permission
+        $this->requirePermission($userData, 'leads', 'view');
+
         try {
             // Montar condições dinâmicas
             $conditions = [];
@@ -117,6 +120,9 @@ class LeadController extends BaseController
         if (!$userData) {
             return $this->errorResponse(401, "Autenticação necessária ou permissão insuficiente.", "UNAUTHENTICATED", $traceId);
         }
+
+        // Check permission
+        $this->requirePermission($userData, 'leads', 'create');
 
         // Validação básica
         $validation = $this->validateLeadData($requestData);
@@ -212,6 +218,9 @@ class LeadController extends BaseController
             return $this->errorResponse(401, "Autenticação necessária ou permissão insuficiente.");
         }
 
+        // Check permission
+        $this->requirePermission($userData, 'leads', 'edit');
+
         if (empty($requestData)) {
             return $this->errorResponse(400, "Nenhum dado fornecido para atualização.");
         }
@@ -276,6 +285,9 @@ class LeadController extends BaseController
         if (!$userData) {
             return $this->errorResponse(401, "Autenticação necessária ou permissão insuficiente.");
         }
+
+        // Check permission
+        $this->requirePermission($userData, 'leads', 'delete');
 
         try {
             $lead = Lead::findById($leadId);
