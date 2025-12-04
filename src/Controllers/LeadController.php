@@ -19,6 +19,7 @@ class LeadController extends BaseController
 
     public function __construct()
     {
+        parent::__construct();
         $this->authMiddleware = new AuthMiddleware();
         $this->notificationService = new NotificationService();
     }
@@ -76,8 +77,8 @@ class LeadController extends BaseController
                 $params[':search3'] = $search;
             }
 
-            // Adicionar restrição de responsável para usuários comuns
-            if ($userData->role !== "admin") {
+            // Adicionar restrição de responsável para usuários que não têm permissão de ver todos
+            if (!$this->can($userData, "leads", "view")) {
                 $conditions[] = "assigned_to = :user_id";
                 $params[':user_id'] = $userData->userId;
             }
@@ -180,8 +181,8 @@ class LeadController extends BaseController
             }
 
             // Verificar autorização
-            if ($userData->role !== "admin" && $lead->responsavel_id !== $userData->userId) {
-                return $this->errorResponse(403, "Acesso negado a este lead.");
+            if (!$this->can($userData, "leads", "view", $lead->responsavel_id)) {
+                return $this->forbidden("Acesso negado a este lead.");
             }
 
             return $this->successResponse(["lead" => $lead]);
@@ -223,8 +224,8 @@ class LeadController extends BaseController
             }
 
             // Verificar autorização
-            if ($userData->role !== "admin" && $lead->responsavel_id !== $userData->userId) {
-                return $this->errorResponse(403, "Você não tem permissão para atualizar este lead.");
+            if (!$this->can($userData, "leads", "edit", $lead->responsavel_id)) {
+                return $this->forbidden("Você não tem permissão para atualizar este lead.");
             }
 
             // Verificar mudança de responsável para notificação
@@ -422,7 +423,7 @@ class LeadController extends BaseController
                 if (!$lead) continue;
 
                 // Verificar autorização
-                if ($userData->role !== "Admin" && $lead->responsavel_id !== $userData->userId) {
+                if (!$this->can($userData, "leads", "edit", $lead->responsavel_id)) {
                     continue;
                 }
 

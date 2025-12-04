@@ -16,6 +16,7 @@ class WhatsappCampaignController extends BaseController
 
     public function __construct()
     {
+        parent::__construct();
         $this->campaignModel = new WhatsappCampaign();
         $this->templateModel = new WhatsappTemplate();
         $this->contactModel = new WhatsappContact();
@@ -36,8 +37,8 @@ class WhatsappCampaignController extends BaseController
         try {
             $filters = [];
 
-            // Se não for admin, mostrar apenas suas campanhas
-            if ($userData->funcao !== 'admin') {
+            // Se não tiver permissão de ver todas, mostrar apenas suas campanhas
+            if (!$this->can($userData, "campaigns", "view")) {
                 $filters['user_id'] = $userData->userId;
             }
 
@@ -81,9 +82,8 @@ class WhatsappCampaignController extends BaseController
             }
 
             // Verificar permissão
-            if ($userData->funcao !== 'admin' && $campaign['user_id'] != $userData->userId) {
-                http_response_code(403);
-                return ["error" => "Acesso negado"];
+            if (!$this->can($userData, "campaigns", "view", $campaign['user_id'])) {
+                return $this->forbidden("Acesso negado");
             }
 
             // Buscar estatísticas
@@ -257,9 +257,8 @@ class WhatsappCampaignController extends BaseController
             }
 
             // Verificar permissão
-            if ($userData->funcao !== 'admin' && $campaign['user_id'] != $userData->userId) {
-                http_response_code(403);
-                return ["error" => "Acesso negado"];
+            if (!$this->can($userData, "campaigns", "edit", $campaign['user_id'])) {
+                return $this->forbidden("Acesso negado");
             }
 
             // Não permitir atualização se já estiver processando ou completa
@@ -299,9 +298,8 @@ class WhatsappCampaignController extends BaseController
             }
 
             // Verificar permissão
-            if ($userData->funcao !== 'admin' && $campaign['user_id'] != $userData->userId) {
-                http_response_code(403);
-                return ["error" => "Acesso negado"];
+            if (!$this->can($userData, "campaigns", "edit", $campaign['user_id'])) {
+                return $this->forbidden("Acesso negado");
             }
 
             // Verificar se pode ser iniciada
@@ -342,9 +340,8 @@ class WhatsappCampaignController extends BaseController
                 return ["error" => "Campanha não encontrada"];
             }
 
-            if ($userData->funcao !== 'admin' && $campaign['user_id'] != $userData->userId) {
-                http_response_code(403);
-                return ["error" => "Acesso negado"];
+            if (!$this->can($userData, "campaigns", "edit", $campaign['user_id'])) {
+                return $this->forbidden("Acesso negado");
             }
 
             $this->campaignModel->updateStatus($id, 'paused');
@@ -377,9 +374,8 @@ class WhatsappCampaignController extends BaseController
                 return ["error" => "Campanha não encontrada"];
             }
 
-            if ($userData->funcao !== 'admin' && $campaign['user_id'] != $userData->userId) {
-                http_response_code(403);
-                return ["error" => "Acesso negado"];
+            if (!$this->can($userData, "campaigns", "delete", $campaign['user_id'])) {
+                return $this->forbidden("Acesso negado");
             }
 
             $this->campaignModel->updateStatus($id, 'cancelled');

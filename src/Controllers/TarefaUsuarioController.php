@@ -11,6 +11,7 @@ class TarefaUsuarioController extends BaseController
 
     public function __construct()
     {
+        parent::__construct();
         $this->authMiddleware = new AuthMiddleware();
     }
 
@@ -30,7 +31,7 @@ class TarefaUsuarioController extends BaseController
             return TarefaUsuario::getByUserId($userData->userId);
         }
 
-        if ($userData->role === 'admin') {
+        if ($this->can($userData, "tasks", "view")) {
             return TarefaUsuario::all();
         } else {
             return TarefaUsuario::getByUserId($userData->userId);
@@ -55,9 +56,8 @@ class TarefaUsuarioController extends BaseController
             return ["error" => "O título é obrigatório"];
         }
 
-        // Forçar o ID do usuário logado se não for admin
-        // Se for admin, pode criar para outro usuário (opcional, aqui assumimos que cria para si ou para o especificado)
-        if ($userData->role !== 'admin' || empty($data['usuario_id'])) {
+        // Forçar o ID do usuário logado se não tiver permissão de criar para outros
+        if (!$this->can($userData, "tasks", "create") || empty($data['usuario_id'])) {
             $data['usuario_id'] = $userData->userId;
         }
 
@@ -84,8 +84,8 @@ class TarefaUsuarioController extends BaseController
         }
 
         // Verificar permissão: Admin ou dono da tarefa
-        if ($userData->role !== 'admin' && $tarefa->usuario_id != $userData->userId) {
-            return ["error" => "Acesso negado"];
+        if (!$this->can($userData, "tasks", "view", $tarefa->usuario_id)) {
+            return $this->forbidden("Acesso negado");
         }
 
         return $tarefa;
@@ -110,8 +110,8 @@ class TarefaUsuarioController extends BaseController
         }
 
         // Verificar permissão: Admin ou dono da tarefa
-        if ($userData->role !== 'admin' && $tarefa->usuario_id != $userData->userId) {
-            return ["error" => "Acesso negado"];
+        if (!$this->can($userData, "tasks", "edit", $tarefa->usuario_id)) {
+            return $this->forbidden("Acesso negado");
         }
 
         if (TarefaUsuario::update($id, $data)) {
@@ -136,8 +136,8 @@ class TarefaUsuarioController extends BaseController
         }
 
         // Verificar permissão: Admin ou dono da tarefa
-        if ($userData->role !== 'admin' && $tarefa->usuario_id != $userData->userId) {
-            return ["error" => "Acesso negado"];
+        if (!$this->can($userData, "tasks", "delete", $tarefa->usuario_id)) {
+            return $this->forbidden("Acesso negado");
         }
 
         if (TarefaUsuario::delete($id)) {

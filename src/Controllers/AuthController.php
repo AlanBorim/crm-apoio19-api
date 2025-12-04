@@ -17,6 +17,7 @@ class AuthController extends BaseController
 
     public function __construct()
     {
+        parent::__construct();
         $this->authService = new AuthService();
         $this->rateLimiter = new RateLimitingService();
         $this->emailService = new EmailService();
@@ -110,13 +111,17 @@ class AuthController extends BaseController
                 // Atualizar último login
                 User::updateLastLogin($user->id);
 
+                // Get user permissions
+                $permissions = $this->permissionService->getUserPermissions($user);
+
                 return [
                     "token" => $token,
                     "user" => [
                         "id" => $user->id,
                         "nome" => $user->nome,
                         "email" => $user->email,
-                        "role" => $user->funcao
+                        "role" => $user->funcao,
+                        "permissions" => $permissions
                     ]
                 ];
             } else {
@@ -324,13 +329,18 @@ class AuthController extends BaseController
             $_SERVER['HTTP_USER_AGENT'] ?? null
         );
 
+        // Get fresh user data with permissions
+        $user = User::findById($userData['id']);
+        $permissions = $user ? $this->permissionService->getUserPermissions($user) : [];
+
         return [
             "access_token" => $accessToken,
             "user" => [
                 "id" => $userData['id'],
                 "nome" => $userData['nome'],
                 "email" => $userData['email'],
-                "role" => $userData['role']
+                "role" => $userData['role'],
+                "permissions" => $permissions
             ]
         ];
     }

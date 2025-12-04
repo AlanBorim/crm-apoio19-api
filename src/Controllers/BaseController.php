@@ -2,8 +2,16 @@
 
 namespace Apoio19\Crm\Controllers;
 
+use Apoio19\Crm\Services\PermissionService;
+
 class BaseController
 {
+    protected PermissionService $permissionService;
+
+    public function __construct()
+    {
+        $this->permissionService = new PermissionService();
+    }
     /**
      * Mapeia SQLSTATE/erros de PDO para uma resposta mais amigável.
      */
@@ -99,5 +107,37 @@ class BaseController
             "trace_id" => $traceId ?? bin2hex(random_bytes(8)),
             "details" => $details
         ];
+    }
+
+    /**
+     * Check if user has permission for an action on a resource
+     */
+    protected function can(object $user, string $resource, string $action, ?int $resourceOwnerId = null): bool
+    {
+        return $this->permissionService->can($user, $resource, $action, $resourceOwnerId);
+    }
+
+    /**
+     * Check if user is admin
+     */
+    protected function isAdmin(object $user): bool
+    {
+        return $this->permissionService->isAdmin($user);
+    }
+
+    /**
+     * Return forbidden response (403)
+     */
+    protected function forbidden(string $message = 'Você não tem permissão para executar esta ação.', ?string $traceId = null): array
+    {
+        return $this->errorResponse(403, $message, 'FORBIDDEN', $traceId);
+    }
+
+    /**
+     * Return unauthorized response (401)
+     */
+    protected function unauthorized(string $message = 'Não autorizado.', ?string $traceId = null): array
+    {
+        return $this->errorResponse(401, $message, 'UNAUTHORIZED', $traceId);
     }
 }
