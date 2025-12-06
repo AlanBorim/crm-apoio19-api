@@ -28,13 +28,13 @@ class TarefaUsuarioController extends BaseController
 
         // Se passar ?mine=true, retorna apenas as tarefas do usuário logado, mesmo se for admin
         if (isset($queryParams['mine']) && $queryParams['mine'] === 'true') {
-            return TarefaUsuario::getByUserId($userData->userId);
+            return TarefaUsuario::getByUserId($userData->id);
         }
 
         if ($this->can($userData, "tasks", "view")) {
             return TarefaUsuario::all();
         } else {
-            return TarefaUsuario::getByUserId($userData->userId);
+            return TarefaUsuario::getByUserId($userData->id);
         }
     }
 
@@ -58,7 +58,7 @@ class TarefaUsuarioController extends BaseController
 
         // Forçar o ID do usuário logado se não tiver permissão de criar para outros
         if (!$this->can($userData, "tasks", "create") || empty($data['usuario_id'])) {
-            $data['usuario_id'] = $userData->userId;
+            $data['usuario_id'] = $userData->id;
         }
 
         $id = TarefaUsuario::create($data);

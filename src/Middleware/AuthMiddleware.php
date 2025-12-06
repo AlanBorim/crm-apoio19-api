@@ -3,6 +3,7 @@
 namespace Apoio19\Crm\Middleware;
 
 use Apoio19\Crm\Services\AuthService;
+use Apoio19\Crm\Models\User;
 // Assuming a simple request/response handling mechanism for now.
 // In a real framework, this would integrate with the framework's middleware system.
 
@@ -40,7 +41,7 @@ class AuthMiddleware
             exit;
         }
 
-        if (!preg_match('/Bearer\s(\S+)/', $token , $matches)) {
+        if (!preg_match('/Bearer\s(\S+)/', $token, $matches)) {
             http_response_code(401);
             echo json_encode(["erro" => "Formato do token inválido"]);
             exit;
@@ -64,19 +65,22 @@ class AuthMiddleware
             return null;
         }
 
-        // Check role permissions if required
-        if (!empty($allowedRoles)) {
-            $userRole = $decodedPayload->role ?? null;
-            if (!$userRole || !in_array($userRole, $allowedRoles)) {
-                // User does not have the required role
-                error_log("Middleware: Acesso negado. Role necessária: " . implode(", ", $allowedRoles) . ", Role do usuário: " . ($userRole ?? 'Nenhuma'));
-                // In a real app, send a 403 Forbidden response here
-                return null;
-            }
+        // Check if user exists and is active in DB (Single Source of Truth)
+        $user = User::findById($decodedPayload->userId);
+
+        if (!$user) {
+            error_log("Middleware: Usuário não encontrado no banco de dados. ID: " . $decodedPayload->userId);
+            return null;
         }
 
-        // Authentication and Authorization successful
-        // Return the decoded user data (or just the data part)
-        return $decodedPayload;
+        if (!$user->active) {
+            error_log("Middleware: Usuário inativo. ID: " . $decodedPayload->userId);
+            return null;
+        }
+
+        // Return the full User object (including permissions from DB)
+        // We ignore $allowedRoles here because we want Controllers to use requirePermission()
+        // based on the user's specific permissions, not just their role.
+        return $user;
     }
 }

@@ -26,6 +26,8 @@ class UserController extends BaseController
 
     public function __construct(?array $config = null)
     {
+        parent::__construct(); // Initialize PermissionService from BaseController
+
         $this->authMiddleware = new AuthMiddleware();
         $this->notificationService = new NotificationService();
 
@@ -69,7 +71,7 @@ class UserController extends BaseController
     public function index(array $headers, array $queryParams = []): array
     {
         $traceId = bin2hex(random_bytes(8));
-        $userData = $this->authMiddleware->handle($headers, ["admin", "gerente"]);
+        $userData = $this->authMiddleware->handle($headers);
         if (!$userData) {
             return $this->errorResponse(401, "Autenticação necessária ou permissão insuficiente.");
         }
@@ -147,10 +149,10 @@ class UserController extends BaseController
     public function store(array $headers, array $requestData): array
     {
         $traceId = bin2hex(random_bytes(8));
-        $userData = $this->authMiddleware->handle($headers, ["admin"]);
+        $userData = $this->authMiddleware->handle($headers);
 
         if (!$userData) {
-            return $this->errorResponse(401, "Apenas administradores podem criar usuários.", "UNAUTHORIZED", $traceId);
+            return $this->errorResponse(401, "Autenticação necessária.", "UNAUTHORIZED", $traceId);
         }
 
         // Check permission
@@ -190,7 +192,7 @@ class UserController extends BaseController
                 $newUser = User::findById($userId);
 
                 // Notificar criação
-                $this->notifyUserCreated($newUser, ['userId' => $userData->userId, 'name' => $userData->userName]);
+                $this->notifyUserCreated($newUser, ['userId' => $userData->id, 'name' => $userData->name]);
 
                 return $this->successResponse($this->formatUserForResponse($newUser), "Usuário criado com sucesso.", 201, $traceId);
             } else {
@@ -205,6 +207,82 @@ class UserController extends BaseController
     }
 
     /**
+     * Atualizar usuário existente
+     * 
+     * @param array $headers Cabeçalhos da requisição
+     * @param int $userId ID do usuário
+     * @param array $requestData Dados para atualização
+     * @return array Resposta JSON
+     */
+    public function update(array $headers, int $userId, array $requestData): array
+    {
+        $traceId = bin2hex(random_bytes(8));
+        $userData = $this->authMiddleware->handle($headers);
+        if (!$userData) {
+            return $this->errorResponse(401, "Autenticação necessária ou permissão insuficiente.", "UNAUTHORIZED", $traceId);
+        }
+
+        // Check permission
+        $this->requirePermission($userData, 'usuarios', 'edit');
+
+        // Normalizar dados
+        $data = $this->normalizeUserData($requestData);
+
+        // Validar dados
+        $validation = $this->validateUserUpdateData($data, $userId);
+        if (!$validation['valid']) {
+            return $this->errorResponse(400, $validation['message'], "VALIDATION_ERROR", $traceId);
+        }
+
+        try {
+            $user = User::findById($userId);
+            if (!$user) {
+                return $this->errorResponse(404, "Usuário não encontrado.", "USER_NOT_FOUND", $traceId);
+            }
+
+            // Preparar dados para atualização
+            $updateData = [];
+
+            if (isset($data['name'])) $updateData['name'] = $data['name'];
+            if (isset($data['email'])) $updateData['email'] = $data['email'];
+            if (isset($data['role'])) $updateData['role'] = $data['role'];
+            if (isset($data['phone'])) $updateData['phone'] = $this->formatPhone($data['phone']);
+            if (isset($data['active'])) $updateData['active'] = (int)$data['active'];
+
+            if (isset($data['password']) && !empty($data['password'])) {
+                $updateData['password'] = password_hash($data['password'], PASSWORD_DEFAULT);
+            }
+
+            // Tratamento de permissões
+            if (isset($data['permissions'])) {
+                if (is_array($data['permissions'])) {
+                    $updateData['permissions'] = json_encode($data['permissions']);
+                } else {
+                    $updateData['permissions'] = $data['permissions'];
+                }
+            }
+
+            $updateData['updated_at'] = date('Y-m-d H:i:s');
+
+            if (empty($updateData)) {
+                return $this->successResponse($this->formatUserForResponse($user), "Nenhuma alteração realizada.", 200, $traceId);
+            }
+
+            if (User::update($userId, $updateData)) {
+                $updatedUser = User::findById($userId);
+                return $this->successResponse($this->formatUserForResponse($updatedUser), "Usuário atualizado com sucesso.", 200, $traceId);
+            } else {
+                return $this->errorResponse(500, "Falha ao atualizar usuário.", "UPDATE_FAILED", $traceId);
+            }
+        } catch (\PDOException $e) {
+            $mapped = $this->mapPdoError($e);
+            return $this->errorResponse($mapped['status'], $mapped['message'], $mapped['code'], $traceId, $this->debugDetails($e));
+        } catch (\Throwable $e) {
+            return $this->errorResponse(500, "Erro interno ao atualizar usuário.", "UNEXPECTED_ERROR", $traceId, $this->debugDetails($e));
+        }
+    }
+
+    /**
      * Excluir usuário
      * 
      * @param array $headers Cabeçalhos da requisição
@@ -213,7 +291,7 @@ class UserController extends BaseController
      */
     public function destroy(array $headers, int $userId): array
     {
-        $userData = $this->authMiddleware->handle($headers, ["admin"]);
+        $userData = $this->authMiddleware->handle($headers);
         if (!$userData) {
             return $this->errorResponse(401, "Autenticação necessária ou permissão insuficiente.");
         }
@@ -221,7 +299,7 @@ class UserController extends BaseController
         // Check permission
         $this->requirePermission($userData, 'usuarios', 'delete');
 
-        if ($userId == $userData->userId) {
+        if ($userId == $userData->id) {
             return $this->errorResponse(400, "Você não pode excluir seu próprio usuário.");
         }
 
@@ -247,11 +325,14 @@ class UserController extends BaseController
     public function activate(array $headers, int $userId): array
     {
         $traceId = bin2hex(random_bytes(8));
-        $userData = $this->authMiddleware->handle($headers, ["admin"]);
+        $userData = $this->authMiddleware->handle($headers);
 
         if (!$userData) {
-            return $this->errorResponse(401, "Apenas administradores podem ativar usuários.", "UNAUTHORIZED", $traceId);
+            return $this->errorResponse(401, "Autenticação necessária.", "UNAUTHORIZED", $traceId);
         }
+
+        // Check permission
+        $this->requirePermission($userData, 'usuarios', 'edit');
 
         try {
             $user = User::findById($userId);
@@ -298,15 +379,18 @@ class UserController extends BaseController
     public function deactivate(array $headers, int $userId): array
     {
         $traceId = bin2hex(random_bytes(8));
-        $userData = $this->authMiddleware->handle($headers, ["admin"]);
+        $userData = $this->authMiddleware->handle($headers);
 
         if (!$userData) {
-            return $this->errorResponse(401, "Apenas administradores podem desativar usuários.", "UNAUTHORIZED", $traceId);
+            return $this->errorResponse(401, "Autenticação necessária.", "UNAUTHORIZED", $traceId);
         }
+
+        // Check permission
+        $this->requirePermission($userData, 'usuarios', 'edit');
 
         try {
             // Verificar se não está tentando desativar a si mesmo
-            if ($userId == $userData->userId) {
+            if ($userId == $userData->id) {
                 return $this->errorResponse(400, "Você não pode desativar seu próprio usuário.", "SELF_DEACTIVATION", $traceId);
             }
 
@@ -362,10 +446,14 @@ class UserController extends BaseController
      */
     public function bulkAction(array $headers, array $requestData): array
     {
-        $userData = $this->authMiddleware->handle($headers, ["admin"]);
+        $userData = $this->authMiddleware->handle($headers);
         if (!$userData) {
             return $this->errorResponse(401, "Autenticação necessária ou permissão insuficiente.");
         }
+
+        // Check permission
+        $this->requirePermission($userData, 'usuarios', 'edit'); // Assuming bulk actions are mostly edits
+
 
         $userIds = $requestData['userIds'] ?? [];
         $action = $requestData['action'] ?? null;
@@ -390,7 +478,7 @@ class UserController extends BaseController
                 }
 
                 // Verificar se não está tentando afetar a si mesmo em ações críticas
-                if ($userId === $userData->userId && in_array($action, ['deactivate', 'delete'])) {
+                if ($userId === $userData->id && in_array($action, ['deactivate', 'delete'])) {
                     $failedIds[] = $userId;
                     continue;
                 }
@@ -457,7 +545,7 @@ class UserController extends BaseController
      */
     public function checkEmail(array $headers, array $queryParams): array
     {
-        $userData = $this->authMiddleware->handle($headers, ["admin", "gerente"]);
+        $userData = $this->authMiddleware->handle($headers);
         if (!$userData) {
             return $this->errorResponse(401, "Autenticação necessária ou permissão insuficiente.");
         }
@@ -491,7 +579,7 @@ class UserController extends BaseController
      */
     public function getPermissions(array $headers): array
     {
-        $userData = $this->authMiddleware->handle($headers, ["admin", "gerente"]);
+        $userData = $this->authMiddleware->handle($headers);
         if (!$userData) {
             return $this->errorResponse(401, "Autenticação necessária ou permissão insuficiente.");
         }
@@ -535,10 +623,13 @@ class UserController extends BaseController
      */
     public function stats(array $headers): array
     {
-        $userData = $this->authMiddleware->handle($headers, ["admin", "gerente"]);
+        $userData = $this->authMiddleware->handle($headers);
         if (!$userData) {
             return $this->errorResponse(401, "Autenticação necessária ou permissão insuficiente.");
         }
+
+        // Check permission
+        $this->requirePermission($userData, 'usuarios', 'view');
 
         try {
             $stats = User::getStats();
@@ -558,10 +649,14 @@ class UserController extends BaseController
      */
     public function resetPassword(array $headers, int $userId): array
     {
-        $userData = $this->authMiddleware->handle($headers, ["admin"]);
+        $userData = $this->authMiddleware->handle($headers);
         if (!$userData) {
             return $this->errorResponse(401, "Autenticação necessária ou permissão insuficiente.");
         }
+
+        // Check permission (admin can reset anyone's password, maybe user can reset own?)
+        // If it's a password reset initiated by admin:
+        $this->requirePermission($userData, 'usuarios', 'edit');
 
         try {
             $user = User::findById($userId);
@@ -608,7 +703,7 @@ class UserController extends BaseController
         }
 
         try {
-            $user = User::findById($userData->userId);
+            $user = User::findById($userData->id);
             if (!$user || $user->deleted_at) {
                 return $this->errorResponse(404, "Usuário não encontrado.");
             }
@@ -669,8 +764,8 @@ class UserController extends BaseController
 
             $updateData['updated_at'] = date('Y-m-d H:i:s');
 
-            if (User::update($userData->userId, $updateData)) {
-                $updatedUser = User::findById($userData->userId);
+            if (User::update($userData->id, $updateData)) {
+                $updatedUser = User::findById($userData->id);
 
                 return $this->successResponse(
                     $this->formatUserForResponse($updatedUser),

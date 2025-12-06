@@ -37,9 +37,30 @@ class WhatsappCampaignController extends BaseController
         try {
             $filters = [];
 
-            // Se não tiver permissão de ver todas, mostrar apenas suas campanhas
+            // Check permission
+            $this->requirePermission($userData, 'campaigns', 'view');
+
+            $filters = [];
+
+            // Se não tiver permissão de ver todas, mostrar apenas suas campanhas (handled by requirePermission internally? No, requirePermission just checks access. Scope filtering is separate.)
+            // Actually, requirePermission throws if no access.
+            // For listing, we might want to allow if they have 'view' permission, but filter by scope.
+            // The current implementation of requirePermission checks if they have ANY view permission.
+            // If they have 'own', requirePermission passes (if no ownerId passed).
+            // So we just need to keep the filter logic.
+
             if (!$this->can($userData, "campaigns", "view")) {
-                $filters['user_id'] = $userData->userId;
+                // This check is redundant if requirePermission is called, but requirePermission with no ownerId checks generic access.
+                // Let's rely on requirePermission for the gatekeeping.
+            }
+
+            // If user has 'own' permission, we should filter.
+            // Let's check the permission type to decide on filtering.
+            $perms = $this->permissionService->getUserPermissions($userData);
+            $viewPerm = $perms['campaigns']['view'] ?? false;
+
+            if ($viewPerm === 'own') {
+                $filters['user_id'] = $userData->id;
             }
 
             // Aplicar filtros da query string
@@ -82,9 +103,7 @@ class WhatsappCampaignController extends BaseController
             }
 
             // Verificar permissão
-            if (!$this->can($userData, "campaigns", "view", $campaign['user_id'])) {
-                return $this->forbidden("Acesso negado");
-            }
+            $this->requirePermission($userData, "campaigns", "view", $campaign['user_id']);
 
             // Buscar estatísticas
             $stats = $this->campaignModel->getStats($id);
@@ -104,11 +123,14 @@ class WhatsappCampaignController extends BaseController
      */
     public function store(array $headers, array $requestData): array
     {
-        $userData = $this->authMiddleware->handle($headers, ["admin", "gerente", "comercial"]);
+        $userData = $this->authMiddleware->handle($headers);
         if (!$userData) {
             http_response_code(401);
             return ["error" => "Autenticação necessária"];
         }
+
+        // Check permission
+        $this->requirePermission($userData, 'campaigns', 'create');
 
         try {
             // Validar dados obrigatórios
@@ -131,7 +153,7 @@ class WhatsappCampaignController extends BaseController
 
             // Criar campanha
             $campaignData = [
-                'user_id' => $userData->userId,
+                'user_id' => $userData->id,
                 'phone_number_id' => $requestData['phone_number_id'] ?? null,
                 'name' => $requestData['name'],
                 'description' => $requestData['description'] ?? null,
@@ -242,7 +264,7 @@ class WhatsappCampaignController extends BaseController
      */
     public function update(array $headers, int $id, array $requestData): array
     {
-        $userData = $this->authMiddleware->handle($headers, ["admin", "gerente", "comercial"]);
+        $userData = $this->authMiddleware->handle($headers);
         if (!$userData) {
             http_response_code(401);
             return ["error" => "Autenticação necessária"];
@@ -257,9 +279,7 @@ class WhatsappCampaignController extends BaseController
             }
 
             // Verificar permissão
-            if (!$this->can($userData, "campaigns", "edit", $campaign['user_id'])) {
-                return $this->forbidden("Acesso negado");
-            }
+            $this->requirePermission($userData, "campaigns", "edit", $campaign['user_id']);
 
             // Não permitir atualização se já estiver processando ou completa
             if (in_array($campaign['status'], ['processing', 'completed'])) {
@@ -283,7 +303,7 @@ class WhatsappCampaignController extends BaseController
      */
     public function start(array $headers, int $id): array
     {
-        $userData = $this->authMiddleware->handle($headers, ["admin", "gerente", "comercial"]);
+        $userData = $this->authMiddleware->handle($headers);
         if (!$userData) {
             http_response_code(401);
             return ["error" => "Autenticação necessária"];
@@ -298,9 +318,7 @@ class WhatsappCampaignController extends BaseController
             }
 
             // Verificar permissão
-            if (!$this->can($userData, "campaigns", "edit", $campaign['user_id'])) {
-                return $this->forbidden("Acesso negado");
-            }
+            $this->requirePermission($userData, "campaigns", "edit", $campaign['user_id']);
 
             // Verificar se pode ser iniciada
             if (!in_array($campaign['status'], ['draft', 'scheduled', 'paused'])) {
@@ -326,7 +344,7 @@ class WhatsappCampaignController extends BaseController
      */
     public function pause(array $headers, int $id): array
     {
-        $userData = $this->authMiddleware->handle($headers, ["admin", "gerente", "comercial"]);
+        $userData = $this->authMiddleware->handle($headers);
         if (!$userData) {
             http_response_code(401);
             return ["error" => "Autenticação necessária"];
@@ -340,9 +358,7 @@ class WhatsappCampaignController extends BaseController
                 return ["error" => "Campanha não encontrada"];
             }
 
-            if (!$this->can($userData, "campaigns", "edit", $campaign['user_id'])) {
-                return $this->forbidden("Acesso negado");
-            }
+            $this->requirePermission($userData, "campaigns", "edit", $campaign['user_id']);
 
             $this->campaignModel->updateStatus($id, 'paused');
 
@@ -360,7 +376,7 @@ class WhatsappCampaignController extends BaseController
      */
     public function cancel(array $headers, int $id): array
     {
-        $userData = $this->authMiddleware->handle($headers, ["admin", "gerente", "comercial"]);
+        $userData = $this->authMiddleware->handle($headers);
         if (!$userData) {
             http_response_code(401);
             return ["error" => "Autenticação necessária"];
@@ -374,9 +390,7 @@ class WhatsappCampaignController extends BaseController
                 return ["error" => "Campanha não encontrada"];
             }
 
-            if (!$this->can($userData, "campaigns", "delete", $campaign['user_id'])) {
-                return $this->forbidden("Acesso negado");
-            }
+            $this->requirePermission($userData, "campaigns", "delete", $campaign['user_id']);
 
             $this->campaignModel->updateStatus($id, 'cancelled');
 
@@ -394,11 +408,14 @@ class WhatsappCampaignController extends BaseController
      */
     public function delete(array $headers, int $id): array
     {
-        $userData = $this->authMiddleware->handle($headers, ["admin"]);
+        $userData = $this->authMiddleware->handle($headers);
         if (!$userData) {
             http_response_code(401);
-            return ["error" => "Apenas administradores podem deletar campanhas"];
+            return ["error" => "Autenticação necessária"]; // Changed error message slightly to be generic
         }
+
+        // Check permission
+        $this->requirePermission($userData, 'campaigns', 'delete');
 
         try {
             $campaign = $this->campaignModel->findById($id);

@@ -13,6 +13,7 @@ class ReportController extends BaseController
 
     public function __construct()
     {
+        parent::__construct();
         $this->authMiddleware = new AuthMiddleware();
         $this->reportService = new ReportService();
     }
@@ -25,13 +26,15 @@ class ReportController extends BaseController
      */
     public function getDashboardSummary(array $headers): array
     {
-        // Define roles allowed to see the full dashboard
-        $allowedRoles = ["Admin", "Comercial", "Financeiro"];
-        $userData = $this->authMiddleware->handle($headers, $allowedRoles);
+        // Removed role check to rely on requirePermission
+        $userData = $this->authMiddleware->handle($headers);
         if (!$userData) {
             http_response_code(401); // Or 403 Forbidden
             return ["error" => "Autenticação necessária ou permissão insuficiente para acessar o dashboard."];
         }
+
+        // Check permission
+        $this->requirePermission($userData, 'dashboard', 'view');
 
         try {
             $summary = [
@@ -60,11 +63,14 @@ class ReportController extends BaseController
      */
     public function getLeadStatusReport(array $headers): array
     {
-        $userData = $this->authMiddleware->handle($headers, ["Admin", "Comercial"]);
+        $userData = $this->authMiddleware->handle($headers);
         if (!$userData) {
             http_response_code(401);
             return ["error" => "Autenticação necessária ou permissão insuficiente."];
         }
+
+        // Check permission
+        $this->requirePermission($userData, 'reports', 'view');
         $data = $this->reportService->getLeadStatusCounts();
         http_response_code(200);
         return ["data" => $data];
@@ -78,11 +84,14 @@ class ReportController extends BaseController
      */
     public function getLeadSourceReport(array $headers): array
     {
-        $userData = $this->authMiddleware->handle($headers, ["Admin", "Comercial"]);
+        $userData = $this->authMiddleware->handle($headers);
         if (!$userData) {
             http_response_code(401);
             return ["error" => "Autenticação necessária ou permissão insuficiente."];
         }
+
+        // Check permission
+        $this->requirePermission($userData, 'reports', 'view');
         $data = $this->reportService->getLeadSourceCounts();
         http_response_code(200);
         return ["data" => $data];
@@ -96,11 +105,14 @@ class ReportController extends BaseController
      */
     public function getProposalStatusReport(array $headers): array
     {
-        $userData = $this->authMiddleware->handle($headers, ["Admin", "Comercial", "Financeiro"]);
+        $userData = $this->authMiddleware->handle($headers);
         if (!$userData) {
             http_response_code(401);
             return ["error" => "Autenticação necessária ou permissão insuficiente."];
         }
+
+        // Check permission
+        $this->requirePermission($userData, 'reports', 'view');
         $data = $this->reportService->getProposalStatusCounts();
         http_response_code(200);
         return ["data" => $data];
@@ -114,11 +126,14 @@ class ReportController extends BaseController
      */
     public function getSalesPerformanceReport(array $headers): array
     {
-        $userData = $this->authMiddleware->handle($headers, ["Admin", "Financeiro"]); // Admins and Finance can see overall sales
+        $userData = $this->authMiddleware->handle($headers); // Admins and Finance can see overall sales
         if (!$userData) {
             http_response_code(401);
             return ["error" => "Autenticação necessária ou permissão insuficiente."];
         }
+
+        // Check permission
+        $this->requirePermission($userData, 'reports', 'view');
         $data = $this->reportService->getSalesPerformanceByUser();
         http_response_code(200);
         return ["data" => $data];
@@ -132,11 +147,14 @@ class ReportController extends BaseController
      */
     public function getTaskStatusReport(array $headers): array
     {
-        $userData = $this->authMiddleware->handle($headers, ["Admin", "Comercial"]); // Admins and Sales managers might see this
+        $userData = $this->authMiddleware->handle($headers); // Admins and Sales managers might see this
         if (!$userData) {
             http_response_code(401);
             return ["error" => "Autenticação necessária ou permissão insuficiente."];
         }
+
+        // Check permission
+        $this->requirePermission($userData, 'reports', 'view');
         $data = $this->reportService->getTaskStatusByUser();
         http_response_code(200);
         return ["data" => $data];

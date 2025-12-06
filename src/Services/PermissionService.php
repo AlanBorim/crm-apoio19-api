@@ -82,20 +82,23 @@ class PermissionService
      */
     public function can(object $user, string $resource, string $action, ?int $resourceOwnerId = null): bool
     {
-        // Check if user has permissions property
-        if (!property_exists($user, 'permissions')) {
-            // If no permissions property, use role defaults
-            $permissions = $this->getDefaultPermissions($user->role ?? 'comercial');
-        } else {
+        // PRIORITY 1: Check if user has explicit 'permissions' property (from DB)
+        if (property_exists($user, 'permissions') && !is_null($user->permissions)) {
             // Parse permissions from JSON if string
             $permissions = is_string($user->permissions)
                 ? json_decode($user->permissions, true)
                 : $user->permissions;
 
-            // If no permissions set, use role defaults
-            if (empty($permissions)) {
-                $permissions = $this->getDefaultPermissions($user->role ?? 'comercial');
+            // IMPORTANT: If permissions is an empty array [], it means the user has NO permissions.
+            // We do NOT fallback to role defaults in this case.
+            // Fail safe for json_decode errors returning null
+            if (!is_array($permissions)) {
+                $permissions = [];
             }
+        }
+        // PRIORITY 2: Fallback to Role Defaults only if 'permissions' property is missing or null
+        else {
+            $permissions = $this->getDefaultPermissions($user->role ?? 'comercial');
         }
 
         // Check if resource exists in permissions
@@ -154,16 +157,19 @@ class PermissionService
      */
     public function getUserPermissions(object $user): array
     {
-        // Check if user has permissions property
-        if (!property_exists($user, 'permissions')) {
-            return $this->getDefaultPermissions($user->role ?? 'comercial');
+        // PRIORITY 1: DB Permissions
+        if (property_exists($user, 'permissions') && !is_null($user->permissions)) {
+            $permissions = is_string($user->permissions)
+                ? json_decode($user->permissions, true)
+                : $user->permissions;
+
+            if (is_array($permissions)) {
+                return $permissions;
+            }
         }
 
-        $permissions = is_string($user->permissions)
-            ? json_decode($user->permissions, true)
-            : $user->permissions;
-
-        return $permissions ?? $this->getDefaultPermissions($user->role ?? 'comercial');
+        // PRIORITY 2: Role Defaults
+        return $this->getDefaultPermissions($user->role ?? 'comercial');
     }
 
     /**

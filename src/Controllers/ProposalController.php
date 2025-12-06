@@ -19,6 +19,7 @@ class ProposalController extends BaseController
 
     public function __construct()
     {
+        parent::__construct();
         $this->authMiddleware = new AuthMiddleware();
         $this->pdfService = new PdfService();
         $this->emailService = new EmailService();
@@ -35,6 +36,9 @@ class ProposalController extends BaseController
             http_response_code(401);
             return ["error" => "Autenticação necessária."];
         }
+
+        // Check permission
+        $this->requirePermission($userData, 'proposals', 'view');
 
         $filters = [];
         if (isset($queryParams["status"])) {
@@ -72,7 +76,7 @@ class ProposalController extends BaseController
         $traceId = bin2hex(random_bytes(8));
 
         try {
-            $userData = $this->authMiddleware->handle($headers, ["admin", "comercial", "gerente"]);
+            $userData = $this->authMiddleware->handle($headers);
             if (!$userData) {
                 http_response_code(401);
                 return [
@@ -82,6 +86,9 @@ class ProposalController extends BaseController
                     "trace_id" => $traceId
                 ];
             }
+
+            // Check permission
+            $this->requirePermission($userData, 'proposals', 'create');
 
             if (empty($requestData["titulo"])) {
                 http_response_code(400);
@@ -93,7 +100,7 @@ class ProposalController extends BaseController
                 ];
             }
 
-            $requestData["responsavel_id"] = $requestData["responsavel_id"] ?? $userData->userId;
+            $requestData["responsavel_id"] = $requestData["responsavel_id"] ?? $userData->id;
             $items = $requestData["itens"] ?? [];
 
             // Dica: garanta que o PDO esteja em modo de exceção:
@@ -125,7 +132,7 @@ class ProposalController extends BaseController
                 }
 
                 $this->notificationService->createNotification(
-                    $userData->userId,
+                    $userData->id,
                     "Nova Proposta",
                     $message,
                     "proposta",
@@ -203,6 +210,9 @@ class ProposalController extends BaseController
             return ["error" => "Autenticação necessária."];
         }
 
+        // Check permission
+        $this->requirePermission($userData, 'proposals', 'view');
+
         $proposal = Proposal::findById($proposalId);
         if (!$proposal) {
             http_response_code(404);
@@ -240,11 +250,14 @@ class ProposalController extends BaseController
      */
     public function update(array $headers, int $proposalId, array $requestData): array
     {
-        $userData = $this->authMiddleware->handle($headers, ["admin", "comercial", "gerente"]);
+        $userData = $this->authMiddleware->handle($headers);
         if (!$userData) {
             http_response_code(401);
             return ["error" => "Autenticação necessária."];
         }
+
+        // Check permission
+        $this->requirePermission($userData, 'proposals', 'edit');
 
         $proposal = Proposal::findById($proposalId);
         if (!$proposal) {
@@ -253,7 +266,7 @@ class ProposalController extends BaseController
         }
 
         $items = $requestData["itens"] ?? [];
-        $updated = Proposal::update($proposalId, $requestData, $items, $userData->userId);
+        $updated = Proposal::update($proposalId, $requestData, $items, $userData->id);
 
         if ($updated) {
             $updatedProposal = Proposal::findById($proposalId);
@@ -274,11 +287,14 @@ class ProposalController extends BaseController
      */
     public function destroy(array $headers, int $proposalId): array
     {
-        $userData = $this->authMiddleware->handle($headers, ["admin"]);
+        $userData = $this->authMiddleware->handle($headers);
         if (!$userData) {
             http_response_code(401);
             return ["error" => "Apenas administradores podem excluir propostas."];
         }
+
+        // Check permission
+        $this->requirePermission($userData, 'proposals', 'delete');
 
         $proposal = Proposal::findById($proposalId);
         if (!$proposal) {
@@ -309,6 +325,9 @@ class ProposalController extends BaseController
             return ["error" => "Autenticação necessária."];
         }
 
+        // Check permission (view is enough to generate PDF, or create a specific 'export' permission)
+        $this->requirePermission($userData, 'proposals', 'view');
+
         $proposal = Proposal::findById($proposalId);
         if (!$proposal) {
             http_response_code(404);
@@ -319,7 +338,7 @@ class ProposalController extends BaseController
             $pdfPath = $this->pdfService->generateProposalPdf($proposalId);
 
             if ($pdfPath) {
-                Proposal::addHistory($proposalId, $userData->userId, "PDF Gerado", "PDF da proposta foi gerado.");
+                Proposal::addHistory($proposalId, $userData->id, "PDF Gerado", "PDF da proposta foi gerado.");
 
                 http_response_code(200);
                 return [
@@ -343,11 +362,14 @@ class ProposalController extends BaseController
      */
     public function sendProposal(array $headers, int $proposalId): array
     {
-        $userData = $this->authMiddleware->handle($headers, ["admin", "comercial", "gerente"]);
+        $userData = $this->authMiddleware->handle($headers);
         if (!$userData) {
             http_response_code(401);
             return ["error" => "Autenticação necessária."];
         }
+
+        // Check permission (sending proposal is part of editing/managing process)
+        $this->requirePermission($userData, 'proposals', 'edit');
 
         $proposal = Proposal::findById($proposalId);
         if (!$proposal) {
@@ -405,12 +427,12 @@ class ProposalController extends BaseController
             Proposal::update($proposalId, [
                 'status' => 'enviada',
                 'data_envio' => date('Y-m-d H:i:s')
-            ], [], $userData->userId);
+            ], [], $userData->id);
 
             // Add history
             Proposal::addHistory(
                 $proposalId,
-                $userData->userId,
+                $userData->id,
                 "Proposta Enviada",
                 "Enviada para {$clientData['email']}"
             );

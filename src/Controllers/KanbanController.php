@@ -13,6 +13,7 @@ class KanbanController extends BaseController
 
     public function __construct()
     {
+        parent::__construct();
         $this->authMiddleware = new AuthMiddleware();
     }
 
@@ -30,6 +31,9 @@ class KanbanController extends BaseController
             http_response_code(401);
             return ["error" => "Autenticação do CRM necessária."];
         }
+
+        // Check permission
+        $this->requirePermission($userData, 'kanban', 'view');
 
         try {
             $colunas = KanbanColuna::findAll();
@@ -77,11 +81,16 @@ class KanbanController extends BaseController
      */
     public function createColumn(array $headers, array $requestData): array
     {
-        $userData = $this->authMiddleware->handle($headers, ["admin", "gerente"]); // Admins and managers can create columns
+        $userData = $this->authMiddleware->handle($headers); // Admins and managers can create columns
         if (!$userData) {
             http_response_code(403);
-            return ["error" => "Acesso negado. Permissão de Administrador ou Gerente necessária."];
+            return ["error" => "Acesso negado. Autenticação necessária."];
         }
+
+        // Check permission (creating columns is an admin/manager task, maybe 'kanban.create' or 'kanban.edit')
+        // Let's use 'kanban.create' if available, or 'kanban.edit' as it modifies the board structure.
+        // Checking ROLE_PERMISSIONS: 'kanban' => ['view', 'create', 'edit', 'delete', 'assign']
+        $this->requirePermission($userData, 'kanban', 'create');
 
         $nome = $requestData["nome"] ?? null;
         $ordem = isset($requestData["ordem"]) ? (int)$requestData["ordem"] : 0;
@@ -116,11 +125,14 @@ class KanbanController extends BaseController
      */
     public function updateColumn(array $headers, int $columnId, array $requestData): array
     {
-        $userData = $this->authMiddleware->handle($headers, ["admin"]); // Only Admins?
+        $userData = $this->authMiddleware->handle($headers); // Only Admins?
         if (!$userData) {
             http_response_code(403);
-            return ["error" => "Acesso negado. Permissão de Administrador necessária."];
+            return ["error" => "Acesso negado. Autenticação necessária."];
         }
+
+        // Check permission
+        $this->requirePermission($userData, 'kanban', 'edit');
 
         $nome = $requestData["nome"] ?? null;
         $ordem = isset($requestData["ordem"]) ? (int)$requestData["ordem"] : null;
@@ -158,11 +170,14 @@ class KanbanController extends BaseController
      */
     public function deleteColumn(array $headers, int $columnId): array
     {
-        $userData = $this->authMiddleware->handle($headers, ["admin"]); // Only Admins?
+        $userData = $this->authMiddleware->handle($headers); // Only Admins?
         if (!$userData) {
             http_response_code(403);
-            return ["error" => "Acesso negado. Permissão de Administrador necessária."];
+            return ["error" => "Acesso negado. Autenticação necessária."];
         }
+
+        // Check permission
+        $this->requirePermission($userData, 'kanban', 'delete');
 
         $column = KanbanColuna::findById($columnId);
         if (!$column) {
@@ -202,6 +217,16 @@ class KanbanController extends BaseController
             http_response_code(401);
             return ["error" => "Autenticação do CRM necessária."];
         }
+
+        // Check permission (moving tasks requires edit permission on kanban or tasks?)
+        // Usually moving cards is a basic kanban operation, so 'kanban.edit' or 'kanban.view' + 'tasks.edit'.
+        // Let's assume 'kanban.edit' allows board modification, but moving tasks is day-to-day.
+        // Actually, moving tasks changes their status/column.
+        // Let's require 'kanban.edit' for now as it changes the board state.
+        // Or maybe just 'kanban.view' if we consider moving tasks as part of task management?
+        // But the method is `updateTaskOrder`.
+        // Let's use 'kanban.edit'.
+        $this->requirePermission($userData, 'kanban', 'edit');
 
         if (!is_array($requestData) || empty($requestData)) {
             http_response_code(400);

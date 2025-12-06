@@ -37,7 +37,7 @@ class NotificationController extends BaseController
 
         // Construir query com filtros
         $whereConditions = ["user_id = :user_id"];
-        $params = [':user_id' => $userData->userId];
+        $params = [':user_id' => $userData->id];
 
         if ($type) {
             $whereConditions[] = "type = :type";
@@ -92,7 +92,7 @@ class NotificationController extends BaseController
 
             // Contar não lidas
             $unreadStmt = $pdo->prepare($unreadSql);
-            $unreadStmt->bindParam(':user_id', $userData->userId, PDO::PARAM_INT);
+            $unreadStmt->bindParam(':user_id', $userData->id, PDO::PARAM_INT);
             $unreadStmt->execute();
             $unreadCount = (int)$unreadStmt->fetchColumn();
 
@@ -141,7 +141,7 @@ class NotificationController extends BaseController
         $title = $data['title'];
         $message = $data['message'] ?? '';
         $type = $data['type'] ?? 'info';
-        $userId = $data['user_id'] ?? $userData->userId;
+        $userId = $data['user_id'] ?? $userData->id;
 
         // Inserir notificação na nova estrutura da tabela
         $sql = "INSERT INTO notifications (user_id, title, message, type, is_read) 
@@ -204,7 +204,7 @@ class NotificationController extends BaseController
             $sqlBusca = "SELECT is_read FROM notifications WHERE id = :notificacao_id AND user_id = :usuario_id AND active = '1'";
             $stmtBusca = $pdo->prepare($sqlBusca);
             $stmtBusca->bindParam(":notificacao_id", $notificationId, PDO::PARAM_INT);
-            $stmtBusca->bindParam(":usuario_id", $userData->userId, PDO::PARAM_INT);
+            $stmtBusca->bindParam(":usuario_id", $userData->id, PDO::PARAM_INT);
             $stmtBusca->execute();
             $notification = $stmtBusca->fetch(PDO::FETCH_ASSOC);
 
@@ -224,7 +224,7 @@ class NotificationController extends BaseController
 
             $stmt = $pdo->prepare($sql);
             $stmt->bindParam(":notificacao_id", $notificationId, PDO::PARAM_INT);
-            $stmt->bindParam(":usuario_id", $userData->userId, PDO::PARAM_INT);
+            $stmt->bindParam(":usuario_id", $userData->id, PDO::PARAM_INT);
 
             if ($stmt->execute()) {
                 if ($stmt->rowCount() > 0) {
@@ -264,7 +264,7 @@ class NotificationController extends BaseController
         try {
             $pdo = Database::getInstance();
             $stmt = $pdo->prepare($sql);
-            $stmt->bindParam(":usuario_id", $userData->userId, PDO::PARAM_INT);
+            $stmt->bindParam(":usuario_id", $userData->id, PDO::PARAM_INT);
 
             if ($stmt->execute()) {
                 $rowCount = $stmt->rowCount();
@@ -296,7 +296,7 @@ class NotificationController extends BaseController
             $pdo = Database::getInstance();
             $stmt = $pdo->prepare($sql);
             $stmt->bindParam(":notificacao_id", $notificationId, PDO::PARAM_INT);
-            $stmt->bindParam(":usuario_id", $userData->userId, PDO::PARAM_INT);
+            $stmt->bindParam(":usuario_id", $userData->id, PDO::PARAM_INT);
 
             if ($stmt->execute()) {
                 if ($stmt->rowCount() > 0) {
@@ -330,7 +330,7 @@ class NotificationController extends BaseController
         try {
             $pdo = Database::getInstance();
             $stmt = $pdo->prepare($sql);
-            $stmt->bindParam(":usuario_id", $userData->userId, PDO::PARAM_INT);
+            $stmt->bindParam(":usuario_id", $userData->id, PDO::PARAM_INT);
 
             if ($stmt->execute()) {
                 if ($stmt->rowCount() > 0) {

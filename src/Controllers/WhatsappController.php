@@ -90,7 +90,7 @@ class WhatsappController extends BaseController
         $result = $this->whatsappService->sendMessage(
             $formattedPhoneNumber,
             $message,
-            $userData->userId,
+            $userData->id,
             $leadId,
             $contactId
         );

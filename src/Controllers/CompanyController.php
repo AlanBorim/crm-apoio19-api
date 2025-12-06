@@ -12,6 +12,7 @@ class CompanyController extends BaseController
 
     public function __construct()
     {
+        parent::__construct();
         $this->authMiddleware = new AuthMiddleware();
     }
 
@@ -30,6 +31,23 @@ class CompanyController extends BaseController
             http_response_code(401);
             return ["error" => "Autenticação necessária."];
         }
+
+        // Check permission (assuming companies are part of 'configuracoes' or have their own resource)
+        // Since there isn't a specific 'companies' resource in the config, I'll use 'configuracoes' or 'leads' if it's related to clients.
+        // Given it's likely "Configurações > Empresas" or similar, I'll use 'configuracoes'.
+        // Wait, 'leads' has company info. But this controller seems to be for managing the user's own company or client companies?
+        // If it's for CRM settings (My Company), it's 'configuracoes'.
+        // If it's for Client Companies (B2B), it might be related to 'leads' or a new 'companies' resource.
+        // Looking at the code, it has `Company::findAll`.
+        // Let's assume it falls under 'configuracoes' for now as it seems administrative, or maybe 'leads' if it's client database.
+        // Let's use 'configuracoes' based on typical CRM structures for "Company" settings, OR if it's a list of client companies, maybe 'leads'.
+        // Actually, let's look at `ROLE_PERMISSIONS` in `PermissionService.php` again.
+        // It has 'usuarios', 'leads', 'proposals', 'whatsapp', 'configuracoes', 'relatorios', 'kanban', 'dashboard'.
+        // 'Company' is not explicitly there.
+        // If this is for "Minha Empresa" settings, it's 'configuracoes'.
+        // If it's for "Empresas (Clientes)", it should probably be under 'leads' or added as a new resource.
+        // Let's assume 'configuracoes' for safety as it seems like admin work.
+        $this->requirePermission($userData, 'configuracoes', 'view');
 
         // Basic Pagination
         $page = isset($queryParams["page"]) ? max(1, (int)$queryParams["page"]) : 1;
@@ -68,11 +86,14 @@ class CompanyController extends BaseController
      */
     public function store(array $headers, array $requestData): array
     {
-        $userData = $this->authMiddleware->handle($headers, ["comercial", "admin"]);
+        $userData = $this->authMiddleware->handle($headers);
         if (!$userData) {
             http_response_code(401); // Or 403
             return ["error" => "Acesso não autorizado ou autenticação necessária."];
         }
+
+        // Check permission
+        $this->requirePermission($userData, 'configuracoes', 'create');
 
         // Basic Validation
         if (empty($requestData["nome"])) {
@@ -115,6 +136,9 @@ class CompanyController extends BaseController
             return ["error" => "Autenticação necessária."];
         }
 
+        // Check permission
+        $this->requirePermission($userData, 'configuracoes', 'view');
+
         try {
             $company = Company::findById($id);
             if ($company) {
@@ -144,11 +168,14 @@ class CompanyController extends BaseController
      */
     public function update(array $headers, int $id, array $requestData): array
     {
-        $userData = $this->authMiddleware->handle($headers, ["comercial", "admin"]);
+        $userData = $this->authMiddleware->handle($headers);
         if (!$userData) {
             http_response_code(401); // Or 403
             return ["error" => "Acesso não autorizado ou autenticação necessária."];
         }
+
+        // Check permission
+        $this->requirePermission($userData, 'configuracoes', 'edit');
 
         // Add validation for requestData
 
@@ -186,11 +213,14 @@ class CompanyController extends BaseController
      */
     public function destroy(array $headers, int $id): array
     {
-        $userData = $this->authMiddleware->handle($headers, ["Admin"]);
+        $userData = $this->authMiddleware->handle($headers);
         if (!$userData) {
-            http_response_code(403); // Forbidden
-            return ["error" => "Acesso negado. Permissão de Administrador necessária."];
+            http_response_code(401);
+            return ["error" => "Autenticação necessária."];
         }
+
+        // Check permission
+        $this->requirePermission($userData, 'configuracoes', 'delete');
 
         try {
             $companyExists = Company::findById($id);

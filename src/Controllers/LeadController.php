@@ -115,10 +115,10 @@ class LeadController extends BaseController
     public function store(array $headers, array $requestData): array
     {
         $traceId = bin2hex(random_bytes(8));
-        $userData = $this->authMiddleware->handle($headers, ["admin", "comercial"]);
+        $userData = $this->authMiddleware->handle($headers);
 
         if (!$userData) {
-            return $this->errorResponse(401, "Autenticação necessária ou permissão insuficiente.", "UNAUTHENTICATED", $traceId);
+            return $this->errorResponse(401, "Autenticação necessária.", "UNAUTHENTICATED", $traceId);
         }
 
         // Check permission
@@ -213,9 +213,9 @@ class LeadController extends BaseController
      */
     public function update(array $headers, int $leadId, array $requestData): array
     {
-        $userData = $this->authMiddleware->handle($headers, ["admin", "comercial"]);
+        $userData = $this->authMiddleware->handle($headers);
         if (!$userData) {
-            return $this->errorResponse(401, "Autenticação necessária ou permissão insuficiente.");
+            return $this->errorResponse(401, "Autenticação necessária.");
         }
 
         // Check permission
@@ -281,9 +281,9 @@ class LeadController extends BaseController
      */
     public function destroy(array $headers, int $leadId): array
     {
-        $userData = $this->authMiddleware->handle($headers, ["admin"]);
+        $userData = $this->authMiddleware->handle($headers);
         if (!$userData) {
-            return $this->errorResponse(401, "Autenticação necessária ou permissão insuficiente.");
+            return $this->errorResponse(401, "Autenticação necessária.");
         }
 
         // Check permission
@@ -325,10 +325,13 @@ class LeadController extends BaseController
      */
     public function importCsv(array $headers, string $csvFilePath, array $fieldMapping, ?int $defaultResponsavelId = null): array
     {
-        $userData = $this->authMiddleware->handle($headers, ["Admin", "Comercial"]);
+        $userData = $this->authMiddleware->handle($headers);
         if (!$userData) {
-            return $this->errorResponse(401, "Autenticação necessária ou permissão insuficiente.");
+            return $this->errorResponse(401, "Autenticação necessária.");
         }
+
+        // Check permission
+        $this->requirePermission($userData, 'leads', 'create'); // Import requires create permission
 
         if (!file_exists($csvFilePath) || !is_readable($csvFilePath)) {
             return $this->errorResponse(400, "Arquivo CSV não encontrado ou ilegível.");
@@ -416,10 +419,13 @@ class LeadController extends BaseController
      */
     public function batchUpdateStatus(array $headers, array $requestData): array
     {
-        $userData = $this->authMiddleware->handle($headers, ["Admin", "Comercial"]);
+        $userData = $this->authMiddleware->handle($headers);
         if (!$userData) {
-            return $this->errorResponse(401, "Autenticação necessária ou permissão insuficiente.");
+            return $this->errorResponse(401, "Autenticação necessária.");
         }
+
+        // Check permission
+        $this->requirePermission($userData, 'leads', 'edit'); // Batch update requires edit permission
 
         $ids = $requestData["ids"] ?? [];
         $status = $requestData["status"] ?? null;
@@ -554,21 +560,25 @@ class LeadController extends BaseController
      */
     public function stats(array $headers): array
     {
+        $traceId = bin2hex(random_bytes(8));
         $userData = $this->authMiddleware->handle($headers);
         if (!$userData) {
-            return $this->errorResponse(401, "Autenticação necessária.");
+            return $this->errorResponse(401, "Autenticação necessária.", "UNAUTHENTICATED", $traceId);
         }
+
+        // Check permission
+        $this->requirePermission($userData, 'leads', 'view');
 
         try {
             $stats = Lead::getStats();
 
             if (!$stats) {
-                return $this->successResponse([], "Nenhum dado de estatísticas encontrado.");
+                return $this->successResponse([], "Nenhum dado de estatísticas encontrado.", 200, $traceId);
             }
 
-            return $this->successResponse($stats);
+            return $this->successResponse($stats, null, 200, $traceId);
         } catch (\Exception $e) {
-            return $this->errorResponse(500, "Erro ao buscar estatísticas de leads.", $e->getMessage());
+            return $this->errorResponse(500, "Erro ao buscar estatísticas de leads.", "STATS_ERROR", $traceId, $this->debugDetails($e));
         }
     }
 
@@ -641,11 +651,14 @@ class LeadController extends BaseController
      */
     public function getSettings(array $headers, ?string $type = null): array
     {
-        $userData = $this->authMiddleware->handle($headers, ["admin", "comercial"]);
+        $userData = $this->authMiddleware->handle($headers);
 
         if (!$userData) {
-            return $this->errorResponse(401, "Autenticação necessária ou permissão insuficiente.");
+            return $this->errorResponse(401, "Autenticação necessária.");
         }
+
+        // Check permission
+        $this->requirePermission($userData, 'configuracoes', 'view'); // Lead settings are configuration
 
         try {
             $leadModel = new Lead();
@@ -670,11 +683,14 @@ class LeadController extends BaseController
      */
     public function storeSettings(array $headers, array $requestData): array
     {
-        $userData = $this->authMiddleware->handle($headers, ["admin"]);
+        $userData = $this->authMiddleware->handle($headers);
 
         if (!$userData) {
-            return $this->errorResponse(401, "Autenticação necessária ou permissão insuficiente.");
+            return $this->errorResponse(401, "Autenticação necessária.");
         }
+
+        // Check permission
+        $this->requirePermission($userData, 'configuracoes', 'create'); // Lead settings are configuration
 
         // Validação básica
         $validation = $this->validateSettingsData($requestData);
@@ -717,11 +733,14 @@ class LeadController extends BaseController
      */
     public function updateSettings(array $headers, int $settingId, array $requestData): array
     {
-        $userData = $this->authMiddleware->handle($headers, ["admin"]);
+        $userData = $this->authMiddleware->handle($headers);
 
         if (!$userData) {
-            return $this->errorResponse(401, "Autenticação necessária ou permissão insuficiente.");
+            return $this->errorResponse(401, "Autenticação necessária.");
         }
+
+        // Check permission
+        $this->requirePermission($userData, 'configuracoes', 'edit'); // Lead settings are configuration
 
         if (empty($requestData)) {
             return $this->errorResponse(400, "Nenhum dado fornecido para atualização.");
@@ -778,11 +797,14 @@ class LeadController extends BaseController
      */
     public function deleteSettings(array $headers, int $settingId): array
     {
-        $userData = $this->authMiddleware->handle($headers, ["admin"]);
+        $userData = $this->authMiddleware->handle($headers);
 
         if (!$userData) {
-            return $this->errorResponse(401, "Autenticação necessária ou permissão insuficiente.");
+            return $this->errorResponse(401, "Autenticação necessária.");
         }
+
+        // Check permission
+        $this->requirePermission($userData, 'configuracoes', 'delete'); // Lead settings are configuration
 
         try {
             $leadModel = new Lead();

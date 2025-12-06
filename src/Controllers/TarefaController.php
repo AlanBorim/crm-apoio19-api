@@ -16,6 +16,7 @@ class TarefaController extends BaseController
 
     public function __construct()
     {
+        parent::__construct();
         $this->authMiddleware = new AuthMiddleware();
         $this->notificationService = new NotificationService(); // Instantiate NotificationService
     }
@@ -34,6 +35,9 @@ class TarefaController extends BaseController
         if (!$userData) {
             return $this->errorResponse(401, "Autenticação do CRM necessária.", "UNAUTHENTICATED", $traceId);
         }
+
+        // Check permission
+        $this->requirePermission($userData, 'tasks', 'create');
 
         // Basic Validation
         if (empty($requestData["titulo"])) {
@@ -126,6 +130,9 @@ class TarefaController extends BaseController
             return ["error" => "Autenticação do CRM necessária."];
         }
 
+        // Check permission
+        $this->requirePermission($userData, 'tasks', 'view');
+
         $tarefa = Tarefa::findById($taskId);
 
         if (!$tarefa) {
@@ -155,6 +162,9 @@ class TarefaController extends BaseController
             http_response_code(401);
             return ["error" => "Autenticação do CRM necessária."];
         }
+
+        // Check permission
+        $this->requirePermission($userData, 'tasks', 'edit');
 
         // Check if task exists
         $tarefa = Tarefa::findById($taskId);
@@ -226,6 +236,9 @@ class TarefaController extends BaseController
             return ["error" => "Autenticação do CRM necessária."];
         }
 
+        // Check permission
+        $this->requirePermission($userData, 'tasks', 'delete');
+
         $tarefa = Tarefa::findById($taskId);
         if (!$tarefa) {
             http_response_code(404);
@@ -260,6 +273,9 @@ class TarefaController extends BaseController
             http_response_code(401);
             return ["error" => "Autenticação do CRM necessária."];
         }
+
+        // Check permission (commenting requires view or edit, usually view is enough for adding comments)
+        $this->requirePermission($userData, 'tasks', 'view');
 
         $comentario = $requestData["comentario"] ?? null;
         if (!$comentario) {
@@ -322,6 +338,9 @@ class TarefaController extends BaseController
             return ["error" => "Autenticação do CRM necessária."];
         }
 
+        // Check permission
+        $this->requirePermission($userData, 'tasks', 'view');
+
         // Check if task exists
         $tarefa = Tarefa::findById($taskId);
         if (!$tarefa) {
@@ -351,6 +370,9 @@ class TarefaController extends BaseController
             http_response_code(401);
             return ["error" => "Autenticação do CRM necessária."];
         }
+
+        // Check permission
+        $this->requirePermission($userData, 'tasks', 'view');
 
         // Optional: Verify comment belongs to the task and user has permission
         // ... (implement authorization logic if needed)

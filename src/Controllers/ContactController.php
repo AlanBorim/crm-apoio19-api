@@ -70,11 +70,14 @@ class ContactController extends BaseController
      */
     public function store(array $headers, array $requestData): array
     {
-        $userData = $this->authMiddleware->handle($headers, ["comercial", "admin"]);
+        $userData = $this->authMiddleware->handle($headers);
         if (!$userData) {
             http_response_code(401); // Or 403
-            return ["error" => "Acesso não autorizado ou autenticação necessária."];
+            return ["error" => "Autenticação necessária."];
         }
+
+        // Check permission
+        parent::requirePermission($userData, 'configuracoes', 'create'); // Contacts may be part of configurations
 
         // Basic Validation
         if (empty($requestData["nome"])) {
@@ -160,11 +163,14 @@ class ContactController extends BaseController
      */
     public function update(array $headers, int $id, array $requestData): array
     {
-        $userData = $this->authMiddleware->handle($headers, ["comercial", "admin"]);
+        $userData = $this->authMiddleware->handle($headers);
         if (!$userData) {
             http_response_code(401); // Or 403
-            return ["error" => "Acesso não autorizado ou autenticação necessária."];
+            return ["error" => "Autenticação necessária."];
         }
+
+        // Check permission
+        parent::requirePermission($userData, 'configuracoes', 'edit'); // Contacts may be part of configurations
 
         // Basic Validation
         if (isset($requestData["email"]) && !empty($requestData["email"]) && !filter_var($requestData["email"], FILTER_VALIDATE_EMAIL)) {
@@ -219,11 +225,14 @@ class ContactController extends BaseController
      */
     public function destroy(array $headers, int $id): array
     {
-        $userData = $this->authMiddleware->handle($headers, ["Admin"]);
+        $userData = $this->authMiddleware->handle($headers);
         if (!$userData) {
-            http_response_code(403); // Forbidden
-            return ["error" => "Acesso negado. Permissão de Administrador necessária."];
+            http_response_code(401);
+            return ["error" => "Autenticação necessária."];
         }
+
+        // Check permission
+        parent::requirePermission($userData, 'configuracoes', 'delete'); // Contacts may be part of configurations
 
         try {
             $contactExists = Contact::findById($id);
