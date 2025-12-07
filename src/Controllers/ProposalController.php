@@ -8,14 +8,12 @@ use Apoio19\Crm\Models\User;
 use Apoio19\Crm\Services\PdfService;
 use Apoio19\Crm\Services\EmailService;
 use Apoio19\Crm\Middleware\AuthMiddleware;
-use Apoio19\Crm\Services\NotificationService;
 
 class ProposalController extends BaseController
 {
     private AuthMiddleware $authMiddleware;
     private PdfService $pdfService;
     private EmailService $emailService;
-    private NotificationService $notificationService;
 
     public function __construct()
     {
@@ -23,7 +21,6 @@ class ProposalController extends BaseController
         $this->authMiddleware = new AuthMiddleware();
         $this->pdfService = new PdfService();
         $this->emailService = new EmailService();
-        $this->notificationService = new NotificationService();
     }
 
     /**
@@ -114,6 +111,9 @@ class ProposalController extends BaseController
             }
 
             $newProposal = Proposal::findById($proposalId);
+
+            // 🟢 AUDIT LOG - Log proposal creation
+            $this->logAudit($userData->id, 'create', 'proposals', $proposalId, null, $newProposal);
 
             // Criar notificação
             try {
@@ -270,6 +270,10 @@ class ProposalController extends BaseController
 
         if ($updated) {
             $updatedProposal = Proposal::findById($proposalId);
+
+            // 🟢 AUDIT LOG - Log proposal update
+            $this->logAudit($userData->id, 'update', 'proposals', $proposalId, $proposal, $updatedProposal);
+
             http_response_code(200);
             return [
                 "success" => true,
@@ -303,6 +307,9 @@ class ProposalController extends BaseController
         }
 
         if (Proposal::delete($proposalId)) {
+            // 🟢 AUDIT LOG - Log proposal deletion
+            $this->logAudit($userData->id, 'delete', 'proposals', $proposalId, $proposal, null);
+
             http_response_code(200);
             return [
                 "success" => true,

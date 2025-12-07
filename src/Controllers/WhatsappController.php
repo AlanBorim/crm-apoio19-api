@@ -17,8 +17,39 @@ class WhatsappController extends BaseController
 
     public function __construct()
     {
+        parent::__construct(); // Call BaseController constructor
         $this->authMiddleware = new AuthMiddleware();
         $this->whatsappService = new WhatsappService();
+    }
+
+    /**
+     * Verify webhook token
+     */
+    public function verifyWebhook(array $queryParams)
+    {
+        $mode = $queryParams['hub_mode'] ?? null;
+        $token = $queryParams['hub_verify_token'] ?? null;
+        $challenge = $queryParams['hub_challenge'] ?? null;
+
+        if ($mode && $token) {
+            try {
+                $pdo = Database::getInstance();
+                $stmt = $pdo->query('SELECT webhook_verify_token FROM whatsapp_phone_numbers WHERE status = "active" LIMIT 1');
+                $config = $stmt->fetch(PDO::FETCH_ASSOC);
+                $verifyToken = $config['webhook_verify_token'] ?? '';
+
+                if ($mode === 'subscribe' && $token === $verifyToken) {
+                    http_response_code(200);
+                    echo $challenge;
+                    exit;
+                }
+            } catch (\PDOException $e) {
+                error_log("Webhook verify db error: " . $e->getMessage());
+            }
+        }
+
+        http_response_code(403);
+        exit;
     }
 
     /**
@@ -159,7 +190,152 @@ class WhatsappController extends BaseController
         }
     }
 
+
+    /**
+     * Get WhatsApp configuration
+     */
+    public function getConfig(array $headers): array
+    {
+        $traceId = bin2hex(random_bytes(8));
+        $userData = $this->authMiddleware->handle($headers);
+
+        if (!$userData) {
+            return $this->errorResponse(401, "Autenticação necessária.", "UNAUTHORIZED", $traceId);
+        }
+
+        $this->requirePermission($userData, 'configuracoes', 'view');
+
+        try {
+            $pdo = Database::getInstance();
+            $stmt = $pdo->query('SELECT * FROM whatsapp_phone_numbers WHERE status = "active" LIMIT 1');
+            $config = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            if (!$config) {
+                return $this->successResponse(null, "Nenhuma configuração encontrada", 200, $traceId);
+            }
+
+            return $this->successResponse($config, "Configuração obtida", 200, $traceId);
+        } catch (\PDOException $e) {
+            error_log("Get config error: " . $e->getMessage());
+            return $this->errorResponse(500, "Erro ao obter configuração", "DB_ERROR", $traceId);
+        }
+    }
+
+    /**
+     * Save WhatsApp configuration
+     */
+    public function saveConfig(array $headers, array $requestData): array
+    {
+        $traceId = bin2hex(random_bytes(8));
+        $userData = $this->authMiddleware->handle($headers);
+
+        if (!$userData) {
+            return $this->errorResponse(401, "Autenticação necessária.", "UNAUTHORIZED", $traceId);
+        }
+
+        $this->requirePermission($userData, 'configuracoes', 'edit');
+
+        try {
+            $pdo = Database::getInstance();
+
+            // Check if exists
+            $stmt = $pdo->query('SELECT id FROM whatsapp_phone_numbers WHERE status = "active" LIMIT 1');
+            $existing = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            if ($existing) {
+                // Update
+                $stmt = $pdo->prepare('
+                    UPDATE whatsapp_phone_numbers
+                    SET name = ?, phone_number = ?, phone_number_id = ?,
+                        business_account_id = ?, webhook_verify_token = ?,
+                        updated_at = NOW()
+                    WHERE id = ?
+                ');
+                $stmt->execute([
+                    $requestData['nome'] ?? '',
+                    $requestData['numero'] ?? '',
+                    $requestData['phoneNumberId'] ?? '',
+                    $requestData['businessAccountId'] ?? '',
+                    $requestData['webhookVerifyToken'] ?? '',
+                    $existing['id']
+                ]);
+            } else {
+                // Insert
+                $stmt = $pdo->prepare('
+                    INSERT INTO whatsapp_phone_numbers
+                    (name, phone_number, phone_number_id, business_account_id, webhook_verify_token, status, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, "active", NOW(), NOW())
+                ');
+                $stmt->execute([
+                    $requestData['nome'] ?? '',
+                    $requestData['numero'] ?? '',
+                    $requestData['phoneNumberId'] ?? '',
+                    $requestData['businessAccountId'] ?? '',
+                    $requestData['webhookVerifyToken'] ?? ''
+                ]);
+            }
+
+            return $this->successResponse(null, "Configuração salva com sucesso", 200, $traceId);
+        } catch (\PDOException $e) {
+            error_log("Save config error: " . $e->getMessage());
+            return $this->errorResponse(500, "Erro ao salvar configuração", "DB_ERROR", $traceId);
+        }
+    }
+
+    /**
+     * Test WhatsApp connection
+     */
+    public function testConnection(array $headers): array
+    {
+        $traceId = bin2hex(random_bytes(8));
+        $userData = $this->authMiddleware->handle($headers);
+        var_dump($userData);
+        if (!$userData) {
+            return $this->errorResponse(401, "Autenticação necessária.", "UNAUTHORIZED", $traceId);
+        }
+
+        $this->requirePermission($userData, 'configuracoes', 'view');
+
+        try {
+            $result = $this->whatsappService->testConnection();
+            return $this->successResponse($result, "Teste realizado", 200, $traceId);
+        } catch (\Exception $e) {
+            error_log("Test error: " . $e->getMessage());
+            return $this->errorResponse(500, "Erro no teste", "ERROR", $traceId);
+        }
+    }
+
+    /**
+     * Send test message
+     */
+    public function sendTestMessage(array $headers, array $requestData): array
+    {
+        $traceId = bin2hex(random_bytes(8));
+        $userData = $this->authMiddleware->handle($headers);
+
+        if (!$userData) {
+            return $this->errorResponse(401, "Autenticação necessária.", "UNAUTHORIZED", $traceId);
+        }
+
+        $this->requirePermission($userData, 'configuracoes', 'edit');
+
+        $number = $requestData['number'] ?? null;
+        $message = $requestData['message'] ?? null;
+
+        if (!$number || !$message) {
+            return $this->errorResponse(400, "Número e mensagem obrigatórios", "VALIDATION_ERROR", $traceId);
+        }
+
+        try {
+            $result = $this->whatsappService->sendTextMessage($number, $message);
+            return $this->successResponse($result, "Mensagem enviada", 200, $traceId);
+        } catch (\Exception $e) {
+            error_log("Send test error: " . $e->getMessage());
+            return $this->errorResponse(500, "Erro ao enviar", "ERROR", $traceId);
+        }
+    }
+
     // TODO: Implement webhook endpoint to receive incoming messages and status updates from ZDG API
     // This would require a public endpoint in the CRM accessible by the ZDG API server.
-    // public function handleWebhook(array $requestData): array { ... }
+    // public function handleWebhook(array $request Data): array { ... }
 }

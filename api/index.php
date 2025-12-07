@@ -21,6 +21,7 @@ use Apoio19\Crm\Controllers\TarefaController;
 use Apoio19\Crm\Controllers\TarefaUsuarioController;
 use Apoio19\Crm\Controllers\WhatsappCampaignController;
 use Apoio19\Crm\Controllers\WhatsappTemplateController;
+use Apoio19\Crm\Controllers\WhatsappController;
 use Apoio19\Crm\Controllers\ProposalController;
 use Apoio19\Crm\Controllers\DashboardController;
 
@@ -1516,6 +1517,99 @@ if ($requestPath === '/kanban/logs' && $requestMethod === 'POST') {
 }
 
 // ============================================================================
+// Rotas de Configuração do WhatsApp
+if ($requestPath === '/whatsapp/config' && $requestMethod === 'GET') {
+    try {
+        $headers = getallheaders();
+        $controller = new WhatsappController();
+        $response = $controller->getConfig($headers);
+        if (is_array($response)) {
+            http_response_code(200);
+            echo json_encode($response);
+        } else {
+            http_response_code(500);
+            echo json_encode(["error" => "Erro interno", "detalhes" => "Resposta inválida"]);
+        }
+    } catch (\Throwable $th) {
+        error_log("Erro em GET /whatsapp/config: " . $th->getMessage());
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno", "detalhes" => $th->getMessage()]);
+    }
+    exit;
+}
+
+if ($requestPath === '/whatsapp/config' && $requestMethod === 'POST') {
+    try {
+        $input = json_decode(file_get_contents('php://input'), true);
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            http_response_code(400);
+            echo json_encode(["error" => "JSON inválido"]);
+            exit;
+        }
+        $headers = getallheaders();
+        $controller = new WhatsappController();
+        $response = $controller->saveConfig($headers, $input);
+        if (is_array($response)) {
+            http_response_code(200);
+            echo json_encode($response);
+        } else {
+            http_response_code(500);
+            echo json_encode(["error" => "Erro interno", "detalhes" => "Resposta inválida"]);
+        }
+    } catch (\Throwable $th) {
+        error_log("Erro em POST /whatsapp/config: " . $th->getMessage());
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno", "detalhes" => $th->getMessage()]);
+    }
+    exit;
+}
+
+if ($requestPath === '/whatsapp/test-connection' && $requestMethod === 'POST') {
+    try {
+        $headers = getallheaders();
+        $controller = new WhatsappController();
+        $response = $controller->testConnection($headers);
+        if (is_array($response)) {
+            http_response_code(200);
+            echo json_encode($response);
+        } else {
+            http_response_code(500);
+            echo json_encode(["error" => "Erro interno", "detalhes" => "Resposta inválida"]);
+        }
+    } catch (\Throwable $th) {
+        error_log("Erro em POST /whatsapp/test-connection: " . $th->getMessage());
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno", "detalhes" => $th->getMessage()]);
+    }
+    exit;
+}
+
+if ($requestPath === '/whatsapp/test-message' && $requestMethod === 'POST') {
+    try {
+        $input = json_decode(file_get_contents('php://input'), true);
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            http_response_code(400);
+            echo json_encode(["error" => "JSON inválido"]);
+            exit;
+        }
+        $headers = getallheaders();
+        $controller = new WhatsappController();
+        $response = $controller->sendTestMessage($headers, $input);
+        if (is_array($response)) {
+            http_response_code(200);
+            echo json_encode($response);
+        } else {
+            http_response_code(500);
+            echo json_encode(["error" => "Erro interno", "detalhes" => "Resposta inválida"]);
+        }
+    } catch (\Throwable $th) {
+        error_log("Erro em POST /whatsapp/test-message: " . $th->getMessage());
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno", "detalhes" => $th->getMessage()]);
+    }
+    exit;
+}
+
 // ROTAS DO WHATSAPP
 // ============================================================================
 

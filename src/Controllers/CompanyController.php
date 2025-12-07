@@ -106,8 +106,12 @@ class CompanyController extends BaseController
             $companyId = Company::create($requestData);
 
             if ($companyId) {
-                http_response_code(201); // Created
                 $newCompany = Company::findById($companyId);
+
+                // 🟢 AUDIT LOG - Log company creation
+                $this->logAudit($userData->id, 'create', 'companies', $companyId, null, $newCompany);
+
+                http_response_code(201); // Created
                 return ["message" => "Empresa criada com sucesso.", "company" => $newCompany];
             } else {
                 http_response_code(500);
@@ -189,6 +193,11 @@ class CompanyController extends BaseController
             // Add logic here to check if the user ($userData->userId) is allowed to update this company
 
             if (Company::update($id, $requestData)) {
+                $updatedCompany = Company::findById($id);
+
+                // 🟢 AUDIT LOG - Log company update
+                $this->logAudit($userData->id, 'update', 'companies', $id, $companyExists, $updatedCompany);
+
                 http_response_code(200);
                 $updatedCompany = Company::findById($id);
                 return ["message" => "Empresa atualizada com sucesso.", "company" => $updatedCompany];
@@ -232,6 +241,9 @@ class CompanyController extends BaseController
             // Consider adding checks here: e.g., cannot delete if there are active proposals/contracts?
 
             if (Company::delete($id)) {
+                // 🟢 AUDIT LOG - Log company deletion
+                $this->logAudit($userData->id, 'delete', 'companies', $id, $companyExists, null);
+
                 http_response_code(200); // Or 204 No Content
                 return ["message" => "Empresa excluída com sucesso."];
             } else {

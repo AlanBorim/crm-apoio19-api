@@ -12,13 +12,11 @@ use Apoio19\Crm\Services\NotificationService; // Import NotificationService
 class TarefaController extends BaseController
 {
     private AuthMiddleware $authMiddleware;
-    private NotificationService $notificationService; // Add NotificationService instance
 
     public function __construct()
     {
         parent::__construct();
         $this->authMiddleware = new AuthMiddleware();
-        $this->notificationService = new NotificationService(); // Instantiate NotificationService
     }
 
     /**
@@ -49,7 +47,7 @@ class TarefaController extends BaseController
         // Add more validation (check if column exists, user exists, date format etc.)
 
         // Set the creator ID
-        $requestData["criador_id"] = $userData->userId;
+        $requestData["criador_id"] = $userData->id;
 
         try {
             $taskId = Tarefa::create($requestData);
@@ -87,17 +85,17 @@ class TarefaController extends BaseController
                     return $this->errorResponse(500, "Tarefa criada com ID {$taskId}, mas erro ao recuperar detalhes. " . $debugInfo, "RETRIEVAL_ERROR", $traceId);
                 }
 
+                // 🟢 AUDIT LOG - Log task creation
+                $this->logAudit($userData->id, 'create', 'tarefas', $taskId, null, $newTask);
+
                 // --- Notification --- 
-                if ($newTask && $newTask->responsavel_id && $newTask->responsavel_id !== $userData->userId) { // Notify assignee if different from creator
+                if ($newTask && $newTask->responsavel_id && $newTask->responsavel_id !== $userData->id) {
                     $this->notificationService->createNotification(
-                        "nova_tarefa_atribuida",
+                        (int)$newTask->responsavel_id,
                         "Nova Tarefa Atribuída: " . $newTask->titulo,
-                        "Você foi atribuído(a) à nova tarefa: \"{$newTask->titulo}\" criada por {$userData->userName}.", // Assuming userName is available in $userData
-                        [$newTask->responsavel_id],
-                        "/tarefas/" . $taskId, // Example link
-                        "tarefa",
-                        $taskId,
-                        true // Send email
+                        "Você foi atribuído(à) à nova tarefa: \"{$newTask->titulo}\" criada por {$userData->nome}.",
+                        "nova_tarefa_atribuida",
+                        "/tarefas/" . $taskId
                     );
                 }
                 // --- End Notification ---
@@ -184,7 +182,7 @@ class TarefaController extends BaseController
         // --- Notification Check (Before Update) ---
         $oldAssigneeId = $tarefa->responsavel_id;
         $newAssigneeId = isset($requestData["responsavel_id"]) ? (int)$requestData["responsavel_id"] : $oldAssigneeId;
-        $notifyAssignee = ($newAssigneeId !== $oldAssigneeId && $newAssigneeId !== null && $newAssigneeId !== $userData->userId);
+        $notifyAssignee = ($newAssigneeId !== $oldAssigneeId && $newAssigneeId !== null && $newAssigneeId !== $userData->id);
         // --- End Notification Check ---
 
         // Handle marking as complete
@@ -197,17 +195,17 @@ class TarefaController extends BaseController
         if (Tarefa::update($taskId, $requestData)) {
             $updatedTask = Tarefa::findById($taskId);
 
+            // 🟢 AUDIT LOG - Log task update
+            $this->logAudit($userData->id, 'update', 'tarefas', $taskId, $tarefa, $updatedTask);
+
             // --- Notification (After Update) ---
             if ($notifyAssignee && $updatedTask) {
                 $this->notificationService->createNotification(
-                    "tarefa_atribuida",
+                    (int)$newAssigneeId,
                     "Tarefa Atribuída a Você: " . $updatedTask->titulo,
-                    "A tarefa \"{$updatedTask->titulo}\" foi atribuída a você por {$userData->userName}.", // Assuming userName is available
-                    [$newAssigneeId],
-                    "/tarefas/" . $taskId, // Example link
-                    "tarefa",
-                    $taskId,
-                    true // Send email
+                    "A tarefa \"{$updatedTask->titulo}\" foi atribuída a você por {$userData->nome}.",
+                    "tarefa_atribuida",
+                    "/tarefas/" . $taskId
                 );
             }
             // TODO: Add notification for task completion, due date changes, etc. if needed
@@ -249,6 +247,9 @@ class TarefaController extends BaseController
         // ... (implement authorization logic if needed)
 
         if (Tarefa::delete($taskId)) {
+            // 🟢 AUDIT LOG - Log task deletion
+            $this->logAudit($userData->id, 'delete', 'tarefas', $taskId, $tarefa, null);
+
             // TODO: Notify relevant users about deletion? (e.g., assignee)
             http_response_code(200); // Or 204 No Content
             return ["message" => "Tarefa excluída com sucesso."];
@@ -290,28 +291,27 @@ class TarefaController extends BaseController
             return ["error" => "Tarefa não encontrada para adicionar comentário."];
         }
 
-        $commentId = TarefaComentario::create($taskId, $userData->userId, $comentario);
+        $commentId = TarefaComentario::create($taskId, $userData->id, $comentario);
 
         if ($commentId) {
             // --- Notification ---
             $notifyUsers = [];
-            if ($tarefa->criador_id && $tarefa->criador_id !== $userData->userId) {
+            if ($tarefa->criador_id && $tarefa->criador_id !== $userData->id) {
                 $notifyUsers[] = $tarefa->criador_id;
             }
-            if ($tarefa->responsavel_id && $tarefa->responsavel_id !== $userData->userId && !in_array($tarefa->responsavel_id, $notifyUsers)) {
+            if ($tarefa->responsavel_id && $tarefa->responsavel_id !== $userData->id && !in_array($tarefa->responsavel_id, $notifyUsers)) {
                 $notifyUsers[] = $tarefa->responsavel_id;
             }
             if (!empty($notifyUsers)) {
-                $this->notificationService->createNotification(
-                    "novo_comentario_tarefa",
-                    "Novo Comentário na Tarefa: " . $tarefa->titulo,
-                    "{$userData->userName} adicionou um novo comentário na tarefa \"{$tarefa->titulo}\".",
-                    $notifyUsers,
-                    "/tarefas/" . $taskId, // Link to task
-                    "tarefa",
-                    $taskId,
-                    true // Send email
-                );
+                foreach ($notifyUsers as $notifyUserId) {
+                    $this->notificationService->createNotification(
+                        (int)$notifyUserId,
+                        "Novo Comentário na Tarefa",
+                        "{$userData->nome} adicionou um novo comentário na tarefa \"{$tarefa->titulo}\".",
+                        "novo_comentario_tarefa",
+                        "/tarefas/" . $taskId
+                    );
+                }
             }
             // --- End Notification ---
 
@@ -474,7 +474,7 @@ class TarefaController extends BaseController
         $logData = [
             'tarefa_id' => isset($requestData['tarefa_id']) ? (int)$requestData['tarefa_id'] : null,
             'coluna_id' => isset($requestData['coluna_id']) ? (int)$requestData['coluna_id'] : null,
-            'usuario_id' => $userData->userId,
+            'usuario_id' => $userData->id,
             'acao' => $requestData['acao'],
             'descricao' => $requestData['descricao'],
             'valor_antigo' => $requestData['valor_antigo'] ?? null,

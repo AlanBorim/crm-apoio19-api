@@ -5,7 +5,6 @@ namespace Apoio19\Crm\Controllers;
 use Apoio19\Crm\Models\Lead;
 use Apoio19\Crm\Models\HistoricoInteracoes;
 use Apoio19\Crm\Middleware\AuthMiddleware;
-use Apoio19\Crm\Services\NotificationService;
 use League\Csv\Reader;
 use League\Csv\Statement;
 
@@ -15,13 +14,11 @@ use League\Csv\Statement;
 class LeadController extends BaseController
 {
     private AuthMiddleware $authMiddleware;
-    private NotificationService $notificationService;
 
     public function __construct()
     {
         parent::__construct();
         $this->authMiddleware = new AuthMiddleware();
-        $this->notificationService = new NotificationService();
     }
 
     /**
@@ -131,7 +128,7 @@ class LeadController extends BaseController
         }
 
         // Definir responsável padrão se não fornecido
-        $requestData["assigned_to"] = $requestData["assigned_to"] ?? $userData->userId;
+        $requestData["assigned_to"] = $requestData["assigned_to"] ?? $userData->id;
         $requestData["created_at"] = date('Y-m-d H:i:s');
 
         try {
@@ -140,17 +137,35 @@ class LeadController extends BaseController
             if ($leadId) {
                 $newLead = Lead::findById($leadId);
 
+                // 🟢 AUDIT LOG - Log lead creation
+                $this->logAudit(
+                    $userData->id,
+                    'create',
+                    'leads',
+                    $leadId,
+                    null,
+                    $newLead
+                );
+
                 // Registrar histórico
                 HistoricoInteracoes::logAction(
                     $leadId,
                     null,
-                    $userData->userId,
+                    $userData->id,
                     "Lead Criado",
                     "Lead criado no sistema."
                 );
 
                 // Notificar responsável se diferente do criador
-                if ($newLead && $newLead->responsavel_id && $newLead->responsavel_id !== $userData->userId) {
+                if ($newLead && $newLead->responsavel_id && $newLead->responsavel_id !== $userData->id) {
+                    // 🔔 NOTIFICATION - Notify assigned user
+                    $this->notify(
+                        $newLead->responsavel_id,
+                        "Novo Lead Atribuído",
+                        "Lead '{$newLead->nome}' foi atribuído para você.",
+                        "info",
+                        "/leads/{$leadId}"
+                    );
                     $this->notifyLeadAssignment($newLead, $userData, "novo_lead_atribuido");
                 }
 
@@ -159,9 +174,11 @@ class LeadController extends BaseController
                 return $this->errorResponse(500, "Falha ao criar lead.", "CREATE_FAILED", $traceId);
             }
         } catch (\PDOException $e) {
+            $this->logAudit($userData->id, 'create_failed', 'leads', null, null, ['error' => $e->getMessage()]);
             $mapped = $this->mapPdoError($e);
             return $this->errorResponse($mapped['status'], $mapped['message'], $mapped['code'], $traceId, $this->debugDetails($e));
         } catch (\Throwable $e) {
+            $this->logAudit($userData->id, 'create_failed', 'leads', null, null, ['error' => $e->getMessage()]);
             return $this->errorResponse(500, "Erro interno ao criar lead.", "UNEXPECTED_ERROR", $traceId, $this->debugDetails($e));
         }
     }
@@ -242,18 +259,21 @@ class LeadController extends BaseController
             $newAssigneeId = isset($requestData["responsavel_id"]) ? (int)$requestData["responsavel_id"] : $oldAssigneeId;
             $notifyAssignee = ($newAssigneeId !== $oldAssigneeId && $newAssigneeId !== null && $newAssigneeId !== $userData->userId);
 
-            $requestData["atualizado_por"] = $userData->userId;
+            $requestData["atualizado_por"] = $userData->id;
             $requestData["data_atualizacao"] = date('Y-m-d H:i:s');
 
             if (Lead::update($leadId, $requestData)) {
-                $updatedLead = Lead::update($leadId, $requestData);
+                $updatedLead = Lead::findById($leadId);
+
+                // 🟢 AUDIT LOG - Log lead update
+                $this->logAudit($userData->id, 'update', 'leads', $leadId, $lead, $updatedLead);
 
                 // Registrar histórico
                 $logDetails = $this->generateUpdateLogDetails($requestData, $lead);
                 HistoricoInteracoes::logAction(
                     $leadId,
                     null,
-                    $userData->userId,
+                    $userData->id,
                     "Lead Atualizado",
                     $logDetails . json_encode($requestData, JSON_UNESCAPED_SLASHES)
                 );
@@ -296,11 +316,14 @@ class LeadController extends BaseController
             }
 
             if (Lead::delete($leadId)) {
+                // 🟢 AUDIT LOG - Log lead deletion
+                $this->logAudit($userData->id, 'delete', 'leads', $leadId, $lead, null);
+
                 // Registrar histórico antes da exclusão
                 HistoricoInteracoes::logAction(
                     $leadId,
                     null,
-                    $userData->userId,
+                    $userData->id,
                     "Lead Excluído",
                     "Lead excluído do sistema."
                 );

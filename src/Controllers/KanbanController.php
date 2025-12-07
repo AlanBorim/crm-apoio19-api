@@ -105,8 +105,12 @@ class KanbanController extends BaseController
         $columnId = KanbanColuna::create($nome, $ordem, $cor, $limite_cards);
 
         if ($columnId) {
-            http_response_code(201);
             $newColumn = KanbanColuna::findById($columnId);
+
+            // 🟢 AUDIT LOG - Log kanban column creation
+            $this->logAudit($userData->id, 'create', 'kanban_colunas', $columnId, null, $newColumn);
+
+            http_response_code(201);
             return ["message" => "Coluna Kanban criada com sucesso.", "coluna" => $newColumn];
         } else {
             http_response_code(500);
@@ -152,8 +156,12 @@ class KanbanController extends BaseController
         }
 
         if (KanbanColuna::update($columnId, $nome, $ordem, $cor, $limite_cards)) {
-            http_response_code(200);
             $updatedColumn = KanbanColuna::findById($columnId);
+
+            // 🟢 AUDIT LOG - Log kanban column update
+            $this->logAudit($userData->id, 'update', 'kanban_colunas', $columnId, $column, $updatedColumn);
+
+            http_response_code(200);
             return ["message" => "Coluna Kanban atualizada com sucesso.", "coluna" => $updatedColumn];
         } else {
             http_response_code(500);
@@ -194,6 +202,9 @@ class KanbanController extends BaseController
         }
 
         if (KanbanColuna::delete($columnId)) {
+            // 🟢 AUDIT LOG - Log kanban column deletion
+            $this->logAudit($userData->id, 'delete', 'kanban_colunas', $columnId, $column, null);
+
             http_response_code(200); // Or 204
             return ["message" => "Coluna Kanban excluída com sucesso."];
         } else {

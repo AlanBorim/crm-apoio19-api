@@ -103,10 +103,14 @@ class ContactController extends BaseController
 
             if ($contactId) {
                 // Add initial history entry
-                Contact::addInteractionHistory($contactId, $userData->userId, "nota", "Contato criado.");
+                Contact::addInteractionHistory($contactId, $userData->id, "nota", "Contato criado.");
+
+                $newContact = Contact::findById($contactId);
+
+                // 🟢 AUDIT LOG - Log contact creation
+                $this->logAudit($userData->id, 'create', 'contacts', $contactId, null, $newContact);
 
                 http_response_code(201); // Created
-                $newContact = Contact::findById($contactId);
                 return ["message" => "Contato criado com sucesso.", "contact" => $newContact];
             } else {
                 http_response_code(500);
@@ -199,10 +203,14 @@ class ContactController extends BaseController
 
             if (Contact::update($id, $transformedData)) {
                 // Add history entry for update
-                Contact::addInteractionHistory($id, $userData->userId, "nota", "Contato atualizado.");
+                Contact::addInteractionHistory($id, $userData->id, "nota", "Contato atualizado.");
+
+                $updatedContact = Contact::findById($id);
+
+                // 🟢 AUDIT LOG - Log contact update
+                $this->logAudit($userData->id, 'update', 'contacts', $id, $contactExists, $updatedContact);
 
                 http_response_code(200);
-                $updatedContact = Contact::findById($id);
                 return ["message" => "Contato atualizado com sucesso.", "contact" => $updatedContact];
             } else {
                 http_response_code(500); // Or 304?
@@ -244,6 +252,9 @@ class ContactController extends BaseController
             // Consider adding checks here: e.g., cannot delete if associated with active proposals?
 
             if (Contact::delete($id)) {
+                // 🟢 AUDIT LOG - Log contact deletion
+                $this->logAudit($userData->id, 'delete', 'contacts', $id, $contactExists, null);
+
                 http_response_code(200); // Or 204 No Content
                 return ["message" => "Contato excluído com sucesso."];
             } else {

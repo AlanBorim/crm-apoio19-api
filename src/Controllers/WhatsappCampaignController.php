@@ -289,6 +289,10 @@ class WhatsappCampaignController extends BaseController
 
             $this->campaignModel->update($id, $requestData);
 
+            // 🟢 AUDIT LOG - Log campaign update
+            $updatedCampaign = $this->campaignModel->findById($id);
+            $this->logAudit($userData->id, 'update', 'whatsapp_campaigns', $id, $campaign, $updatedCampaign);
+
             http_response_code(200);
             return ["success" => true, "message" => "Campanha atualizada com sucesso"];
         } catch (\Exception $e) {
@@ -432,6 +436,9 @@ class WhatsappCampaignController extends BaseController
             }
 
             $this->campaignModel->delete($id);
+
+            // 🟢 AUDIT LOG - Log campaign deletion
+            $this->logAudit($userData->id, 'delete', 'whatsapp_campaigns', $id, $campaign, null);
 
             http_response_code(200);
             return ["success" => true, "message" => "Campanha deletada"];

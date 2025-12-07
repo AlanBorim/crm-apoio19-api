@@ -31,7 +31,7 @@ class TarefaUsuarioController extends BaseController
             return TarefaUsuario::getByUserId($userData->id);
         }
 
-        if ($this->can($userData, "tasks", "view")) {
+        if ($this->isAdmin($userData)) {
             return TarefaUsuario::all();
         } else {
             return TarefaUsuario::getByUserId($userData->id);

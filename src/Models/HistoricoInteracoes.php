@@ -13,18 +13,18 @@ class HistoricoInteracoes
     public int $usuario_id;
     public string $acao;
     public ?string $observacao;
-    public string $data;
+    public ?string $temperatura; // Added temperature property
 
-    public static function logAction(int $leadId, ?int $contatoId, int $usuarioId, string $acao, ?string $observacao = null): bool
+    public static function logAction(int $leadId, ?int $contatoId, int $usuarioId, string $acao, ?string $observacao = null, ?string $temperatura = null): bool
     {
         try {
             $db = Database::getInstance();
 
             $stmt = $db->prepare("
                 INSERT INTO historico_interacoes 
-                (lead_id, contato_id, usuario_id, acao, observacao, data)
+                (lead_id, contato_id, usuario_id, acao, observacao, data, temperatura)
                 VALUES 
-                (:lead_id, :contato_id, :usuario_id, :acao, :observacao, :data)
+                (:lead_id, :contato_id, :usuario_id, :acao, :observacao, :data, :temperatura)
             ");
 
             return $stmt->execute([
@@ -33,7 +33,8 @@ class HistoricoInteracoes
                 'usuario_id' => $usuarioId,
                 'acao'       => $acao,
                 'observacao' => $observacao,
-                'data'       => date('Y-m-d H:i:s')
+                'data'       => date('Y-m-d H:i:s'),
+                'temperatura' => $temperatura
             ]);
         } catch (PDOException $e) {
             error_log("Erro ao registrar histórico: " . $e->getMessage());
@@ -54,9 +55,10 @@ class HistoricoInteracoes
                     u.name AS usuario_nome,
                     h.acao,
                     h.observacao,
-                    h.data
+                    h.data,
+                    h.temperatura
                 FROM historico_interacoes h
-                INNER JOIN users AS u ON u.id = h.usuario_id
+                LEFT JOIN users AS u ON u.id = h.usuario_id
                 WHERE h.lead_id = :lead_id 
                 ORDER BY data DESC
             ");
@@ -64,7 +66,7 @@ class HistoricoInteracoes
             $stmt->execute(['lead_id' => $leadId]);
             $result = $stmt->fetchAll(\PDO::FETCH_ASSOC);
 
-            if (!$result ) {
+            if (!$result) {
                 // Ocorreu um erro ao buscar os dados
                 return false;
             }

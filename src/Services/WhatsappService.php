@@ -18,42 +18,18 @@ class WhatsappService
     public function __construct()
     {
         // Load environment variables (simple approach)
-        $envPath = __DIR__ . 
-
-'/../../.env
-
-'; 
+        $envPath = __DIR__ . '/../../.env';
         if (file_exists($envPath)) {
             $lines = file($envPath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
             foreach ($lines as $line) {
-                if (strpos(trim($line), 
-
-'#
-
-') === 0) continue;
-                list($name, $value) = explode(
-
-'=
-
-', $line, 2);
+                if (strpos(trim($line), '#') === 0) continue;
+                list($name, $value) = explode('=', $line, 2);
                 $_ENV[trim($name)] = trim($value);
             }
         }
 
-        $this->apiUrl = $_ENV[
-
-'WHATSAPP_API_URL
-
-'] ?? 
-
-''
-
-; // Get from .env
-        $this->apiKey = $_ENV[
-
-'WHATSAPP_API_KEY
-
-'] ?? null; // Optional API Key
+        $this->apiUrl = $_ENV['WHATSAPP_API_URL'] ?? ''; // Get from .env
+        $this->apiKey = $_ENV['WHATSAPP_API_KEY'] ?? null; // Optional API Key
 
         if (empty($this->apiUrl)) {
             // Log or handle the error appropriately - API cannot function without URL
@@ -87,7 +63,7 @@ class WhatsappService
         // This is a *guess* based on common patterns for whatsapp-web.js APIs
         $endpoint = '/send-message'; // Example endpoint
         $payload = [
-            'number' => $phoneNumber, 
+            'number' => $phoneNumber,
             'message' => $message
         ];
         $headers = [
@@ -97,7 +73,7 @@ class WhatsappService
         if ($this->apiKey) {
             // Add API key header if configured (e.g., 'Authorization: Bearer YOUR_KEY' or 'X-API-Key: YOUR_KEY')
             // Adjust header name based on ZDG API requirements
-            $headers['X-API-Key'] = $this->apiKey; 
+            $headers['X-API-Key'] = $this->apiKey;
         }
 
         try {
@@ -111,7 +87,7 @@ class WhatsappService
 
             if ($statusCode >= 200 && $statusCode < 300 && ($body['success'] ?? true)) { // Check ZDG API success indicator
                 $externalId = $body['id'] ?? $body['messageId'] ?? null; // Get the message ID from ZDG API response
-                
+
                 // Save to history
                 $this->saveHistoryRecord([
                     'mensagem_id_externo' => $externalId,
@@ -127,7 +103,7 @@ class WhatsappService
                 return ['success' => true, 'message' => 'Mensagem enviada com sucesso.', 'external_id' => $externalId];
             } else {
                 $errorMessage = $body['error'] ?? $body['message'] ?? 'Erro desconhecido da API ZDG.';
-                 $this->saveHistoryRecord([
+                $this->saveHistoryRecord([
                     'lead_id' => $leadId,
                     'contato_id' => $contactId,
                     'usuario_id' => $crmUserId,
@@ -139,14 +115,13 @@ class WhatsappService
                 ]);
                 return ['success' => false, 'message' => "Falha ao enviar mensagem via API ZDG: {$errorMessage}", 'external_id' => null];
             }
-
         } catch (RequestException $e) {
             $errorMessage = $e->getMessage();
             if ($e->hasResponse()) {
                 $errorMessage .= " | Response: " . $e->getResponse()->getBody()->getContents();
             }
             error_log("Erro de requisição ao enviar mensagem WhatsApp: " . $errorMessage);
-             $this->saveHistoryRecord([
+            $this->saveHistoryRecord([
                 'lead_id' => $leadId,
                 'contato_id' => $contactId,
                 'usuario_id' => $crmUserId,
@@ -159,7 +134,7 @@ class WhatsappService
             return ['success' => false, 'message' => "Erro de comunicação com a API ZDG: {$e->getMessage()}", 'external_id' => null];
         } catch (Exception $e) {
             error_log("Erro inesperado ao enviar mensagem WhatsApp: " . $e->getMessage());
-             $this->saveHistoryRecord([
+            $this->saveHistoryRecord([
                 'lead_id' => $leadId,
                 'contato_id' => $contactId,
                 'usuario_id' => $crmUserId,
@@ -191,7 +166,7 @@ class WhatsappService
                     (mensagem_id_externo, lead_id, contato_id, usuario_id, numero_destino, numero_origem, mensagem, tipo, status_envio, timestamp_api) 
                 VALUES 
                     (:mensagem_id_externo, :lead_id, :contato_id, :usuario_id, :numero_destino, :numero_origem, :mensagem, :tipo, :status_envio, :timestamp_api)";
-        
+
         // Add handling for error details if the column exists
         // if (isset($data['detalhes_erro'])) { ... }
 
@@ -217,7 +192,7 @@ class WhatsappService
             return false;
         }
     }
-    
+
     /**
      * Updates the status of a previously sent message based on webhook data.
      *
@@ -227,9 +202,9 @@ class WhatsappService
      */
     public function updateMessageStatus(string $externalId, string $status): bool
     {
-         $sql = "UPDATE whatsapp_historico SET status_envio = :status, atualizado_em = NOW() 
+        $sql = "UPDATE whatsapp_historico SET status_envio = :status, atualizado_em = NOW() 
                  WHERE mensagem_id_externo = :external_id AND tipo = 'enviada'";
-         try {
+        try {
             $pdo = Database::getInstance();
             $stmt = $pdo->prepare($sql);
             $stmt->bindParam(":status", $status);
@@ -243,5 +218,29 @@ class WhatsappService
 
     // TODO: Add methods for sending media if required and supported by ZDG API.
     // TODO: Add method to check API connection status if ZDG API provides an endpoint for it.
-}
 
+    /**
+     * Test the connection to the WhatsApp API.
+     * Returns an associative array indicating success and optional data.
+     */
+    public function testConnection(): array
+    {
+        if (empty($this->apiUrl)) {
+            return ['connected' => false, 'error' => 'API URL not configured'];
+        }
+        try {
+            $response = $this->httpClient->get('/status');
+            $statusCode = $response->getStatusCode();
+            $body = json_decode($response->getBody()->getContents(), true);
+            return ['connected' => $statusCode === 200, 'data' => $body];
+        } catch (RequestException $e) {
+            $msg = $e->getMessage();
+            if ($e->hasResponse()) {
+                $msg .= ' | Response: ' . $e->getResponse()->getBody()->getContents();
+            }
+            return ['connected' => false, 'error' => $msg];
+        } catch (Exception $e) {
+            return ['connected' => false, 'error' => $e->getMessage()];
+        }
+    }
+}

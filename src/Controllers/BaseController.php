@@ -3,14 +3,18 @@
 namespace Apoio19\Crm\Controllers;
 
 use Apoio19\Crm\Services\PermissionService;
+use Apoio19\Crm\Services\AuditLogService;
+use Apoio19\Crm\Services\NotificationService;
 
 class BaseController
 {
     protected PermissionService $permissionService;
+    protected NotificationService $notificationService;
 
     public function __construct()
     {
         $this->permissionService = new PermissionService();
+        $this->notificationService = new NotificationService();
     }
     /**
      * Mapeia SQLSTATE/erros de PDO para uma resposta mais amigável.
@@ -157,5 +161,60 @@ class BaseController
     protected function unauthorized(string $message = 'Não autorizado.', ?string $traceId = null): array
     {
         return $this->errorResponse(401, $message, 'UNAUTHORIZED', $traceId);
+    }
+
+    /**
+     * Log audit trail for CRUD operations
+     * 
+     * @param int|null $userId User performing the action
+     * @param string $action Action performed (create, update, delete, etc.)
+     * @param string $tableName Table affected
+     * @param int|null $recordId Record ID affected
+     * @param mixed $oldValues Old values (for updates/deletes)
+     * @param mixed $newValues New values (for creates/updates)
+     * @return void
+     */
+    protected function logAudit(
+        ?int $userId,
+        string $action,
+        string $tableName,
+        ?int $recordId = null,
+        $oldValues = null,
+        $newValues = null
+    ): void {
+        AuditLogService::log(
+            $userId,
+            $action,
+            $tableName,
+            $recordId,
+            $oldValues,
+            $newValues
+        );
+    }
+
+    /**
+     * Create notification for user
+     * 
+     * @param int $userId User to notify
+     * @param string $title Notification title
+     * @param string $message Notification message
+     * @param string $type Notification type (success, info, warning, error)
+     * @param string|null $endpoint Optional link endpoint
+     * @return void
+     */
+    protected function notify(
+        int $userId,
+        string $title,
+        string $message,
+        string $type = 'info',
+        ?string $endpoint = null
+    ): void {
+        $this->notificationService->createNotification(
+            $userId,
+            $title,
+            $message,
+            $type,
+            $endpoint
+        );
     }
 }

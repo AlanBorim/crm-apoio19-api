@@ -4,7 +4,6 @@ namespace Apoio19\Crm\Controllers;
 
 use Apoio19\Crm\Models\User;
 use Apoio19\Crm\Middleware\AuthMiddleware;
-use Apoio19\Crm\Services\NotificationService;
 use Firebase\JWT\JWT;
 use Firebase\JWT\Key;
 
@@ -15,7 +14,6 @@ use Firebase\JWT\Key;
 class UserController extends BaseController
 {
     private AuthMiddleware $authMiddleware;
-    private NotificationService $notificationService;
 
     private string $secretKey;
     private int $expirationTime;
@@ -26,10 +24,9 @@ class UserController extends BaseController
 
     public function __construct(?array $config = null)
     {
-        parent::__construct(); // Initialize PermissionService from BaseController
+        parent::__construct(); // Initialize PermissionService and NotificationService from BaseController
 
         $this->authMiddleware = new AuthMiddleware();
-        $this->notificationService = new NotificationService();
 
         if ($config === null) {
             $configPath = __DIR__ .
@@ -191,7 +188,26 @@ class UserController extends BaseController
             if ($userId) {
                 $newUser = User::findById($userId);
 
-                // Notificar criação
+                // 🟢 AUDIT LOG - Log user creation
+                $this->logAudit(
+                    $userData->id,
+                    'create',
+                    'usuarios',
+                    $userId,
+                    null,
+                    $this->formatUserForResponse($newUser)
+                );
+
+                // 🔔 NOTIFICATION - Notify creator
+                $this->notify(
+                    $userData->id,
+                    "Usuário Criado",
+                    "Usuário {$newUser->nome} foi criado com sucesso.",
+                    "success",
+                    "/configuracoes/usuarios/{$userId}"
+                );
+
+                // Notificarsystem via existing method
                 $this->notifyUserCreated($newUser, ['userId' => $userData->id, 'name' => $userData->name]);
 
                 return $this->successResponse($this->formatUserForResponse($newUser), "Usuário criado com sucesso.", 201, $traceId);
@@ -199,9 +215,13 @@ class UserController extends BaseController
                 return $this->errorResponse(500, "Falha ao criar usuário.", "CREATE_FAILED", $traceId);
             }
         } catch (\PDOException $e) {
+            // Log failed attempt
+            $this->logAudit($userData->id, 'create_failed', 'usuarios', null, null, ['error' => $e->getMessage()]);
             $mapped = $this->mapPdoError($e);
             return $this->errorResponse($mapped['status'], $mapped['message'], $mapped['code'], $traceId, $this->debugDetails($e));
         } catch (\Throwable $e) {
+            // Log failed attempt
+            $this->logAudit($userData->id, 'create_failed', 'usuarios', null, null, ['error' => $e->getMessage()]);
             return $this->errorResponse(500, "Erro interno ao criar usuário.", "UNEXPECTED_ERROR", $traceId, $this->debugDetails($e));
         }
     }
@@ -270,14 +290,38 @@ class UserController extends BaseController
 
             if (User::update($userId, $updateData)) {
                 $updatedUser = User::findById($userId);
+
+                // 🟢 AUDIT LOG - Log user update
+                $this->logAudit(
+                    $userData->id,
+                    'update',
+                    'usuarios',
+                    $userId,
+                    $this->formatUserForResponse($user), // Old values
+                    $this->formatUserForResponse($updatedUser) // New values
+                );
+
+                // 🔔 NOTIFICATION - Notify updater
+                $this->notify(
+                    $userData->id,
+                    "Usuário Atualizado",
+                    "Usuário {$updatedUser->nome} foi atualizado com sucesso.",
+                    "info",
+                    "/configuracoes/usuarios/{$userId}"
+                );
+
                 return $this->successResponse($this->formatUserForResponse($updatedUser), "Usuário atualizado com sucesso.", 200, $traceId);
             } else {
                 return $this->errorResponse(500, "Falha ao atualizar usuário.", "UPDATE_FAILED", $traceId);
             }
         } catch (\PDOException $e) {
+            // Log failed attempt
+            $this->logAudit($userData->id, 'update_failed', 'usuarios', $userId, null, ['error' => $e->getMessage()]);
             $mapped = $this->mapPdoError($e);
             return $this->errorResponse($mapped['status'], $mapped['message'], $mapped['code'], $traceId, $this->debugDetails($e));
         } catch (\Throwable $e) {
+            // Log failed attempt
+            $this->logAudit($userData->id, 'update_failed', 'usuarios', $userId, null, ['error' => $e->getMessage()]);
             return $this->errorResponse(500, "Erro interno ao atualizar usuário.", "UNEXPECTED_ERROR", $traceId, $this->debugDetails($e));
         }
     }
@@ -309,6 +353,25 @@ class UserController extends BaseController
         }
 
         if (User::delete($userId)) {
+            // 🟢 AUDIT LOG - Log user deletion
+            $this->logAudit(
+                $userData->id,
+                'delete',
+                'usuarios',
+                $userId,
+                $this->formatUserForResponse($user), // Old values
+                null
+            );
+
+            // 🔔 NOTIFICATION - Notify deleter
+            $this->notify(
+                $userData->id,
+                "Usuário Excluído",
+                "Usuário {$user->nome} foi excluído com sucesso.",
+                "warning",
+                "/configuracoes/usuarios"
+            );
+
             return $this->successResponse(null, "Usuário excluído com sucesso.");
         } else {
             return $this->errorResponse(500, "Falha ao excluir usuário.");

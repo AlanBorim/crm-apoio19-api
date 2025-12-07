@@ -33,13 +33,18 @@ class HistoryController extends BaseController
         $historico = new HistoricoInteracoes();
 
         // Registrar a ação no histórico
-        $historico->logAction(
+        $result = $historico->logAction(
             $data['lead_id'],
             $data['contato_id'] ?? null,
             $data['usuario_id'],
             $data['acao'],
-            $data['observacao']
+            $data['observacao'],
+            $data['temperatura'] ?? null // Pass temperature
         );
+
+        if (!$result) {
+            return $this->errorResponse(500, "Erro ao registrar o histórico de interações.");
+        }
 
         return $this->successResponse([], "Histórico de interações registrado com sucesso.");
     }
