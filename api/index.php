@@ -1523,6 +1523,7 @@ if ($requestPath === '/whatsapp/config' && $requestMethod === 'GET') {
         $headers = getallheaders();
         $controller = new WhatsappController();
         $response = $controller->getConfig($headers);
+
         if (is_array($response)) {
             http_response_code(200);
             echo json_encode($response);
@@ -1755,6 +1756,57 @@ if ($requestPath === '/whatsapp/templates' && $requestMethod === 'POST') {
     }
     exit;
 }
+// Templates WhatsApp - Webhook de recepção Meta
+if ($requestPath === '/whatsapp/webhook' && $requestMethod === 'GET') {
+    try {
+        // Para GET, os parâmetros vêm da query string, não dos headers
+        $queryParams = $_GET;
+
+        // Log para debug
+        $logData = [
+            'timestamp' => date('Y-m-d H:i:s'),
+            'method' => 'GET',
+            'query_params' => $queryParams,
+            'headers' => getallheaders()
+        ];
+
+        $filename = 'hook/webhook_verify_' . date('Y-m-d_H-i-s') . '_' . uniqid() . '.json';
+        file_put_contents($filename, json_encode($logData, JSON_PRETTY_PRINT), LOCK_EX);
+
+        $controller = new WhatsappController();
+        $controller->verifyWebhook($queryParams);
+    } catch (\Exception $e) {
+        error_log("Erro na verificação do webhook: " . $e->getMessage());
+        http_response_code(500);
+    }
+    exit;
+}
+
+// Templates WhatsApp - Webhook de recepção Meta  
+if ($requestPath === '/whatsapp/webhook' && $requestMethod === 'POST') {
+    try {
+        $headers = getallheaders();
+        $input = file_get_contents('php://input');
+
+        $logData = [
+            'timestamp' => date('Y-m-d H:i:s'),
+            'method' => 'POST',
+            'headers' => $headers,
+            'body' => json_decode($input, true) ?: $input
+        ];
+
+        $filename = 'hook/webhook_data_' . date('Y-m-d_H-i-s') . '_' . uniqid() . '.json';
+        file_put_contents($filename, json_encode($logData, JSON_PRETTY_PRINT), LOCK_EX);
+
+        // Aqui você pode processar as mensagens recebidas
+        $controller = new WhatsappController();
+        $controller->processWebhook($input, $headers);
+    } catch (\Exception $e) {
+        error_log("Erro no processamento do webhook: " . $e->getMessage());
+    }
+    exit;
+}
+
 
 // =================================================================================
 // ROTAS DE TAREFAS DE USUÁRIO (NOVO MÓDULO)

@@ -28,8 +28,16 @@ class WhatsappService
             }
         }
 
-        $this->apiUrl = $_ENV['WHATSAPP_API_URL'] ?? ''; // Get from .env
-        $this->apiKey = $_ENV['WHATSAPP_API_KEY'] ?? null; // Optional API Key
+        $apiUrl = $_ENV['WHATSAPP_API_URL'] ?? '';
+        $apiKey = $_ENV['WHATSAPP_API_KEY'] ?? null;
+
+        // Sanitize values to remove quotes and whitespace that might be left by manual parsing
+        $this->apiUrl = trim($apiUrl, " \t\n\r\0\x0B\"'");
+        if ($apiKey) {
+            $this->apiKey = trim($apiKey, " \t\n\r\0\x0B\"'");
+        } else {
+            $this->apiKey = null;
+        }
 
         if (empty($this->apiUrl)) {
             // Log or handle the error appropriately - API cannot function without URL
@@ -228,11 +236,41 @@ class WhatsappService
         if (empty($this->apiUrl)) {
             return ['connected' => false, 'error' => 'API URL not configured'];
         }
+
+        $headers = [];
+        $endpoint = '/status'; // Default ZDG endpoint
+
+        // Detect Meta/Facebook URL
+        $isMeta = strpos($this->apiUrl, 'facebook.com') !== false;
+
+        if ($this->apiKey) {
+            if ($isMeta) {
+                // Meta Graph API requires Bearer Token
+                $headers['Authorization'] = 'Bearer ' . $this->apiKey;
+                // Meta endpoint to verify token identity
+                $endpoint = '/me?fields=id,name';
+            } else {
+                // Default/ZDG usually uses X-API-Key or similar
+                $headers['X-API-Key'] = $this->apiKey;
+            }
+        }
+
         try {
-            $response = $this->httpClient->get('/status');
+            $response = $this->httpClient->get($endpoint, [
+                'headers' => $headers
+            ]);
+
             $statusCode = $response->getStatusCode();
             $body = json_decode($response->getBody()->getContents(), true);
-            return ['connected' => $statusCode === 200, 'data' => $body];
+
+            $connected = $statusCode === 200;
+
+            // Extra verification for Meta
+            if ($isMeta && $connected) {
+                $connected = isset($body['id']);
+            }
+
+            return ['connected' => $connected, 'data' => $body];
         } catch (RequestException $e) {
             $msg = $e->getMessage();
             if ($e->hasResponse()) {

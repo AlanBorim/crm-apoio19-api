@@ -16,6 +16,13 @@ class AuthMiddleware
         $this->authService = new AuthService();
     }
 
+    private ?string $lastError = null;
+
+    public function getLastError(): ?string
+    {
+        return $this->lastError;
+    }
+
     /**
      * Handles incoming requests, validates JWT token.
      *
@@ -25,6 +32,7 @@ class AuthMiddleware
      */
     public function handle(array $headers, array $allowedRoles = []): ?object
     {
+        $this->lastError = null;
 
         $token = $headers["Authorization"] ?? $headers["authorization"] ?? null;
 
@@ -50,18 +58,16 @@ class AuthMiddleware
         $token = $matches[1]; // apenas o token JWT sem o "Bearer"
 
         if (!$token) {
-            // No token provided
+            $this->lastError = "Token vazio.";
             error_log("Middleware: Token não fornecido.");
-            // In a real app, send a 401 Unauthorized response here
             return null;
         }
 
         $decodedPayload = $this->authService->validateToken($token);
 
         if (!$decodedPayload) {
-            // Invalid or expired token
+            $this->lastError = "Token inválido ou expirado.";
             error_log("Middleware: Token inválido ou expirado.");
-            // In a real app, send a 401 Unauthorized response here
             return null;
         }
 
@@ -69,18 +75,17 @@ class AuthMiddleware
         $user = User::findById($decodedPayload->userId);
 
         if (!$user) {
+            $this->lastError = "Usuário não encontrado (ID: " . $decodedPayload->userId . ")";
             error_log("Middleware: Usuário não encontrado no banco de dados. ID: " . $decodedPayload->userId);
             return null;
         }
 
         if (!$user->active) {
+            $this->lastError = "Usuário inativo (ID: " . $decodedPayload->userId . ")";
             error_log("Middleware: Usuário inativo. ID: " . $decodedPayload->userId);
             return null;
         }
 
-        // Return the full User object (including permissions from DB)
-        // We ignore $allowedRoles here because we want Controllers to use requirePermission()
-        // based on the user's specific permissions, not just their role.
         return $user;
     }
 }

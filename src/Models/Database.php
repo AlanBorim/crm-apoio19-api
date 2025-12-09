@@ -17,7 +17,8 @@ class Database
     private function __clone() {}
 
     // Prevent unserialization of the instance.
-    public function __wakeup() {
+    public function __wakeup()
+    {
         throw new \Exception("Cannot unserialize a singleton.");
     }
 
@@ -31,8 +32,11 @@ class Database
     {
         if (self::$instance === null) {
             self::loadConfig(); // Load config if not already loaded
-            
+
             $host = self::$config["host"] ?? "127.0.0.1";
+            if ($host === 'localhost') {
+                $host = '127.0.0.1';
+            }
             $port = self::$config["port"] ?? 3306;
             $db   = self::$config["database"] ?? "crm_apoio19"; // Default DB name
             $user = self::$config["username"] ?? "root";
@@ -66,30 +70,41 @@ class Database
     private static function loadConfig(): void
     {
         $isTesting = ($_ENV["APP_ENV"] ?? "production") === "testing";
-        
+
         // Define keys for normal and test environments
         $keys = ["host", "port", "database", "username", "password", "charset"];
-        $envPrefix = $isTesting ? "DB_TEST_" : "DB_"; // Use DB_TEST_ prefix for testing if defined
-        $fallbackPrefix = "DB_"; // Fallback to standard DB_ if test specific is not set
+        $envPrefix = $isTesting ? "DB_TEST_" : "DB_";
+        $fallbackPrefix = "DB_";
 
         foreach ($keys as $key) {
             $upperKey = strtoupper($key);
             $testEnvVar = $envPrefix . $upperKey;
             $prodEnvVar = $fallbackPrefix . $upperKey;
-            
+
             // Prioritize test-specific env var if testing, then standard, then null
-            self::$config[$key] = $_ENV[$testEnvVar] ?? $_ENV[$prodEnvVar] ?? null;
+            $value = $_ENV[$testEnvVar] ?? $_ENV[$prodEnvVar] ?? null;
+
+            // Sanitize value: remove whitespace and quotes
+            if ($value !== null) {
+                $value = trim($value, " \t\n\r\0\x0B\"'");
+            }
+
+            self::$config[$key] = $value;
         }
-        
+
         // Provide some defaults if not set via ENV
         self::$config["host"] = self::$config["host"] ?? "127.0.0.1";
+        // Force 127.0.0.1 if localhost is used
+        if (self::$config["host"] === 'localhost') {
+            self::$config["host"] = "127.0.0.1";
+        }
         self::$config["port"] = self::$config["port"] ?? 3306;
         self::$config["database"] = self::$config["database"] ?? ($isTesting ? "crm_apoio19_test" : "crm_apoio19");
         self::$config["username"] = self::$config["username"] ?? "root";
         self::$config["password"] = self::$config["password"] ?? "";
         self::$config["charset"] = self::$config["charset"] ?? "utf8mb4";
     }
-    
+
     /**
      * Allow setting a mock PDO instance for testing purposes.
      * NOTE: Use with caution, primarily for unit tests where DB interaction needs mocking.
@@ -98,11 +113,10 @@ class Database
      */
     public static function setInstance(?PDO $mockInstance): void
     {
-         if (($_ENV["APP_ENV"] ?? "production") === "testing") {
-             self::$instance = $mockInstance;
-         } else {
-             throw new \Exception("Cannot set mock instance outside of testing environment.");
-         }
+        if (($_ENV["APP_ENV"] ?? "production") === "testing") {
+            self::$instance = $mockInstance;
+        } else {
+            throw new \Exception("Cannot set mock instance outside of testing environment.");
+        }
     }
 }
-
