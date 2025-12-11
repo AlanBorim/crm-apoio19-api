@@ -94,38 +94,139 @@ class WhatsappController extends BaseController
     /**
      * Process incoming webhook messages
      */
-    public function processWebhook(string $input, array $headers)
+    public function processWebhook(array $requestData): array
     {
+        // Log webhook data
+        error_log("Webhook recebido: " . json_encode($requestData));
+
         try {
-            $data = json_decode($input, true);
+            // Process the webhook through the service
+            $this->whatsappService->processIncomingWebhook($requestData);
 
-            if (!$data) {
-                error_log("JSON inválido recebido no webhook");
-                http_response_code(400);
-                return;
-            }
-
-            // Processa as mensagens
-            if (isset($data['entry'])) {
-                foreach ($data['entry'] as $entry) {
-                    if (isset($entry['changes'])) {
-                        foreach ($entry['changes'] as $change) {
-                            if ($change['field'] === 'messages') {
-                                $this->processMessage($change['value']);
-                            }
-                        }
-                    }
-                }
-            }
-
+            // Return success (Meta expects 200 OK)
             http_response_code(200);
-            echo "OK";
+            return ["success" => true];
         } catch (\Exception $e) {
-            error_log("Erro ao processar webhook: " . $e->getMessage());
-            http_response_code(500);
+            error_log("Erro processando webhook: " . $e->getMessage());
+            // Still return 200 to prevent retry spam
+            http_response_code(200);
+            return ["success" => false, "error" => $e->getMessage()];
         }
     }
 
+    /**
+     * Get all conversations
+     */
+    public function getConversations(array $headers): array
+    {
+        $traceId = bin2hex(random_bytes(8));
+        $userData = $this->authMiddleware->handle($headers);
+
+        if (!$userData) {
+            $errorDetails = $this->authMiddleware->getLastError();
+            return $this->errorResponse(401, "Autenticação necessária.", "UNAUTHORIZED", $traceId, $errorDetails);
+        }
+
+        try {
+            $whatsappContact = new \Apoio19\Crm\Models\WhatsappContact();
+            $whatsappMessage = new \Apoio19\Crm\Models\WhatsappChatMessage();
+
+            $contacts = $whatsappContact->getAll(['limit' => 100]);
+
+            // Enrich with last message and unread count
+            foreach ($contacts as &$contact) {
+                $lastMessage = $whatsappMessage->getLastMessage($contact['id']);
+                $contact['last_message'] = $lastMessage;
+                $contact['unread_count'] = $whatsappMessage->getUnreadCount($contact['id']);
+            }
+
+            return $this->successResponse($contacts, "Conversas obtidas", 200, $traceId);
+        } catch (\Exception $e) {
+            error_log("Erro ao obter conversas: " . $e->getMessage());
+            return $this->errorResponse(500, "Erro ao obter conversas", "ERROR", $traceId);
+        }
+    }
+
+    /**
+     * Get messages for a specific contact
+     */
+    public function getMessages(array $headers, int $contactId, array $queryParams = []): array
+    {
+        $traceId = bin2hex(random_bytes(8));
+        $userData = $this->authMiddleware->handle($headers);
+
+        if (!$userData) {
+            $errorDetails = $this->authMiddleware->getLastError();
+            return $this->errorResponse(401, "Autenticação necessária.", "UNAUTHORIZED", $traceId, $errorDetails);
+        }
+
+        try {
+            $whatsappMessage = new \Apoio19\Crm\Models\WhatsappChatMessage();
+
+            $limit = (int)($queryParams['limit'] ?? 100);
+            $offset = (int)($queryParams['offset'] ?? 0);
+
+            $messages = $whatsappMessage->getConversation($contactId, $limit, $offset);
+
+            // Mark messages as read
+            $whatsappMessage->markAsRead($contactId);
+
+            return $this->successResponse($messages, "Mensagens obtidas", 200, $traceId);
+        } catch (\Exception $e) {
+            error_log("Erro ao obter mensagens: " . $e->getMessage());
+            return $this->errorResponse(500, "Erro ao obter mensagens", "ERROR", $traceId);
+        }
+    }
+
+    /**
+     * Send a message to a contact
+     */
+    public function sendMessage(array $headers, array $requestData): array
+    {
+        $traceId = bin2hex(random_bytes(8));
+        $userData = $this->authMiddleware->handle($headers);
+
+        if (!$userData) {
+            $errorDetails = $this->authMiddleware->getLastError();
+            return $this->errorResponse(401, "Autenticação necessária.", "UNAUTHORIZED", $traceId, $errorDetails);
+        }
+
+        $this->requirePermission($userData, 'whatsapp', 'edit');
+
+        try {
+            $contactId = (int)($requestData['contact_id'] ?? 0);
+            $message = $requestData['message'] ?? '';
+
+            if (!$contactId || !$message) {
+                return $this->errorResponse(400, "contact_id e message são obrigatórios", "VALIDATION_ERROR", $traceId);
+            }
+
+            // Get contact
+            $whatsappContact = new \Apoio19\Crm\Models\WhatsappContact();
+            $contact = $whatsappContact->findById($contactId);
+
+            if (!$contact) {
+                return $this->errorResponse(404, "Contato não encontrado", "NOT_FOUND", $traceId);
+            }
+
+            // Send message via API
+            $result = $this->whatsappService->sendTextMessage(
+                $contact['phone_number'],
+                $message,
+                $userData->id,
+                $contactId
+            );
+
+            if ($result['success']) {
+                return $this->successResponse($result, "Mensagem enviada", 200, $traceId);
+            } else {
+                return $this->errorResponse(500, $result['error'] ?? "Erro ao enviar mensagem", "SEND_ERROR", $traceId);
+            }
+        } catch (\Exception $e) {
+            error_log("Erro ao enviar mensagem: " . $e->getMessage());
+            return $this->errorResponse(500, "Erro ao enviar mensagem", "ERROR", $traceId);
+        }
+    }
     /**
      * Process individual message
      */

@@ -1785,24 +1785,87 @@ if ($requestPath === '/whatsapp/webhook' && $requestMethod === 'GET') {
 // Templates WhatsApp - Webhook de recepção Meta  
 if ($requestPath === '/whatsapp/webhook' && $requestMethod === 'POST') {
     try {
-        $headers = getallheaders();
         $input = file_get_contents('php://input');
+        $data = json_decode($input, true);
 
+        // Log webhook data
         $logData = [
             'timestamp' => date('Y-m-d H:i:s'),
             'method' => 'POST',
-            'headers' => $headers,
-            'body' => json_decode($input, true) ?: $input
+            'body' => $data ?: $input
         ];
-
         $filename = 'hook/webhook_data_' . date('Y-m-d_H-i-s') . '_' . uniqid() . '.json';
         file_put_contents($filename, json_encode($logData, JSON_PRETTY_PRINT), LOCK_EX);
 
-        // Aqui você pode processar as mensagens recebidas
+        // Process webhook
         $controller = new WhatsappController();
-        $controller->processWebhook($input, $headers);
+        $response = $controller->processWebhook($data ?: []);
+
+        http_response_code(200);
+        echo json_encode($response);
     } catch (\Exception $e) {
-        error_log("Erro no processamento do webhook: " . $e->getMessage());
+        error_log("Erro no webhook: " . $e->getMessage());
+        http_response_code(200);
+        echo json_encode(["success" => false]);
+    }
+    exit;
+}
+
+// Get all WhatsApp conversations
+if ($requestPath === '/whatsapp/conversations' && $requestMethod === 'GET') {
+    try {
+        $headers = getallheaders();
+        $controller = new WhatsappController();
+        $response = $controller->getConversations($headers);
+        http_response_code(200);
+        echo json_encode($response);
+    } catch (\Throwable $th) {
+        error_log("Erro em GET /whatsapp/conversations: " . $th->getMessage());
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno", "detalhes" => $th->getMessage()]);
+    }
+    exit;
+}
+
+// Get messages for a specific conversation
+if (preg_match('#^/whatsapp/conversations/(\d+)/messages$#', $requestPath, $matches) && $requestMethod === 'GET') {
+    try {
+        $headers = getallheaders();
+        $contactId = (int)$matches[1];
+        $controller = new WhatsappController();
+        $response = $controller->getMessages($headers, $contactId, $_GET);
+        http_response_code(200);
+        echo json_encode($response);
+    } catch (\Throwable $th) {
+        error_log("Erro em GET /whatsapp/conversations/{id}/messages: " . $th->getMessage());
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno", "detalhes" => $th->getMessage()]);
+    }
+    exit;
+}
+
+// Send message to a conversation
+if (preg_match('#^/whatsapp/conversations/(\d+)/messages$#', $requestPath, $matches) && $requestMethod === 'POST') {
+    try {
+        $input = json_decode(file_get_contents('php://input'), true);
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            http_response_code(400);
+            echo json_encode(["error" => "JSON inválido"]);
+            exit;
+        }
+
+        $headers = getallheaders();
+        $contactId = (int)$matches[1];
+        $input['contact_id'] = $contactId;
+
+        $controller = new WhatsappController();
+        $response = $controller->sendMessage($headers, $input);
+        http_response_code(200);
+        echo json_encode($response);
+    } catch (\Throwable $th) {
+        error_log("Erro em POST /whatsapp/conversations/{id}/messages: " . $th->getMessage());
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno", "detalhes" => $th->getMessage()]);
     }
     exit;
 }

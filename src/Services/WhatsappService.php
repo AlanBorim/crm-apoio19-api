@@ -233,29 +233,34 @@ class WhatsappService
      */
     public function testConnection(): array
     {
-        if (empty($this->apiUrl)) {
-            return ['connected' => false, 'error' => 'API URL not configured'];
-        }
-
-        $headers = [];
-        $endpoint = '/status'; // Default ZDG endpoint
-
-        // Detect Meta/Facebook URL
-        $isMeta = strpos($this->apiUrl, 'facebook.com') !== false;
-
-        if ($this->apiKey) {
-            if ($isMeta) {
-                // Meta Graph API requires Bearer Token
-                $headers['Authorization'] = 'Bearer ' . $this->apiKey;
-                // Meta endpoint to verify token identity
-                $endpoint = '/me?fields=id,name';
-            } else {
-                // Default/ZDG usually uses X-API-Key or similar
-                $headers['X-API-Key'] = $this->apiKey;
-            }
-        }
-
         try {
+            // Get configuration from database
+            $config = \Apoio19\Crm\Models\Whatsapp::getConfig();
+
+            if (!$config) {
+                return ['connected' => false, 'error' => 'WhatsApp configuration not found in database'];
+            }
+
+            $businessAccountId = $config['business_account_id'] ?? null;
+            // Use access_token for API calls, not webhook_verify_token
+            $accessToken = $config['access_token'] ?? null;
+
+            if (empty($businessAccountId)) {
+                return ['connected' => false, 'error' => 'Business Account ID not configured'];
+            }
+
+            if (empty($accessToken)) {
+                return ['connected' => false, 'error' => 'Access token not configured'];
+            }
+
+            // Construct the endpoint with business_account_id
+            $endpoint = "/{$businessAccountId}/phone_numbers";
+
+            $headers = [
+                'Authorization' => 'Bearer ' . $accessToken,
+                'Content-Type' => 'application/json'
+            ];
+
             $response = $this->httpClient->get($endpoint, [
                 'headers' => $headers
             ]);
@@ -263,12 +268,8 @@ class WhatsappService
             $statusCode = $response->getStatusCode();
             $body = json_decode($response->getBody()->getContents(), true);
 
-            $connected = $statusCode === 200;
-
-            // Extra verification for Meta
-            if ($isMeta && $connected) {
-                $connected = isset($body['id']);
-            }
+            // Verify we got phone numbers data
+            $connected = $statusCode === 200 && isset($body['data']) && is_array($body['data']);
 
             return ['connected' => $connected, 'data' => $body];
         } catch (RequestException $e) {
@@ -279,6 +280,155 @@ class WhatsappService
             return ['connected' => false, 'error' => $msg];
         } catch (Exception $e) {
             return ['connected' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    /**
+     * Process incoming webhook from Meta API
+     */
+    public function processIncomingWebhook(array $webhookData): bool
+    {
+        try {
+            if (!isset($webhookData['entry'])) {
+                error_log("Invalid webhook structure");
+                return false;
+            }
+
+            foreach ($webhookData['entry'] as $entry) {
+                if (!isset($entry['changes'])) continue;
+
+                foreach ($entry['changes'] as $change) {
+                    if ($change['field'] !== 'messages') continue;
+
+                    $value = $change['value'];
+
+                    if (isset($value['messages'])) {
+                        foreach ($value['messages'] as $message) {
+                            $this->processIncomingMessage($message);
+                        }
+                    }
+
+                    if (isset($value['statuses'])) {
+                        foreach ($value['statuses'] as $status) {
+                            $this->processMessageStatus($status);
+                        }
+                    }
+                }
+            }
+            return true;
+        } catch (\Exception $e) {
+            error_log("Webhook error: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    private function processIncomingMessage(array $message): void
+    {
+        try {
+            $phoneNumber = $message['from'] ?? null;
+            if (!$phoneNumber) return;
+
+            $whatsappContact = new \Apoio19\Crm\Models\WhatsappContact();
+            $contact = $whatsappContact->findByPhoneNumber($phoneNumber);
+
+            if (!$contact) {
+                $contactId = $whatsappContact->create([
+                    'phone_number' => $phoneNumber,
+                    'name' => $phoneNumber
+                ]);
+            } else {
+                $contactId = $contact['id'];
+            }
+
+            $messageType = $message['type'] ?? 'text';
+            $messageContent = $message['text']['body'] ?? '[Media]';
+
+            $whatsappMessage = new \Apoio19\Crm\Models\WhatsappChatMessage();
+            $whatsappMessage->create([
+                'contact_id' => $contactId,
+                'user_id' => 1,
+                'direction' => 'incoming',
+                'message_type' => $messageType,
+                'message_content' => $messageContent,
+                'whatsapp_message_id' => $message['id'] ?? null,
+                'status' => 'delivered'
+            ]);
+        } catch (\Exception $e) {
+            error_log("Error processing message: " . $e->getMessage());
+        }
+    }
+
+    private function processMessageStatus(array $status): void
+    {
+        try {
+            $whatsappMessageId = $status['id'] ?? null;
+            $statusValue = $status['status'] ?? null;
+
+            if ($whatsappMessageId && $statusValue) {
+                $whatsappMessage = new \Apoio19\Crm\Models\WhatsappChatMessage();
+                $whatsappMessage->updateStatus($whatsappMessageId, $statusValue);
+            }
+        } catch (\Exception $e) {
+            error_log("Error updating status: " . $e->getMessage());
+        }
+    }
+
+    public function sendTextMessage(string $phoneNumber, string $message, int $userId, int $contactId): array
+    {
+        try {
+            $config = \Apoio19\Crm\Models\Whatsapp::getConfig();
+            if (!$config) {
+                return ['success' => false, 'error' => 'WhatsApp não configurado'];
+            }
+
+            $phoneNumberId = $config['phone_number_id'];
+            $accessToken = $config['access_token'];
+
+            $endpoint = "/{$phoneNumberId}/messages";
+            $payload = [
+                'messaging_product' => 'whatsapp',
+                'to' => $phoneNumber,
+                'type' => 'text',
+                'text' => ['body' => $message]
+            ];
+
+            $response = $this->httpClient->post($endpoint, [
+                'headers' => [
+                    'Authorization' => 'Bearer ' . $accessToken,
+                    'Content-Type' => 'application/json'
+                ],
+                'json' => $payload
+            ]);
+
+            $body = json_decode($response->getBody()->getContents(), true);
+
+            if (isset($body['messages'][0]['id'])) {
+                $whatsappMessageId = $body['messages'][0]['id'];
+
+                $whatsappMessage = new \Apoio19\Crm\Models\WhatsappChatMessage();
+                $whatsappMessage->create([
+                    'contact_id' => $contactId,
+                    'user_id' => $userId,
+                    'direction' => 'outgoing',
+                    'message_type' => 'text',
+                    'message_content' => $message,
+                    'whatsapp_message_id' => $whatsappMessageId,
+                    'status' => 'sent'
+                ]);
+
+                return ['success' => true, 'message_id' => $whatsappMessageId];
+            }
+
+            return ['success' => false, 'error' => 'Failed to send'];
+        } catch (RequestException $e) {
+            $error = $e->getMessage();
+            if ($e->hasResponse()) {
+                $body = json_decode($e->getResponse()->getBody()->getContents(), true);
+                $error = $body['error']['message'] ?? $error;
+            }
+            return ['success' => false, 'error' => $error];
+        } catch (Exception $e) {
+            return ['success' => false, 'error' => $e->getMessage()];
         }
     }
 }
