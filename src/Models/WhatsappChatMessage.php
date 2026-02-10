@@ -60,11 +60,17 @@ class WhatsappChatMessage
     public function getConversation(int $contactId, int $limit = 100, int $offset = 0): array
     {
         try {
+            // Exclude messages that are part of campaigns
             $stmt = $this->db->prepare('
                 SELECT wcm.*, u.name as user_name
                 FROM whatsapp_chat_messages wcm
                 LEFT JOIN users u ON wcm.user_id = u.id
                 WHERE wcm.contact_id = ?
+                AND NOT EXISTS (
+                    SELECT 1 
+                    FROM whatsapp_campaign_messages wccm 
+                    WHERE wccm.message_id = wcm.whatsapp_message_id
+                )
                 ORDER BY wcm.created_at DESC
                 LIMIT ? OFFSET ?
             ');
@@ -198,11 +204,17 @@ class WhatsappChatMessage
     public function getLastMessage(int $contactId): ?array
     {
         try {
+            // Exclude messages that are part of a campaign
             $stmt = $this->db->prepare('
-                SELECT *
-                FROM whatsapp_chat_messages
-                WHERE contact_id = ?
-                ORDER BY created_at DESC
+                SELECT wcm.*
+                FROM whatsapp_chat_messages wcm
+                WHERE wcm.contact_id = ?
+                AND NOT EXISTS (
+                    SELECT 1 
+                    FROM whatsapp_campaign_messages wccm 
+                    WHERE wccm.message_id = wcm.whatsapp_message_id
+                )
+                ORDER BY wcm.created_at DESC
                 LIMIT 1
             ');
 

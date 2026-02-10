@@ -1565,6 +1565,170 @@ if ($requestPath === '/whatsapp/config' && $requestMethod === 'POST') {
     exit;
 }
 
+// Sync WhatsApp phone numbers from Meta API
+if ($requestPath === '/whatsapp/phone-numbers/sync' && $requestMethod === 'POST') {
+    try {
+        $headers = getallheaders();
+        $controller = new WhatsappController();
+        $response = $controller->syncPhoneNumbers($headers);
+        if (is_array($response)) {
+            http_response_code(200);
+            echo json_encode($response);
+        } else {
+            http_response_code(500);
+            echo json_encode(["error" => "Erro interno", "detalhes" => "Resposta inválida"]);
+        }
+    } catch (\Throwable $th) {
+        error_log("Erro em POST /whatsapp/phone-numbers/sync: " . $th->getMessage());
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno", "detalhes" => $th->getMessage()]);
+    }
+    exit;
+}
+
+// Get stored WhatsApp phone numbers
+if ($requestPath === '/whatsapp/phone-numbers' && $requestMethod === 'GET') {
+    try {
+        $headers = getallheaders();
+        $controller = new WhatsappController();
+        $response = $controller->getPhoneNumbers($headers);
+        if (is_array($response)) {
+            http_response_code(200);
+            echo json_encode($response);
+        } else {
+            http_response_code(500);
+            echo json_encode(["error" => "Erro interno", "detalhes" => "Resposta inválida"]);
+        }
+    } catch (\Throwable $th) {
+        error_log("Erro em GET /whatsapp/phone-numbers: " . $th->getMessage());
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno", "detalhes" => $th->getMessage()]);
+    }
+    exit;
+}
+
+// Campaign routes
+if (preg_match('#^/whatsapp/campaigns(?:/(\d+))?(?:/(status))?$#', $requestPath, $matches)) {
+    $campaignId = isset($matches[1]) ? (int)$matches[1] : null;
+    $isStatusRoute = isset($matches[2]) && $matches[2] === 'status';
+
+    try {
+        $headers = getallheaders();
+        $controller = new WhatsappController();
+
+        if (!$campaignId && $requestMethod === 'GET') {
+            // GET /whatsapp/campaigns - List all
+            $queryParams = $_GET;
+            $response = $controller->getCampaigns($headers, $queryParams);
+        } elseif (!$campaignId && $requestMethod === 'POST') {
+            // POST /whatsapp/campaigns - Create
+            $input = json_decode(file_get_contents('php://input'), true);
+            $response = $controller->createCampaign($headers, $input ?: []);
+        } elseif ($campaignId && !$isStatusRoute && $requestMethod === 'GET') {
+            // GET /whatsapp/campaigns/{id} - Get one
+            $response = $controller->getCampaign($headers, $campaignId);
+        } elseif ($campaignId && !$isStatusRoute && $requestMethod === 'PUT') {
+            // PUT /whatsapp/campaigns/{id} - Update
+            $input = json_decode(file_get_contents('php://input'), true);
+            $response = $controller->updateCampaign($headers, $campaignId, $input ?: []);
+        } elseif ($campaignId && !$isStatusRoute && $requestMethod === 'DELETE') {
+            // DELETE /whatsapp/campaigns/{id} - Delete
+            $response = $controller->deleteCampaign($headers, $campaignId);
+        } elseif ($campaignId && $isStatusRoute && $requestMethod === 'PATCH') {
+            // PATCH /whatsapp/campaigns/{id}/status - Update status
+            $input = json_decode(file_get_contents('php://input'), true);
+            $response = $controller->updateCampaignStatus($headers, $campaignId, $input ?: []);
+        } else {
+            http_response_code(405);
+            echo json_encode(["error" => "Método não permitido"]);
+            exit;
+        }
+
+        if (is_array($response)) {
+            http_response_code(200);
+            echo json_encode($response);
+        } else {
+            http_response_code(500);
+            echo json_encode(["error" => "Erro interno", "detalhes" => "Resposta inválida"]);
+        }
+    } catch (\Throwable $th) {
+        error_log("Erro em campaigns route: " . $th->getMessage());
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno", "detalhes" => $th->getMessage()]);
+    }
+    exit;
+}
+
+// Campaign messages routes
+if (preg_match('#^/whatsapp/campaigns/(\d+)/messages(?:/(\d+)(?:/(resend))?)?$#', $requestPath, $matches)) {
+    $campaignId = (int)$matches[1];
+    $messageId = isset($matches[2]) ? (int)$matches[2] : null;
+    $isResend = isset($matches[3]) && $matches[3] === 'resend';
+
+    try {
+        $headers = getallheaders();
+        $controller = new WhatsappController();
+
+        if (!$messageId && $requestMethod === 'GET') {
+            // GET /whatsapp/campaigns/{id}/messages - List all messages
+            $response = $controller->getCampaignMessages($headers, $campaignId);
+        } elseif (!$messageId && $requestMethod === 'POST') {
+            // POST /whatsapp/campaigns/{id}/messages - Create message
+            $input = json_decode(file_get_contents('php://input'), true);
+            $response = $controller->createCampaignMessage($headers, $campaignId, $input ?: []);
+        } elseif ($messageId && !$isResend && $requestMethod === 'PUT') {
+            // PUT /whatsapp/campaigns/{id}/messages/{msgId} - Update message
+            $input = json_decode(file_get_contents('php://input'), true);
+            $response = $controller->updateCampaignMessage($headers, $campaignId, $messageId, $input ?: []);
+        } elseif ($messageId && !$isResend && $requestMethod === 'DELETE') {
+            // DELETE /whatsapp/campaigns/{id}/messages/{msgId} - Delete message
+            $response = $controller->deleteCampaignMessage($headers, $campaignId, $messageId);
+        } elseif ($messageId && $isResend && $requestMethod === 'POST') {
+            // POST /whatsapp/campaigns/{id}/messages/{msgId}/resend - Resend message
+            $response = $controller->resendCampaignMessage($headers, $campaignId, $messageId);
+        } else {
+            http_response_code(405);
+            echo json_encode(["error" => "Método não permitido"]);
+            exit;
+        }
+
+        if (is_array($response)) {
+            http_response_code(200);
+            echo json_encode($response);
+        } else {
+            http_response_code(500);
+            echo json_encode(["error" => "Erro interno", "detalhes" => "Resposta inválida"]);
+        }
+    } catch (\Throwable $th) {
+        error_log("Erro em campaign messages route: " . $th->getMessage());
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno", "detalhes" => $th->getMessage()]);
+    }
+    exit;
+}
+
+// Templates route
+if ($requestPath === '/whatsapp/templates' && $requestMethod === 'GET') {
+    try {
+        $headers = getallheaders();
+        $controller = new WhatsappController();
+        $response = $controller->getTemplates($headers);
+
+        if (is_array($response)) {
+            http_response_code(200);
+            echo json_encode($response);
+        } else {
+            http_response_code(500);
+            echo json_encode(["error" => "Erro interno", "detalhes" => "Resposta inválida"]);
+        }
+    } catch (\Throwable $th) {
+        error_log("Erro em templates route: " . $th->getMessage());
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno", "detalhes" => $th->getMessage()]);
+    }
+    exit;
+}
+
 if ($requestPath === '/whatsapp/test-connection' && $requestMethod === 'POST') {
     try {
         $headers = getallheaders();
@@ -1685,6 +1849,21 @@ if (preg_match('#^/whatsapp/campaigns/(\d+)/start$#', $requestPath, $matches) &&
     }
     exit;
 }
+
+// Campanhas WhatsApp - Contatos (Resumo)
+if (preg_match('#^/whatsapp/campaigns/(\d+)/contacts$#', $requestPath, $matches) && $requestMethod === 'GET') {
+    try {
+        $headers = getallheaders();
+        $controller = new WhatsappController();
+        $response = $controller->getCampaignContacts($headers, (int)$matches[1]);
+        echo json_encode($response);
+    } catch (\Exception $e) {
+        http_response_code(500);
+        echo json_encode(["error" => "Erro ao obter contatos da campanha"]);
+    }
+    exit;
+}
+
 
 // Campanhas WhatsApp - Pausar
 if (preg_match('#^/whatsapp/campaigns/(\d+)/pause$#', $requestPath, $matches) && $requestMethod === 'POST') {

@@ -91,6 +91,7 @@ class WhatsappContact
 
     public function getAll(array $filters = []): array
     {
+        // Excluir contatos que só têm mensagens de campanha
         $sql = 'SELECT wc.*, 
                        l.name as lead_name, 
                        c.name as contact_name,
@@ -99,6 +100,10 @@ class WhatsappContact
                 LEFT JOIN leads l ON wc.lead_id = l.id
                 LEFT JOIN contacts c ON wc.contact_id = c.id
                 LEFT JOIN whatsapp_chat_messages wcm ON wc.id = wcm.contact_id
+                    AND NOT EXISTS (
+                        SELECT 1 FROM whatsapp_campaign_messages wccm 
+                        WHERE wccm.message_id = wcm.whatsapp_message_id
+                    )
                 WHERE 1=1';
         $params = [];
 

@@ -358,6 +358,7 @@ class WhatsappService
         }
     }
 
+
     private function processMessageStatus(array $status): void
     {
         try {
@@ -365,13 +366,123 @@ class WhatsappService
             $statusValue = $status['status'] ?? null;
 
             if ($whatsappMessageId && $statusValue) {
+                // Update chat messages (existing functionality)
                 $whatsappMessage = new \Apoio19\Crm\Models\WhatsappChatMessage();
                 $whatsappMessage->updateStatus($whatsappMessageId, $statusValue);
+                
+                // Update campaign messages (new functionality)
+                $this->updateCampaignMessageStatus($status);
             }
         } catch (\Exception $e) {
             error_log("Error updating status: " . $e->getMessage());
         }
     }
+
+    /**
+     * Update campaign message status based on webhook data
+     * 
+     * @param array $status Status data from webhook
+     * @return void
+     */
+    private function updateCampaignMessageStatus(array $status): void
+    {
+        try {
+            $wamid = $status['id'] ?? null;
+            $statusType = $status['status'] ?? null;
+            $timestamp = $status['timestamp'] ?? null;
+
+            if (!$wamid || !$statusType || !$timestamp) {
+                error_log("Campaign message status update: Missing required fields (wamid, status, or timestamp)");
+                return;
+            }
+
+            // Convert Unix timestamp to MySQL datetime
+            $datetime = date('Y-m-d H:i:s', (int)$timestamp);
+
+            $db = Database::getInstance();
+
+            // Prepare update based on status type
+            $updateFields = [];
+            $params = [];
+
+            switch ($statusType) {
+                case 'sent':
+                    $updateFields[] = 'status = ?';
+                    $params[] = 'sent';
+                    $updateFields[] = 'sent_at = ?';
+                    $params[] = $datetime;
+                    break;
+
+                case 'delivered':
+                    $updateFields[] = 'status = ?';
+                    $params[] = 'delivered';
+                    $updateFields[] = 'delivered_at = ?';
+                    $params[] = $datetime;
+                    break;
+
+                case 'read':
+                    $updateFields[] = 'status = ?';
+                    $params[] = 'read';
+                    $updateFields[] = 'read_at = ?';
+                    $params[] = $datetime;
+                    break;
+
+                case 'failed':
+                    $updateFields[] = 'status = ?';
+                    $params[] = 'failed';
+                    $updateFields[] = 'failed_at = ?';
+                    $params[] = $datetime;
+
+                    // Extract error message
+                    if (isset($status['errors'][0])) {
+                        $error = $status['errors'][0];
+                        $errorMsg = sprintf(
+                            "[%d] %s: %s",
+                            $error['code'] ?? 0,
+                            $error['title'] ?? 'Error',
+                            $error['message'] ?? ''
+                        );
+                        if (isset($error['error_data']['details'])) {
+                            $errorMsg .= " - " . $error['error_data']['details'];
+                        }
+
+                        $updateFields[] = 'error_message = ?';
+                        $params[] = $errorMsg;
+                    }
+                    break;
+
+                default:
+                    error_log("Campaign message status update: Unknown status type: {$statusType}");
+                    return;
+            }
+
+            // Add updated_at timestamp
+            $updateFields[] = 'updated_at = NOW()';
+
+            // Add wamid to params for WHERE clause
+            $params[] = $wamid;
+
+            // Update database
+            $sql = "UPDATE whatsapp_campaign_messages 
+                    SET " . implode(', ', $updateFields) . "
+                    WHERE message_id = ?";
+
+            $stmt = $db->prepare($sql);
+            $stmt->execute($params);
+
+            $rowCount = $stmt->rowCount();
+            if ($rowCount > 0) {
+                error_log("Campaign message status updated: wamid={$wamid}, status={$statusType}, rows_affected={$rowCount}");
+            } else {
+                error_log("Campaign message status update: No rows affected for wamid={$wamid}");
+            }
+        } catch (\PDOException $e) {
+            error_log("Database error updating campaign message status: " . $e->getMessage());
+        } catch (\Exception $e) {
+            error_log("Error updating campaign message status: " . $e->getMessage());
+        }
+    }
+
 
     public function sendTextMessage(string $phoneNumber, string $message, int $userId, int $contactId): array
     {
@@ -420,6 +531,169 @@ class WhatsappService
             }
 
             return ['success' => false, 'error' => 'Failed to send'];
+        } catch (RequestException $e) {
+            $error = $e->getMessage();
+            if ($e->hasResponse()) {
+                $body = json_decode($e->getResponse()->getBody()->getContents(), true);
+                $error = $body['error']['message'] ?? $error;
+            }
+            return ['success' => false, 'error' => $error];
+        } catch (Exception $e) {
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    /**
+     * Get phone numbers from Meta API
+     */
+    public function getPhoneNumbersFromMeta(): array
+    {
+        try {
+            // Get configuration from database
+            $config = \Apoio19\Crm\Models\Whatsapp::getConfig();
+
+            if (!$config) {
+                return ['success' => false, 'error' => 'WhatsApp configuration not found in database'];
+            }
+
+            $businessAccountId = $config['business_account_id'] ?? null;
+            $accessToken = $config['access_token'] ?? null;
+
+            if (empty($businessAccountId) || empty($accessToken)) {
+                return ['success' => false, 'error' => 'Business Account ID or Access Token not configured'];
+            }
+
+            // Get phone numbers from Meta API
+            $endpoint = "/{$businessAccountId}/phone_numbers";
+
+            $headers = [
+                'Authorization' => 'Bearer ' . $accessToken,
+                'Content-Type' => 'application/json'
+            ];
+
+            $response = $this->httpClient->get($endpoint, [
+                'headers' => $headers
+            ]);
+
+            $statusCode = $response->getStatusCode();
+            $body = json_decode($response->getBody()->getContents(), true);
+
+            if ($statusCode === 200 && isset($body['data'])) {
+                return ['success' => true, 'data' => $body['data']];
+            }
+
+            return ['success' => false, 'error' => 'Failed to fetch phone numbers'];
+        } catch (RequestException $e) {
+            $error = $e->getMessage();
+            if ($e->hasResponse()) {
+                $body = json_decode($e->getResponse()->getBody()->getContents(), true);
+                $error = $body['error']['message'] ?? $error;
+            }
+            return ['success' => false, 'error' => $error];
+        } catch (Exception $e) {
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    /**
+     * Sync templates from Meta API
+     */
+    public function syncTemplates(): array
+    {
+        try {
+            // Get configuration from database
+            $config = \Apoio19\Crm\Models\Whatsapp::getConfig();
+
+            if (!$config) {
+                return ['success' => false, 'error' => 'WhatsApp configuration not found in database'];
+            }
+
+            $businessAccountId = $config['business_account_id'] ?? null;
+            $accessToken = $config['access_token'] ?? null;
+
+            if (empty($businessAccountId) || empty($accessToken)) {
+                return ['success' => false, 'error' => 'Business Account ID or Access Token not configured'];
+            }
+
+            // Get templates from Meta API
+            $endpoint = "/{$businessAccountId}/message_templates";
+
+            $headers = [
+                'Authorization' => 'Bearer ' . $accessToken,
+                'Content-Type' => 'application/json'
+            ];
+
+            $response = $this->httpClient->get($endpoint, [
+                'headers' => $headers,
+                'query' => ['limit' => 100] // Get up to 100 templates
+            ]);
+
+            $statusCode = $response->getStatusCode();
+            $body = json_decode($response->getBody()->getContents(), true);
+
+            if ($statusCode === 200 && isset($body['data'])) {
+                $templates = $body['data'];
+                $syncedCount = 0;
+                $db = Database::getInstance();
+
+                foreach ($templates as $template) {
+                    // Check if template already exists
+                    $stmt = $db->prepare("
+                        SELECT id FROM whatsapp_templates 
+                        WHERE template_id = ?
+                    ");
+                    $stmt->execute([$template['id']]);
+                    $existing = $stmt->fetch(PDO::FETCH_ASSOC);
+
+                    $componentsJson = json_encode($template['components'] ?? []);
+
+                    if ($existing) {
+                        // Update existing template
+                        $stmt = $db->prepare("
+                            UPDATE whatsapp_templates 
+                            SET name = ?,
+                                language = ?,
+                                category = ?,
+                                status = ?,
+                                components = ?,
+                                updated_at = NOW()
+                            WHERE template_id = ?
+                        ");
+                        $stmt->execute([
+                            $template['name'],
+                            $template['language'],
+                            $template['category'] ?? 'UTILITY',
+                            $template['status'],
+                            $componentsJson,
+                            $template['id']
+                        ]);
+                    } else {
+                        // Insert new template
+                        $stmt = $db->prepare("
+                            INSERT INTO whatsapp_templates 
+                            (template_id, name, language, category, status, components, created_at, updated_at)
+                            VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())
+                        ");
+                        $stmt->execute([
+                            $template['id'],
+                            $template['name'],
+                            $template['language'],
+                            $template['category'] ?? 'UTILITY',
+                            $template['status'],
+                            $componentsJson
+                        ]);
+                    }
+                    $syncedCount++;
+                }
+
+                return [
+                    'success' => true,
+                    'message' => "Synchronized {$syncedCount} templates",
+                    'count' => $syncedCount
+                ];
+            }
+
+            return ['success' => false, 'error' => 'Failed to fetch templates'];
         } catch (RequestException $e) {
             $error = $e->getMessage();
             if ($e->hasResponse()) {

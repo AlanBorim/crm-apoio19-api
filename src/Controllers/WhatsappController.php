@@ -503,4 +503,643 @@ class WhatsappController extends BaseController
     // TODO: Implement webhook endpoint to receive incoming messages and status updates from ZDG API
     // This would require a public endpoint in the CRM accessible by the ZDG API server.
     // public function handleWebhook(array $request Data): array { ... }
+
+    /**
+     * Sync phone numbers from Meta API to database
+     */
+    public function syncPhoneNumbers(array $headers): array
+    {
+        $traceId = bin2hex(random_bytes(8));
+        $userData = $this->authMiddleware->handle($headers);
+
+        if (!$userData) {
+            $errorDetails = $this->authMiddleware->getLastError();
+            return $this->errorResponse(401, "Autenticação necessária.", "UNAUTHORIZED", $traceId, $errorDetails);
+        }
+
+        $this->requirePermission($userData, 'configuracoes', 'edit');
+
+        try {
+            // Get phone numbers from Meta API
+            $result = $this->whatsappService->getPhoneNumbersFromMeta();
+
+            if (!$result['success']) {
+                return $this->errorResponse(500, $result['error'] ?? "Erro ao buscar números", "SYNC_ERROR", $traceId);
+            }
+
+            $phoneNumbers = $result['data'] ?? [];
+            $db = \Apoio19\Crm\Models\Database::getInstance();
+            $synced = [];
+            $errors = [];
+
+            foreach ($phoneNumbers as $phoneData) {
+                try {
+                    $phoneNumberId = $phoneData['id'] ?? null;
+                    $displayPhoneNumber = $phoneData['display_phone_number'] ?? null;
+                    $verifiedName = $phoneData['verified_name'] ?? 'Desconhecido';
+                    $qualityRating = $phoneData['quality_rating'] ?? null;
+
+                    if (!$phoneNumberId || !$displayPhoneNumber) {
+                        continue;
+                    }
+
+                    // Check if number already exists
+                    $stmt = $db->prepare("
+                        SELECT id FROM whatsapp_phone_numbers 
+                        WHERE phone_number_id = :phone_number_id
+                    ");
+                    $stmt->execute(['phone_number_id' => $phoneNumberId]);
+                    $existing = $stmt->fetch(\PDO::FETCH_ASSOC);
+
+                    // Get current config for access_token
+                    $config = \Apoio19\Crm\Models\Whatsapp::getConfig();
+                    $accessToken = $config['access_token'] ?? '';
+                    $businessAccountId = $config['business_account_id'] ?? '';
+
+                    $metadata = json_encode([
+                        'quality_rating' => $qualityRating,
+                        'synced_at' => date('Y-m-d H:i:s')
+                    ]);
+
+                    if ($existing) {
+                        // Update existing
+                        $stmt = $db->prepare("
+                            UPDATE whatsapp_phone_numbers 
+                            SET name = :name,
+                                phone_number = :phone_number,
+                                metadata = :metadata,
+                                updated_at = NOW()
+                            WHERE phone_number_id = :phone_number_id
+                        ");
+                        $stmt->execute([
+                            'name' => $verifiedName,
+                            'phone_number' => $displayPhoneNumber,
+                            'metadata' => $metadata,
+                            'phone_number_id' => $phoneNumberId
+                        ]);
+                        $synced[] = ['id' => $existing['id'], 'action' => 'updated', 'phone_number' => $displayPhoneNumber];
+                    } else {
+                        // Insert new
+                        $stmt = $db->prepare("
+                            INSERT INTO whatsapp_phone_numbers 
+                            (name, phone_number, phone_number_id, business_account_id, access_token, status, metadata)
+                            VALUES (:name, :phone_number, :phone_number_id, :business_account_id, :access_token, 'active', :metadata)
+                        ");
+                        $stmt->execute([
+                            'name' => $verifiedName,
+                            'phone_number' => $displayPhoneNumber,
+                            'phone_number_id' => $phoneNumberId,
+                            'business_account_id' => $businessAccountId,
+                            'access_token' => $accessToken,
+                            'metadata' => $metadata
+                        ]);
+                        $synced[] = ['id' => $db->lastInsertId(), 'action' => 'created', 'phone_number' => $displayPhoneNumber];
+                    }
+                } catch (\Exception $e) {
+                    $errors[] = [
+                        'phone_number' => $phoneData['display_phone_number'] ?? 'unknown',
+                        'error' => $e->getMessage()
+                    ];
+                }
+            }
+
+            // ALSO SYNC TEMPLATES
+            $templateResult = $this->whatsappService->syncTemplates();
+            $templatesInfo = [];
+            if ($templateResult['success']) {
+                $templatesInfo = [
+                    'templates_synced' => $templateResult['count'] ?? 0,
+                    'message' => $templateResult['message'] ?? 'Templates sincronizados'
+                ];
+            } else {
+                $templatesInfo = [
+                    'templates_synced' => 0,
+                    'error' => $templateResult['error'] ?? 'Erro ao sincronizar templates'
+                ];
+            }
+
+            return $this->successResponse([
+                'synced' => $synced,
+                'errors' => $errors,
+                'total' => count($phoneNumbers),
+                'templates' => $templatesInfo
+            ], "Sincronização concluída", 200, $traceId);
+        } catch (\Exception $e) {
+            error_log("Sync error: " . $e->getMessage());
+            return $this->errorResponse(500, "Erro na sincronização", "ERROR", $traceId);
+        }
+    }
+
+    /**
+     * Get stored phone numbers from database
+     */
+    public function getPhoneNumbers(array $headers): array
+    {
+        $traceId = bin2hex(random_bytes(8));
+        $userData = $this->authMiddleware->handle($headers);
+
+        if (!$userData) {
+            $errorDetails = $this->authMiddleware->getLastError();
+            return $this->errorResponse(401, "Autenticação necessária.", "UNAUTHORIZED", $traceId, $errorDetails);
+        }
+
+        $this->requirePermission($userData, 'configuracoes', 'view');
+
+        try {
+            $db = \Apoio19\Crm\Models\Database::getInstance();
+            $stmt = $db->query("
+                SELECT id, name, phone_number, phone_number_id, business_account_id, 
+                       status, daily_limit, current_daily_count, metadata, 
+                       created_at, updated_at
+                FROM whatsapp_phone_numbers
+                ORDER BY created_at DESC
+            ");
+            $phoneNumbers = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+
+            // Parse metadata JSON
+            foreach ($phoneNumbers as &$number) {
+                $number['metadata'] = json_decode($number['metadata'] ?? '{}', true);
+            }
+
+            return $this->successResponse($phoneNumbers, "Números obtidos", 200, $traceId);
+        } catch (\Exception $e) {
+            error_log("Get phone numbers error: " . $e->getMessage());
+            return $this->errorResponse(500, "Erro ao buscar números", "ERROR", $traceId);
+        }
+    }
+
+    /**
+     * Get all campaigns
+     */
+    public function getCampaigns(array $headers, array $queryParams = []): array
+    {
+        $traceId = bin2hex(random_bytes(8));
+        $userData = $this->authMiddleware->handle($headers);
+
+        if (!$userData) {
+            $errorDetails = $this->authMiddleware->getLastError();
+            return $this->errorResponse(401, "Autenticação necessária.", "UNAUTHORIZED", $traceId, $errorDetails);
+        }
+
+        $this->requirePermission($userData, 'whatsapp', 'view');
+
+        try {
+            $campaignModel = new \Apoio19\Crm\Models\WhatsappCampaign();
+
+            $filters = [];
+            if (isset($queryParams['status'])) {
+                $filters['status'] = $queryParams['status'];
+            }
+            if (isset($queryParams['user_id'])) {
+                $filters['user_id'] = $queryParams['user_id'];
+            }
+
+            $campaigns = $campaignModel->getAll($filters);
+
+            // Add stats to each campaign
+            foreach ($campaigns as &$campaign) {
+                $stats = $campaignModel->getStats($campaign['id']);
+                $campaign['stats'] = $stats;
+            }
+
+            return $this->successResponse($campaigns, "Campanhas obtidas", 200, $traceId);
+        } catch (\Exception $e) {
+            error_log("Get campaigns error: " . $e->getMessage());
+            return $this->errorResponse(500, "Erro ao buscar campanhas", "ERROR", $traceId);
+        }
+    }
+
+    /**
+     * Get campaign by ID
+     */
+    public function getCampaign(array $headers, int $campaignId): array
+    {
+        $traceId = bin2hex(random_bytes(8));
+        $userData = $this->authMiddleware->handle($headers);
+
+        if (!$userData) {
+            $errorDetails = $this->authMiddleware->getLastError();
+            return $this->errorResponse(401, "Autenticação necessária.", "UNAUTHORIZED", $traceId, $errorDetails);
+        }
+
+        $this->requirePermission($userData, 'whatsapp', 'view');
+
+        try {
+            $campaignModel = new \Apoio19\Crm\Models\WhatsappCampaign();
+            $campaign = $campaignModel->findById($campaignId);
+
+            if (!$campaign) {
+                return $this->errorResponse(404, "Campanha não encontrada", "NOT_FOUND", $traceId);
+            }
+
+            // Add stats
+            $campaign['stats'] = $campaignModel->getStats($campaignId);
+
+            return $this->successResponse($campaign, "Campanha obtida", 200, $traceId);
+        } catch (\Exception $e) {
+            error_log("Get campaign error: " . $e->getMessage());
+            return $this->errorResponse(500, "Erro ao buscar campanha", "ERROR", $traceId);
+        }
+    }
+
+    /**
+     * Create campaign
+     */
+    public function createCampaign(array $headers, array $requestData): array
+    {
+        $traceId = bin2hex(random_bytes(8));
+        $userData = $this->authMiddleware->handle($headers);
+
+        if (!$userData) {
+            $errorDetails = $this->authMiddleware->getLastError();
+            return $this->errorResponse(401, "Autenticação necessária.", "UNAUTHORIZED", $traceId, $errorDetails);
+        }
+
+        $this->requirePermission($userData, 'whatsapp', 'edit');
+
+        try {
+            // Validate required fields
+            if (empty($requestData['name'])) {
+                return $this->errorResponse(400, "Nome da campanha é obrigatório", "VALIDATION_ERROR", $traceId);
+            }
+
+            $campaignModel = new \Apoio19\Crm\Models\WhatsappCampaign();
+
+            $data = [
+                'user_id' => $userData->id,
+                'name' => $requestData['name'],
+                'description' => $requestData['description'] ?? null,
+                'phone_number_id' => $requestData['phone_number_id'] ?? null,
+                'status' => $requestData['status'] ?? 'draft',
+                'scheduled_at' => $requestData['scheduled_at'] ?? null
+            ];
+
+            $campaignId = $campaignModel->create($data);
+            $campaign = $campaignModel->findById($campaignId);
+
+            return $this->successResponse($campaign, "Campanha criada", 201, $traceId);
+        } catch (\Exception $e) {
+            error_log("Create campaign error: " . $e->getMessage());
+            return $this->errorResponse(500, "Erro ao criar campanha", "ERROR", $traceId);
+        }
+    }
+
+    /**
+     * Update campaign
+     */
+    public function updateCampaign(array $headers, int $campaignId, array $requestData): array
+    {
+        $traceId = bin2hex(random_bytes(8));
+        $userData = $this->authMiddleware->handle($headers);
+
+        if (!$userData) {
+            $errorDetails = $this->authMiddleware->getLastError();
+            return $this->errorResponse(401, "Autenticação necessária.", "UNAUTHORIZED", $traceId, $errorDetails);
+        }
+
+        $this->requirePermission($userData, 'whatsapp', 'edit');
+
+        try {
+            $campaignModel = new \Apoio19\Crm\Models\WhatsappCampaign();
+
+            // Check if campaign exists
+            $campaign = $campaignModel->findById($campaignId);
+            if (!$campaign) {
+                return $this->errorResponse(404, "Campanha não encontrada", "NOT_FOUND", $traceId);
+            }
+
+            $success = $campaignModel->update($campaignId, $requestData);
+
+            if ($success) {
+                $updated = $campaignModel->findById($campaignId);
+                return $this->successResponse($updated, "Campanha atualizada", 200, $traceId);
+            }
+
+            return $this->errorResponse(500, "Erro ao atualizar campanha", "UPDATE_ERROR", $traceId);
+        } catch (\Exception $e) {
+            error_log("Update campaign error: " . $e->getMessage());
+            return $this->errorResponse(500, "Erro ao atualizar campanha", "ERROR", $traceId);
+        }
+    }
+
+    /**
+     * Delete campaign
+     */
+    public function deleteCampaign(array $headers, int $campaignId): array
+    {
+        $traceId = bin2hex(random_bytes(8));
+        $userData = $this->authMiddleware->handle($headers);
+
+        if (!$userData) {
+            $errorDetails = $this->authMiddleware->getLastError();
+            return $this->errorResponse(401, "Autenticação necessária.", "UNAUTHORIZED", $traceId, $errorDetails);
+        }
+
+        $this->requirePermission($userData, 'whatsapp', 'edit');
+
+        try {
+            $campaignModel = new \Apoio19\Crm\Models\WhatsappCampaign();
+
+            // Check if campaign exists
+            $campaign = $campaignModel->findById($campaignId);
+            if (!$campaign) {
+                return $this->errorResponse(404, "Campanha não encontrada", "NOT_FOUND", $traceId);
+            }
+
+            $success = $campaignModel->delete($campaignId);
+
+            if ($success) {
+                return $this->successResponse(null, "Campanha deletada", 200, $traceId);
+            }
+
+            return $this->errorResponse(500, "Erro ao deletar campanha", "DELETE_ERROR", $traceId);
+        } catch (\Exception $e) {
+            error_log("Delete campaign error: " . $e->getMessage());
+            return $this->errorResponse(500, "Erro ao deletar campanha", "ERROR", $traceId);
+        }
+    }
+
+    /**
+     * Update campaign status
+     */
+    public function updateCampaignStatus(array $headers, int $campaignId, array $requestData): array
+    {
+        $traceId = bin2hex(random_bytes(8));
+        $userData = $this->authMiddleware->handle($headers);
+
+        if (!$userData) {
+            $errorDetails = $this->authMiddleware->getLastError();
+            return $this->errorResponse(401, "Autenticação necessária.", "UNAUTHORIZED", $traceId, $errorDetails);
+        }
+
+        $this->requirePermission($userData, 'whatsapp', 'edit');
+
+        try {
+            if (empty($requestData['status'])) {
+                return $this->errorResponse(400, "Status é obrigatório", "VALIDATION_ERROR", $traceId);
+            }
+
+            $campaignModel = new \Apoio19\Crm\Models\WhatsappCampaign();
+
+            // Check if campaign exists
+            $campaign = $campaignModel->findById($campaignId);
+            if (!$campaign) {
+                return $this->errorResponse(404, "Campanha não encontrada", "NOT_FOUND", $traceId);
+            }
+
+            $success = $campaignModel->updateStatus($campaignId, $requestData['status']);
+
+            if ($success) {
+                $updated = $campaignModel->findById($campaignId);
+                return $this->successResponse($updated, "Status atualizado", 200, $traceId);
+            }
+
+            return $this->errorResponse(500, "Erro ao atualizar status", "UPDATE_ERROR", $traceId);
+        } catch (\Exception $e) {
+            error_log("Update campaign status error: " . $e->getMessage());
+            return $this->errorResponse(500, "Erro ao atualizar status", "ERROR", $traceId);
+        }
+    }
+
+    /**
+     * Get campaign messages
+     */
+    public function getCampaignMessages(array $headers, int $campaignId): array
+    {
+        $traceId = bin2hex(random_bytes(8));
+        $userData = $this->authMiddleware->handle($headers);
+
+        if (!$userData) {
+            $errorDetails = $this->authMiddleware->getLastError();
+            return $this->errorResponse(401, "Autenticação necessária.", "UNAUTHORIZED", $traceId, $errorDetails);
+        }
+
+        $this->requirePermission($userData, 'whatsapp', 'view');
+
+        try {
+            $messageModel = new \Apoio19\Crm\Models\WhatsappCampaignMessage();
+            $messages = $messageModel->getByCampaignId($campaignId);
+
+            // Parse JSON params if present
+            foreach ($messages as &$message) {
+                if ($message['template_params']) {
+                    $message['template_params'] = json_decode($message['template_params'], true);
+                }
+            }
+
+            return $this->successResponse($messages, "Mensagens obtidas", 200, $traceId);
+        } catch (\Exception $e) {
+            error_log("Get campaign messages error: " . $e->getMessage());
+            return $this->errorResponse(500, "Erro ao buscar mensagens", "ERROR", $traceId);
+        }
+    }
+
+    /**
+     * Get campaign contacts summary
+     */
+    public function getCampaignContacts(array $headers, int $campaignId): array
+    {
+        $traceId = bin2hex(random_bytes(8));
+        $userData = $this->authMiddleware->handle($headers);
+
+        if (!$userData) {
+            return $this->errorResponse(401, "Autenticação necessária.", "UNAUTHORIZED", $traceId);
+        }
+
+        try {
+            $messageModel = new \Apoio19\Crm\Models\WhatsappCampaignMessage();
+            $contacts = $messageModel->getCampaignContacts($campaignId);
+            return $this->successResponse($contacts, "Contatos da campanha obtidos", 200, $traceId);
+        } catch (\Exception $e) {
+            error_log("Get campaign contacts error: " . $e->getMessage());
+            return $this->errorResponse(500, "Erro ao buscar contatos da campanha", "ERROR", $traceId);
+        }
+    }
+
+    /**
+     * Create campaign message
+     */
+    public function createCampaignMessage(array $headers, int $campaignId, array $requestData): array
+    {
+        $traceId = bin2hex(random_bytes(8));
+        $userData = $this->authMiddleware->handle($headers);
+
+        if (!$userData) {
+            $errorDetails = $this->authMiddleware->getLastError();
+            return $this->errorResponse(401, "Autenticação necessária.", "UNAUTHORIZED", $traceId, $errorDetails);
+        }
+
+        $this->requirePermission($userData, 'whatsapp', 'edit');
+
+        try {
+            if (empty($requestData['template_id']) || empty($requestData['contact_id'])) {
+                return $this->errorResponse(400, "Template e contato são obrigatórios", "VALIDATION_ERROR", $traceId);
+            }
+
+            $messageModel = new \Apoio19\Crm\Models\WhatsappCampaignMessage();
+
+            $data = [
+                'campaign_id' => $campaignId,
+                'template_id' => $requestData['template_id'],
+                'contact_id' => $requestData['contact_id'],
+                'template_params' => $requestData['template_params'] ?? [],
+                'status' => $requestData['status'] ?? 'pending'
+            ];
+
+            $messageId = $messageModel->create($data);
+            $message = $messageModel->findById($messageId);
+
+            return $this->successResponse($message, "Mensagem criada", 201, $traceId);
+        } catch (\Exception $e) {
+            error_log("Create campaign message error: " . $e->getMessage());
+            return $this->errorResponse(500, "Erro ao criar mensagem", "ERROR", $traceId);
+        }
+    }
+
+    /**
+     * Update campaign message
+     */
+    public function updateCampaignMessage(array $headers, int $campaignId, int $messageId, array $requestData): array
+    {
+        $traceId = bin2hex(random_bytes(8));
+        $userData = $this->authMiddleware->handle($headers);
+
+        if (!$userData) {
+            $errorDetails = $this->authMiddleware->getLastError();
+            return $this->errorResponse(401, "Autenticação necessária.", "UNAUTHORIZED", $traceId, $errorDetails);
+        }
+
+        $this->requirePermission($userData, 'whatsapp', 'edit');
+
+        try {
+            $messageModel = new \Apoio19\Crm\Models\WhatsappCampaignMessage();
+
+            $message = $messageModel->findById($messageId);
+            if (!$message || $message['campaign_id'] != $campaignId) {
+                return $this->errorResponse(404, "Mensagem não encontrada", "NOT_FOUND", $traceId);
+            }
+
+            $success = $messageModel->update($messageId, $requestData);
+
+            if ($success) {
+                $updated = $messageModel->findById($messageId);
+                return $this->successResponse($updated, "Mensagem atualizada", 200, $traceId);
+            }
+
+            return $this->errorResponse(500, "Erro ao atualizar mensagem", "UPDATE_ERROR", $traceId);
+        } catch (\Exception $e) {
+            error_log("Update campaign message error: " . $e->getMessage());
+            return $this->errorResponse(500, "Erro ao atualizar mensagem", "ERROR", $traceId);
+        }
+    }
+
+    /**
+     * Delete campaign message
+     */
+    public function deleteCampaignMessage(array $headers, int $campaignId, int $messageId): array
+    {
+        $traceId = bin2hex(random_bytes(8));
+        $userData = $this->authMiddleware->handle($headers);
+
+        if (!$userData) {
+            $errorDetails = $this->authMiddleware->getLastError();
+            return $this->errorResponse(401, "Autenticação necessária.", "UNAUTHORIZED", $traceId, $errorDetails);
+        }
+
+        $this->requirePermission($userData, 'whatsapp', 'edit');
+
+        try {
+            $messageModel = new \Apoio19\Crm\Models\WhatsappCampaignMessage();
+
+            $message = $messageModel->findById($messageId);
+            if (!$message || $message['campaign_id'] != $campaignId) {
+                return $this->errorResponse(404, "Mensagem não encontrada", "NOT_FOUND", $traceId);
+            }
+
+            $success = $messageModel->delete($messageId);
+
+            if ($success) {
+                return $this->successResponse(null, "Mensagem deletada", 200, $traceId);
+            }
+
+            return $this->errorResponse(500, "Erro ao deletar mensagem", "DELETE_ERROR", $traceId);
+        } catch (\Exception $e) {
+            error_log("Delete campaign message error: " . $e->getMessage());
+            return $this->errorResponse(500, "Erro ao deletar mensagem", "ERROR", $traceId);
+        }
+    }
+
+    /**
+     * Resend campaign message
+     */
+    public function resendCampaignMessage(array $headers, int $campaignId, int $messageId): array
+    {
+        $traceId = bin2hex(random_bytes(8));
+        $userData = $this->authMiddleware->handle($headers);
+
+        if (!$userData) {
+            $errorDetails = $this->authMiddleware->getLastError();
+            return $this->errorResponse(401, "Autenticação necessária.", "UNAUTHORIZED", $traceId, $errorDetails);
+        }
+
+        $this->requirePermission($userData, 'whatsapp', 'edit');
+
+        try {
+            $messageModel = new \Apoio19\Crm\Models\WhatsappCampaignMessage();
+
+            $message = $messageModel->findById($messageId);
+            if (!$message || $message['campaign_id'] != $campaignId) {
+                return $this->errorResponse(404, "Mensagem não encontrada", "NOT_FOUND", $traceId);
+            }
+
+            // Reset message to pending status for resend
+            $success = $messageModel->resetForResend($messageId);
+
+            if ($success) {
+                $updated = $messageModel->findById($messageId);
+                return $this->successResponse($updated, "Mensagem agendada para reenvio", 200, $traceId);
+            }
+
+            return $this->errorResponse(500, "Erro ao agendar reenvio", "RESEND_ERROR", $traceId);
+        } catch (\Exception $e) {
+            error_log("Resend campaign message error: " . $e->getMessage());
+            return $this->errorResponse(500, "Erro ao agendar reenvio", "ERROR", $traceId);
+        }
+    }
+
+    /**
+     * Get templates
+     */
+    public function getTemplates(array $headers): array
+    {
+        $traceId = bin2hex(random_bytes(8));
+        $userData = $this->authMiddleware->handle($headers);
+
+        if (!$userData) {
+            $errorDetails = $this->authMiddleware->getLastError();
+            return $this->errorResponse(401, "Autenticação necessária.", "UNAUTHORIZED", $traceId, $errorDetails);
+        }
+
+        $this->requirePermission($userData, 'whatsapp', 'view');
+
+        try {
+            $templateModel = new \Apoio19\Crm\Models\WhatsappTemplate();
+            $templates = $templateModel->getAll();
+
+            // Parse components JSON if present
+            foreach ($templates as &$template) {
+                if ($template['components']) {
+                    // Only decode if it's a string (not already decoded)
+                    if (is_string($template['components'])) {
+                        $template['components'] = json_decode($template['components'], true);
+                    }
+                }
+            }
+
+            return $this->successResponse($templates, "Templates obtidos", 200, $traceId);
+        } catch (\Exception $e) {
+            error_log("Get templates error: " . $e->getMessage());
+            return $this->errorResponse(500, "Erro ao buscar templates", "ERROR", $traceId);
+        }
+    }
 }
