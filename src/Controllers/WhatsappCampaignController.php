@@ -64,31 +64,44 @@ class WhatsappCampaignController extends BaseController
             }
 
             // Aplicar filtros da query string
-            if (isset($_GET['status'])) {
-                $filters['status'] = $_GET['status'];
+            // Merge $_GET to ensure we catch parameters even if router misses them
+            $requestParams = array_merge($_GET, $filters);
+
+            error_log("=== DEBUG CAMPANHAS AVANÇADO ===");
+            error_log("QUERY_STRING: " . ($_SERVER['QUERY_STRING'] ?? 'NÃO DEFINIDA'));
+            error_log("REQUEST_URI: " . ($_SERVER['REQUEST_URI'] ?? 'NÃO DEFINIDA'));
+            error_log("_GET keys: " . json_encode(array_keys($_GET)));
+            error_log("_REQUEST keys: " . json_encode(array_keys($_REQUEST)));
+
+            if (isset($requestParams['status'])) {
+                $filters['status'] = $requestParams['status'];
             }
 
-            if (isset($_GET['limit'])) {
-                $filters['limit'] = (int)$_GET['limit'];
+            if (isset($requestParams['limit'])) {
+                $filters['limit'] = (int)$requestParams['limit'];
             }
 
-            if (isset($_GET['phone_number_id'])) {
-                // O frontend envia o ID interno (da tabela whatsapp_phone_numbers), mas a tabela whatsapp_campaigns
-                // armazena o phone_number_id da Meta API (BIGINT). Precisamos buscar o valor correto.
-                $internalId = (int)$_GET['phone_number_id'];
+            if (isset($requestParams['phone_number_id'])) {
+                $internalId = (int)$requestParams['phone_number_id'];
+                error_log("WhatsappCampaignController::index - ID interno recebido: " . $internalId);
 
                 $db = \Apoio19\Crm\Models\Database::getInstance();
                 $stmt = $db->prepare('SELECT phone_number_id FROM whatsapp_phone_numbers WHERE id = ?');
                 $stmt->execute([$internalId]);
                 $phoneData = $stmt->fetch(\PDO::FETCH_ASSOC);
 
+                error_log("WhatsappCampaignController::index - Dados do número encontrado: " . json_encode($phoneData));
+
                 if ($phoneData && !empty($phoneData['phone_number_id'])) {
                     $filters['phone_number_id'] = $phoneData['phone_number_id'];
+                    error_log("WhatsappCampaignController::index - Filtro Meta ID aplicado: " . $phoneData['phone_number_id']);
                 } else {
-                    // Se não encontrar o número correspondente, filtra por um valor impossível para não retornar nada indevidamente
                     $filters['phone_number_id'] = -1;
+                    error_log("WhatsappCampaignController::index - Número não encontrado! Aplicando filtro -1.");
                 }
             }
+
+            error_log("WhatsappCampaignController::index - Filtros finais: " . json_encode($filters));
 
             $campaigns = $this->campaignModel->getAll($filters);
 
