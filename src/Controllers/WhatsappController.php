@@ -117,7 +117,7 @@ class WhatsappController extends BaseController
     /**
      * Get all conversations
      */
-    public function getConversations(array $headers): array
+    public function getConversations(array $headers, array $queryParams = []): array
     {
         $traceId = bin2hex(random_bytes(8));
         $userData = $this->authMiddleware->handle($headers);
@@ -131,7 +131,47 @@ class WhatsappController extends BaseController
             $whatsappContact = new \Apoio19\Crm\Models\WhatsappContact();
             $whatsappMessage = new \Apoio19\Crm\Models\WhatsappChatMessage();
 
-            $contacts = $whatsappContact->getAll(['limit' => 100]);
+            // Build filters
+            $filters = ['limit' => 100];
+
+            error_log("=== DEBUG CONVERSAS ===");
+            error_log("Query params recebidos (args): " . json_encode($queryParams));
+            error_log("Query params globais (_GET): " . json_encode($_GET));
+
+            // Merge query params with $_GET to ensure we catch parameters even if router misses them
+            $allParams = array_merge($_GET, $queryParams);
+
+            // Convert internal phone number ID to Meta API phone_number_id
+            if (isset($allParams['phone_number_id']) && !empty($allParams['phone_number_id'])) {
+                $internalPhoneId = (int)$allParams['phone_number_id'];
+                error_log("ID interno recebido: " . $internalPhoneId);
+
+                // Get the Meta API phone_number_id from whatsapp_phone_numbers table
+                $db = \Apoio19\Crm\Models\Database::getInstance();
+                $stmt = $db->prepare('SELECT id, phone_number_id, name FROM whatsapp_phone_numbers WHERE id = ?');
+                $stmt->execute([$internalPhoneId]);
+                $phoneData = $stmt->fetch(\PDO::FETCH_ASSOC);
+
+                error_log("Dados do número encontrado: " . json_encode($phoneData));
+
+                if ($phoneData && !empty($phoneData['phone_number_id'])) {
+                    $filters['phone_number_id'] = $phoneData['phone_number_id'];
+                    error_log("Phone Number ID da Meta aplicado ao filtro: " . $phoneData['phone_number_id']);
+                } else {
+                    error_log("AVISO: Número não encontrado ou phone_number_id vazio!");
+                }
+            } else {
+                error_log("Nenhum phone_number_id fornecido - mostrando todas as conversas");
+            }
+
+            error_log("Filtros finais: " . json_encode($filters));
+
+            $contacts = $whatsappContact->getAll($filters);
+
+            error_log("Total de conversas retornadas: " . count($contacts));
+            if (count($contacts) > 0) {
+                error_log("Primeira conversa: " . json_encode($contacts[0]));
+            }
 
             // Enrich with last message and unread count
             foreach ($contacts as &$contact) {
@@ -143,6 +183,7 @@ class WhatsappController extends BaseController
             return $this->successResponse($contacts, "Conversas obtidas", 200, $traceId);
         } catch (\Exception $e) {
             error_log("Erro ao obter conversas: " . $e->getMessage());
+            error_log("Stack trace: " . $e->getTraceAsString());
             return $this->errorResponse(500, "Erro ao obter conversas", "ERROR", $traceId);
         }
     }
@@ -166,7 +207,23 @@ class WhatsappController extends BaseController
             $limit = (int)($queryParams['limit'] ?? 100);
             $offset = (int)($queryParams['offset'] ?? 0);
 
-            $messages = $whatsappMessage->getConversation($contactId, $limit, $offset);
+            // Convert internal phone number ID to Meta API phone_number_id
+            $phoneNumberId = null;
+            if (isset($queryParams['phone_number_id']) && !empty($queryParams['phone_number_id'])) {
+                $internalPhoneId = (int)$queryParams['phone_number_id'];
+
+                // Get the Meta API phone_number_id from whatsapp_phone_numbers table
+                $db = \Apoio19\Crm\Models\Database::getInstance();
+                $stmt = $db->prepare('SELECT phone_number_id FROM whatsapp_phone_numbers WHERE id = ?');
+                $stmt->execute([$internalPhoneId]);
+                $phoneData = $stmt->fetch(\PDO::FETCH_ASSOC);
+
+                if ($phoneData && !empty($phoneData['phone_number_id'])) {
+                    $phoneNumberId = $phoneData['phone_number_id'];
+                }
+            }
+
+            $messages = $whatsappMessage->getConversation($contactId, $limit, $offset, $phoneNumberId);
 
             // Mark messages as read
             $whatsappMessage->markAsRead($contactId);

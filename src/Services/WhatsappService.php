@@ -302,9 +302,12 @@ class WhatsappService
 
                     $value = $change['value'];
 
+                    // Extract phone_number_id from webhook metadata
+                    $phoneNumberId = $value['metadata']['phone_number_id'] ?? null;
+
                     if (isset($value['messages'])) {
                         foreach ($value['messages'] as $message) {
-                            $this->processIncomingMessage($message);
+                            $this->processIncomingMessage($message, $phoneNumberId);
                         }
                     }
 
@@ -322,7 +325,7 @@ class WhatsappService
         }
     }
 
-    private function processIncomingMessage(array $message): void
+    private function processIncomingMessage(array $message, ?string $phoneNumberId = null): void
     {
         try {
             $phoneNumber = $message['from'] ?? null;
@@ -347,6 +350,7 @@ class WhatsappService
             $whatsappMessage->create([
                 'contact_id' => $contactId,
                 'user_id' => 1,
+                'phone_number_id' => $phoneNumberId, // Save phone_number_id from webhook
                 'direction' => 'incoming',
                 'message_type' => $messageType,
                 'message_content' => $messageContent,
@@ -369,7 +373,7 @@ class WhatsappService
                 // Update chat messages (existing functionality)
                 $whatsappMessage = new \Apoio19\Crm\Models\WhatsappChatMessage();
                 $whatsappMessage->updateStatus($whatsappMessageId, $statusValue);
-                
+
                 // Update campaign messages (new functionality)
                 $this->updateCampaignMessageStatus($status);
             }
@@ -520,6 +524,7 @@ class WhatsappService
                 $whatsappMessage->create([
                     'contact_id' => $contactId,
                     'user_id' => $userId,
+                    'phone_number_id' => $phoneNumberId, // Save phone_number_id from config
                     'direction' => 'outgoing',
                     'message_type' => 'text',
                     'message_content' => $message,

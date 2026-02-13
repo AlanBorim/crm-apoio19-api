@@ -96,6 +96,11 @@ class WhatsappCampaign
             $params[] = $filters['status'];
         }
 
+        if (!empty($filters['phone_number_id'])) {
+            $sql .= ' AND wc.phone_number_id = ?';
+            $params[] = $filters['phone_number_id'];
+        }
+
         $sql .= ' ORDER BY wc.created_at DESC';
 
         if (!empty($filters['limit'])) {
@@ -103,10 +108,20 @@ class WhatsappCampaign
             $params[] = (int)$filters['limit'];
         }
 
+        error_log("WhatsappCampaign::getAll - SQL: " . $sql);
+        error_log("WhatsappCampaign::getAll - Params: " . json_encode($params));
+
         $stmt = $this->db->prepare($sql);
         $stmt->execute($params);
 
-        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $campaigns = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        error_log("WhatsappCampaign::getAll - Campanhas encontradas: " . count($campaigns));
+        if (count($campaigns) > 0) {
+            error_log("WhatsappCampaign::getAll - Primeira campanha ID: " . $campaigns[0]['id'] . ", Phone ID: " . $campaigns[0]['phone_number_id']);
+        }
+
+        return $campaigns;
     }
 
     public function delete(int $id): bool

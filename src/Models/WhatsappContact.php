@@ -91,20 +91,29 @@ class WhatsappContact
 
     public function getAll(array $filters = []): array
     {
+        // Determine join type based on filter presence to ensure strict filtering
+        // Use INNER JOIN when filtering by phone_number_id to strictly exclude contacts 
+        // that do not have messages associated with that specific number.
+        $joinType = !empty($filters['phone_number_id']) ? 'INNER' : 'LEFT';
+
+        if (!empty($filters['phone_number_id'])) {
+            error_log("WhatsappContact::getAll - Strict filtering (INNER JOIN) for phone_number_id: " . $filters['phone_number_id']);
+        }
+
         // Excluir contatos que só têm mensagens de campanha
-        $sql = 'SELECT wc.*, 
+        $sql = "SELECT wc.*, 
                        l.name as lead_name, 
                        c.name as contact_name,
                        MAX(wcm.created_at) as last_message_at
                 FROM whatsapp_contacts wc
                 LEFT JOIN leads l ON wc.lead_id = l.id
                 LEFT JOIN contacts c ON wc.contact_id = c.id
-                LEFT JOIN whatsapp_chat_messages wcm ON wc.id = wcm.contact_id
+                $joinType JOIN whatsapp_chat_messages wcm ON wc.id = wcm.contact_id
                     AND NOT EXISTS (
                         SELECT 1 FROM whatsapp_campaign_messages wccm 
                         WHERE wccm.message_id = wcm.whatsapp_message_id
                     )
-                WHERE 1=1';
+                WHERE 1=1";
         $params = [];
 
         if (!empty($filters['lead_id'])) {
@@ -119,6 +128,12 @@ class WhatsappContact
             $params[] = $searchTerm;
         }
 
+        // Filter by Meta API phone_number_id (strict filter - only exact matches)
+        if (!empty($filters['phone_number_id'])) {
+            $sql .= ' AND wcm.phone_number_id = ?';
+            $params[] = $filters['phone_number_id'];
+        }
+
         $sql .= ' GROUP BY wc.id
                   HAVING last_message_at IS NOT NULL
                   ORDER BY last_message_at DESC';
@@ -128,10 +143,15 @@ class WhatsappContact
             $params[] = (int)$filters['limit'];
         }
 
+        error_log("WhatsappContact::getAll - SQL: " . $sql);
+        error_log("WhatsappContact::getAll - Params: " . json_encode($params));
+
         $stmt = $this->db->prepare($sql);
         $stmt->execute($params);
 
         $contacts = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        error_log("WhatsappContact::getAll - Contatos encontrados: " . count($contacts));
 
         foreach ($contacts as &$contact) {
             if (isset($contact['metadata'])) {

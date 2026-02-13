@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: localhost:3306
--- Tempo de geração: 11/12/2025 às 03:42
+-- Tempo de geração: 11/02/2026 às 12:56
 -- Versão do servidor: 10.11.14-MariaDB-0+deb12u2
 -- Versão do PHP: 8.2.29
 
@@ -391,7 +391,7 @@ CREATE TABLE `users` (
 CREATE TABLE `whatsapp_campaigns` (
   `id` int(11) NOT NULL,
   `user_id` int(11) NOT NULL,
-  `phone_number_id` int(11) DEFAULT NULL COMMENT 'Número de telefone usado na campanha',
+  `phone_number_id` bigint(20) DEFAULT NULL COMMENT 'Número de telefone usado na campanha',
   `name` varchar(255) NOT NULL,
   `description` text DEFAULT NULL,
   `status` enum('draft','scheduled','processing','completed','cancelled') NOT NULL DEFAULT 'draft',
@@ -451,6 +451,7 @@ CREATE TABLE `whatsapp_campaign_messages` (
   `step_id` int(11) DEFAULT NULL COMMENT 'Etapa do fluxo',
   `contact_id` int(11) NOT NULL,
   `template_id` int(11) NOT NULL,
+  `phone_number_id` bigint(20) DEFAULT NULL COMMENT 'ID do número de telefone usado para enviar',
   `message_id` varchar(255) DEFAULT NULL COMMENT 'ID da mensagem retornado pela API',
   `status` enum('pending','sent','delivered','read','failed') NOT NULL DEFAULT 'pending',
   `template_params` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`template_params`)),
@@ -460,7 +461,8 @@ CREATE TABLE `whatsapp_campaign_messages` (
   `failed_at` datetime DEFAULT NULL,
   `error_message` text DEFAULT NULL,
   `created_at` timestamp NULL DEFAULT current_timestamp(),
-  `updated_at` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+  `updated_at` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  `failure_message` text DEFAULT NULL COMMENT 'Error message if delivery failed'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
@@ -473,6 +475,7 @@ CREATE TABLE `whatsapp_chat_messages` (
   `id` int(11) NOT NULL,
   `contact_id` int(11) NOT NULL,
   `user_id` int(11) NOT NULL,
+  `phone_number_id` bigint(20) DEFAULT NULL COMMENT 'Phone Number ID da Meta API (não é FK)',
   `direction` enum('outgoing','incoming') NOT NULL,
   `message_type` varchar(50) NOT NULL DEFAULT 'text',
   `message_content` text NOT NULL,
@@ -611,7 +614,7 @@ CREATE TABLE `whatsapp_phone_numbers` (
   `id` int(11) NOT NULL,
   `name` varchar(255) NOT NULL COMMENT 'Nome identificador do número',
   `phone_number` varchar(20) NOT NULL COMMENT 'Número no formato internacional',
-  `phone_number_id` varchar(255) NOT NULL COMMENT 'Phone Number ID da API',
+  `phone_number_id` bigint(20) NOT NULL COMMENT 'Phone Number ID da API',
   `business_account_id` varchar(255) NOT NULL COMMENT 'Business Account ID',
   `access_token` text NOT NULL COMMENT 'Token de acesso',
   `webhook_verify_token` varchar(255) DEFAULT NULL COMMENT 'Token de verificação do webhook',
@@ -842,8 +845,7 @@ ALTER TABLE `whatsapp_campaigns`
   ADD PRIMARY KEY (`id`),
   ADD KEY `idx_user_id` (`user_id`),
   ADD KEY `idx_status` (`status`),
-  ADD KEY `idx_scheduled_at` (`scheduled_at`),
-  ADD KEY `fk_campaign_phone` (`phone_number_id`);
+  ADD KEY `idx_scheduled_at` (`scheduled_at`);
 
 --
 -- Índices de tabela `whatsapp_campaign_access`
@@ -879,7 +881,8 @@ ALTER TABLE `whatsapp_campaign_messages`
   ADD KEY `idx_status` (`status`),
   ADD KEY `idx_sent_at` (`sent_at`),
   ADD KEY `idx_messages_flow` (`flow_id`,`contact_id`),
-  ADD KEY `idx_messages_step` (`step_id`);
+  ADD KEY `idx_messages_step` (`step_id`),
+  ADD KEY `idx_wamid` (`message_id`);
 
 --
 -- Índices de tabela `whatsapp_chat_messages`
@@ -892,7 +895,8 @@ ALTER TABLE `whatsapp_chat_messages`
   ADD KEY `idx_created_at` (`created_at`),
   ADD KEY `idx_whatsapp_message_id` (`whatsapp_message_id`),
   ADD KEY `idx_contact_created` (`contact_id`,`created_at`),
-  ADD KEY `idx_status` (`status`);
+  ADD KEY `idx_status` (`status`),
+  ADD KEY `idx_phone_number_id` (`phone_number_id`);
 
 --
 -- Índices de tabela `whatsapp_contacts`
@@ -942,7 +946,6 @@ ALTER TABLE `whatsapp_flow_step_conditions`
 ALTER TABLE `whatsapp_message_flows`
   ADD PRIMARY KEY (`id`),
   ADD KEY `idx_campaign` (`campaign_id`),
-  ADD KEY `idx_phone_number` (`phone_number_id`),
   ADD KEY `idx_status` (`status`);
 
 --
@@ -960,7 +963,6 @@ ALTER TABLE `whatsapp_message_responses`
 ALTER TABLE `whatsapp_phone_numbers`
   ADD PRIMARY KEY (`id`),
   ADD UNIQUE KEY `uk_phone_number` (`phone_number`),
-  ADD UNIQUE KEY `uk_phone_number_id` (`phone_number_id`),
   ADD KEY `idx_status` (`status`);
 
 --
@@ -1287,8 +1289,7 @@ ALTER TABLE `tarefa_responsaveis`
 -- Restrições para tabelas `whatsapp_campaigns`
 --
 ALTER TABLE `whatsapp_campaigns`
-  ADD CONSTRAINT `whatsapp_campaigns_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
-  ADD CONSTRAINT `whatsapp_campaigns_ibfk_2` FOREIGN KEY (`phone_number_id`) REFERENCES `whatsapp_phone_numbers` (`id`) ON DELETE SET NULL;
+  ADD CONSTRAINT `whatsapp_campaigns_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE;
 
 --
 -- Restrições para tabelas `whatsapp_campaign_access`

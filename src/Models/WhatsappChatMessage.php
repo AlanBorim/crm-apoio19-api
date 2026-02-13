@@ -55,14 +55,14 @@ class WhatsappChatMessage
      * @param int $contactId Contact ID
      * @param int $limit Number of messages to retrieve
      * @param int $offset Offset for pagination
+     * @param int|null $phoneNumberId Optional phone number ID to filter messages
      * @return array Messages array
      */
-    public function getConversation(int $contactId, int $limit = 100, int $offset = 0): array
+    public function getConversation(int $contactId, int $limit = 100, int $offset = 0, ?int $phoneNumberId = null): array
     {
         try {
             // Exclude messages that are part of campaigns
-            $stmt = $this->db->prepare('
-                SELECT wcm.*, u.name as user_name
+            $sql = 'SELECT wcm.*, u.name as user_name
                 FROM whatsapp_chat_messages wcm
                 LEFT JOIN users u ON wcm.user_id = u.id
                 WHERE wcm.contact_id = ?
@@ -70,12 +70,24 @@ class WhatsappChatMessage
                     SELECT 1 
                     FROM whatsapp_campaign_messages wccm 
                     WHERE wccm.message_id = wcm.whatsapp_message_id
-                )
-                ORDER BY wcm.created_at DESC
-                LIMIT ? OFFSET ?
-            ');
+                )';
 
-            $stmt->execute([$contactId, $limit, $offset]);
+            $params = [$contactId];
+
+            // Filter by phone_number_id if provided (strict filter)
+            if ($phoneNumberId !== null) {
+                $sql .= ' AND wcm.phone_number_id = ?';
+                $params[] = $phoneNumberId;
+            }
+
+            $sql .= ' ORDER BY wcm.created_at DESC
+                LIMIT ? OFFSET ?';
+
+            $params[] = $limit;
+            $params[] = $offset;
+
+            $stmt = $this->db->prepare($sql);
+            $stmt->execute($params);
             $messages = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
             // Reverse to show oldest first
