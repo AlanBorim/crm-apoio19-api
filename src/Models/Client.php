@@ -125,6 +125,28 @@ class Client
         return $clients;
     }
 
+    private static array $allowedFields = [
+        'lead_id',
+        'company_id',
+        'contact_id',
+        'status',
+        'start_date',
+        'notes',
+        'person_type',
+        'document',
+        'corporate_name',
+        'fantasy_name',
+        'state_registration',
+        'municipal_registration',
+        'zip_code',
+        'address',
+        'address_number',
+        'complement',
+        'district',
+        'city',
+        'state'
+    ];
+
     /**
      * Create a new client.
      *
@@ -136,13 +158,20 @@ class Client
         try {
             $pdo = Database::getInstance();
 
-            $fields = implode(", ", array_keys($data));
-            $placeholders = ":" . implode(", :", array_keys($data));
+            // Filter data to only include allowed fields
+            $filteredData = array_intersect_key($data, array_flip(self::$allowedFields));
+
+            if (empty($filteredData)) {
+                return false;
+            }
+
+            $fields = implode(", ", array_keys($filteredData));
+            $placeholders = ":" . implode(", :", array_keys($filteredData));
             $sql = "INSERT INTO clients ({$fields}) VALUES ({$placeholders})";
 
             $stmt = $pdo->prepare($sql);
 
-            foreach ($data as $key => $value) {
+            foreach ($filteredData as $key => $value) {
                 $stmt->bindValue(":{$key}", $value);
             }
 
@@ -167,8 +196,11 @@ class Client
         try {
             $pdo = Database::getInstance();
 
+            // Filter data to only include allowed fields
+            $filteredData = array_intersect_key($data, array_flip(self::$allowedFields));
+
             $fields = [];
-            foreach ($data as $key => $value) {
+            foreach ($filteredData as $key => $value) {
                 $fields[] = "`{$key}` = :{$key}";
             }
 
@@ -179,8 +211,8 @@ class Client
             $sql = "UPDATE clients SET " . implode(", ", $fields) . " WHERE id = :id";
             $stmt = $pdo->prepare($sql);
 
-            $data['id'] = $id;
-            foreach ($data as $key => $value) {
+            $stmt->bindValue(":id", $id, PDO::PARAM_INT);
+            foreach ($filteredData as $key => $value) {
                 $stmt->bindValue(":{$key}", $value);
             }
 
