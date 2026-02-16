@@ -17,6 +17,7 @@ class PermissionService
         'admin' => [
             'usuarios' => ['view' => true, 'create' => true, 'edit' => true, 'delete' => true],
             'leads' => ['view' => true, 'create' => true, 'edit' => true, 'delete' => true, 'assign' => true],
+            'clients' => ['view' => true, 'create' => true, 'edit' => true, 'delete' => true],
             'proposals' => ['view' => true, 'create' => true, 'edit' => true, 'delete' => true, 'approve' => true],
             'whatsapp' => ['view' => true, 'create' => true, 'edit' => true, 'delete' => true],
             'configuracoes' => ['view' => true, 'create' => true, 'edit' => true, 'delete' => true],
@@ -27,6 +28,7 @@ class PermissionService
         'gerente' => [
             'users' => ['view' => true, 'create' => true, 'edit' => true, 'delete' => false],
             'leads' => ['view' => true, 'create' => true, 'edit' => true, 'delete' => true],
+            'clients' => ['view' => true, 'create' => true, 'edit' => true, 'delete' => true],
             'proposals' => ['view' => true, 'create' => true, 'edit' => true, 'delete' => true],
             'tasks' => ['view' => true, 'create' => true, 'edit' => true, 'delete' => true],
             'campaigns' => ['view' => true, 'create' => true, 'edit' => true, 'delete' => true],
@@ -36,6 +38,7 @@ class PermissionService
         'vendedor' => [
             'users' => ['view' => true, 'create' => false, 'edit' => false, 'delete' => false],
             'leads' => ['view' => true, 'create' => true, 'edit' => 'own', 'delete' => 'own'],
+            'clients' => ['view' => true, 'create' => true, 'edit' => 'own', 'delete' => 'own'],
             'proposals' => ['view' => 'own', 'create' => true, 'edit' => 'own', 'delete' => 'own'],
             'tasks' => ['view' => 'own', 'create' => true, 'edit' => 'own', 'delete' => 'own'],
             'campaigns' => ['view' => 'own', 'create' => true, 'edit' => 'own', 'delete' => 'own'],
@@ -45,6 +48,7 @@ class PermissionService
         'comercial' => [
             'users' => ['view' => true, 'create' => false, 'edit' => false, 'delete' => false],
             'leads' => ['view' => true, 'create' => true, 'edit' => 'own', 'delete' => 'own'],
+            'clients' => ['view' => true, 'create' => true, 'edit' => 'own', 'delete' => 'own'],
             'proposals' => ['view' => 'own', 'create' => true, 'edit' => 'own', 'delete' => 'own'],
             'tasks' => ['view' => 'own', 'create' => true, 'edit' => 'own', 'delete' => 'own'],
             'campaigns' => ['view' => 'own', 'create' => true, 'edit' => 'own', 'delete' => 'own'],
@@ -54,6 +58,7 @@ class PermissionService
         'suporte' => [
             'users' => ['view' => true, 'create' => false, 'edit' => false, 'delete' => false],
             'leads' => ['view' => true, 'create' => false, 'edit' => true, 'delete' => false],
+            'clients' => ['view' => true, 'create' => false, 'edit' => true, 'delete' => false],
             'proposals' => ['view' => true, 'create' => false, 'edit' => false, 'delete' => false],
             'tasks' => ['view' => 'own', 'create' => true, 'edit' => 'own', 'delete' => 'own'],
             'campaigns' => ['view' => false, 'create' => false, 'edit' => false, 'delete' => false],
@@ -63,6 +68,7 @@ class PermissionService
         'financeiro' => [
             'users' => ['view' => true, 'create' => false, 'edit' => false, 'delete' => false],
             'leads' => ['view' => true, 'create' => false, 'edit' => false, 'delete' => false],
+            'clients' => ['view' => true, 'create' => false, 'edit' => false, 'delete' => false],
             'proposals' => ['view' => true, 'create' => false, 'edit' => false, 'delete' => false],
             'tasks' => ['view' => 'own', 'create' => true, 'edit' => 'own', 'delete' => 'own'],
             'campaigns' => ['view' => false, 'create' => false, 'edit' => false, 'delete' => false],

@@ -15,7 +15,8 @@
         "league/csv": "^9.23",
         "google/apiclient": "^2.15",
         "phpmailer/phpmailer": "^6.10",
-	"vlucas/phpdotenv": "^5.5"
+	"vlucas/phpdotenv": "^5.5",
+        "dompdf/dompdf": "^3.1"
     },
     "autoload": {
         "psr-4": {

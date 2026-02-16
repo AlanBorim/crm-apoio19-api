@@ -24,6 +24,8 @@ use Apoio19\Crm\Controllers\WhatsappTemplateController;
 use Apoio19\Crm\Controllers\WhatsappController;
 use Apoio19\Crm\Controllers\ProposalController;
 use Apoio19\Crm\Controllers\DashboardController;
+use Apoio19\Crm\Controllers\ClientController;
+use Apoio19\Crm\Controllers\ClientProjectController;
 
 // --- Lógica de Extração de Caminho Corrigida ---
 $requestUri = $_SERVER['REQUEST_URI']; // ex: /api/login?param=1
@@ -2447,7 +2449,245 @@ if ($requestPath === '/dashboard/metrics' && $requestMethod === 'GET') {
 
 // --- Fim do Roteamento ---
 
-// Se nenhuma rota corresponder após verificar todas as rotas definidas
+
+// --- Rotas de Clientes ---
+
+// Listar clientes
+if ($requestPath === '/clients' && $requestMethod === 'GET') {
+    try {
+        $headers = getallheaders();
+        $controller = new ClientController();
+        $queryParams = $_GET;
+        $response = $controller->index($headers, $queryParams);
+
+        if (is_array($response)) {
+            http_response_code(200);
+            echo json_encode($response);
+        } else {
+            http_response_code(500);
+            echo json_encode(["error" => "Erro interno", "detalhes" => $response]);
+        }
+    } catch (\Throwable $th) {
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno", "detalhes" => $th->getMessage()]);
+    }
+    exit;
+}
+
+// Criar cliente
+if ($requestPath === '/clients' && $requestMethod === 'POST') {
+    try {
+        $input = json_decode(file_get_contents('php://input'), true);
+        $headers = getallheaders();
+        $controller = new ClientController();
+        $response = $controller->store($headers, $input);
+
+        if (is_array($response)) {
+            http_response_code(201);
+            echo json_encode($response);
+        } else {
+            http_response_code(500);
+            echo json_encode(["error" => "Erro interno", "detalhes" => $response]);
+        }
+    } catch (\Throwable $th) {
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno", "detalhes" => $th->getMessage()]);
+    }
+    exit;
+}
+
+// Obter cliente específico
+if (preg_match('#^/clients/(\d+)$#', $requestPath, $matches) && $requestMethod === 'GET') {
+    try {
+        $id = $matches[1];
+        $headers = getallheaders();
+        $controller = new ClientController();
+        $response = $controller->show($headers, $id);
+
+        if (is_array($response)) {
+            http_response_code(200);
+            echo json_encode($response);
+        } else {
+            http_response_code(500);
+            echo json_encode(["error" => "Erro interno", "detalhes" => $response]);
+        }
+    } catch (\Throwable $th) {
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno", "detalhes" => $th->getMessage()]);
+    }
+    exit;
+}
+
+// Atualizar cliente
+if (preg_match('#^/clients/(\d+)$#', $requestPath, $matches) && $requestMethod === 'PUT') {
+    try {
+        $id = $matches[1];
+        $input = json_decode(file_get_contents('php://input'), true);
+        $headers = getallheaders();
+        $controller = new ClientController();
+        $response = $controller->update($headers, $id, $input);
+
+        if (is_array($response)) {
+            http_response_code(200);
+            echo json_encode($response);
+        } else {
+            http_response_code(500);
+            echo json_encode(["error" => "Erro interno", "detalhes" => $response]);
+        }
+    } catch (\Throwable $th) {
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno", "detalhes" => $th->getMessage()]);
+    }
+    exit;
+}
+
+// Promover Lead a Cliente
+if (preg_match('#^/clients/promote/(\d+)$#', $requestPath, $matches) && $requestMethod === 'POST') {
+    try {
+        $leadId = $matches[1];
+        $headers = getallheaders();
+        $controller = new ClientController();
+        $response = $controller->promoteLead($headers, $leadId);
+
+        if (is_array($response)) {
+            http_response_code(201);
+            echo json_encode($response);
+        } else {
+            http_response_code(500);
+            echo json_encode(["error" => "Erro interno", "detalhes" => $response]);
+        }
+    } catch (\Throwable $th) {
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno", "detalhes" => $th->getMessage()]);
+    }
+    exit;
+}
+
+
+// --- Rotas de Projetos de Clientes ---
+
+// Listar projetos (filtrado por cliente)
+if ($requestPath === '/client-projects' && $requestMethod === 'GET') {
+    try {
+        $headers = getallheaders();
+        $controller = new ClientProjectController();
+        $clientId = isset($_GET['client_id']) ? (int)$_GET['client_id'] : 0;
+
+        // Se não houver client_id, talvez implementar listagem geral?
+        // O método index requer clientId. Vamos assumir que é obrigatório por enquanto ou retornar vazio.
+        if ($clientId > 0) {
+            $response = $controller->index($headers, $clientId);
+        } else {
+            // Fallback ou erro? Vamos retornar array vazio para evitar quebra
+            // Ou erro 400 Bad Request
+            http_response_code(400);
+            echo json_encode(["error" => "client_id is required"]);
+            exit;
+        }
+
+        if (is_array($response)) {
+            http_response_code(200);
+            echo json_encode($response);
+        } else {
+            http_response_code(500);
+            echo json_encode(["error" => "Erro interno", "detalhes" => $response]);
+        }
+    } catch (\Throwable $th) {
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno", "detalhes" => $th->getMessage()]);
+    }
+    exit;
+}
+
+// Criar projeto
+if ($requestPath === '/client-projects' && $requestMethod === 'POST') {
+    try {
+        $input = json_decode(file_get_contents('php://input'), true);
+        $headers = getallheaders();
+        $controller = new ClientProjectController();
+        $response = $controller->store($headers, $input);
+
+        if (is_array($response)) {
+            http_response_code(201);
+            echo json_encode($response);
+        } else {
+            http_response_code(500);
+            echo json_encode(["error" => "Erro interno", "detalhes" => $response]);
+        }
+    } catch (\Throwable $th) {
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno", "detalhes" => $th->getMessage()]);
+    }
+    exit;
+}
+
+// Obter projeto específico
+if (preg_match('#^/client-projects/(\d+)$#', $requestPath, $matches) && $requestMethod === 'GET') {
+    try {
+        $id = $matches[1];
+        $headers = getallheaders();
+        $controller = new ClientProjectController();
+        $response = $controller->show($headers, $id);
+
+        if (is_array($response)) {
+            http_response_code(200);
+            echo json_encode($response);
+        } else {
+            http_response_code(500);
+            echo json_encode(["error" => "Erro interno", "detalhes" => $response]);
+        }
+    } catch (\Throwable $th) {
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno", "detalhes" => $th->getMessage()]);
+    }
+    exit;
+}
+
+// Atualizar projeto
+if (preg_match('#^/client-projects/(\d+)$#', $requestPath, $matches) && $requestMethod === 'PUT') {
+    try {
+        $id = $matches[1];
+        $input = json_decode(file_get_contents('php://input'), true);
+        $headers = getallheaders();
+        $controller = new ClientProjectController();
+        $response = $controller->update($headers, $id, $input);
+        if (is_array($response)) {
+            http_response_code(200);
+            echo json_encode($response);
+        } else {
+            http_response_code(500);
+            echo json_encode(["error" => "Erro interno", "detalhes" => $response]);
+        }
+    } catch (\Throwable $th) {
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno", "detalhes" => $th->getMessage()]);
+    }
+    exit;
+}
+
+// Deletar projeto
+if (preg_match('#^/client-projects/(\d+)$#', $requestPath, $matches) && $requestMethod === 'DELETE') {
+    try {
+        $id = $matches[1];
+        $headers = getallheaders();
+        $controller = new ClientProjectController();
+        $response = $controller->destroy($headers, $id);
+
+        if (is_array($response)) {
+            http_response_code(200);
+            echo json_encode($response);
+        } else {
+            http_response_code(500);
+            echo json_encode(["error" => "Erro interno", "detalhes" => $response]);
+        }
+    } catch (\Throwable $th) {
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno", "detalhes" => $th->getMessage()]);
+    }
+    exit;
+}
+
+// Se nenhuma rota corresponder ap�s verificar todas as rotas definidas
 http_response_code(404);
-echo json_encode(["error" => "Endpoint não encontrado: " . $requestMethod . " " . $requestPath]);
+echo json_encode(["error" => "Endpoint n�o encontrado: " . $requestMethod . " " . $requestPath]);
 exit;

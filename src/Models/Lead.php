@@ -48,7 +48,7 @@ class Lead
         try {
             $pdo = Database::getInstance();
             $stmt = $pdo->prepare("SELECT l.*,u.name AS responsavelNome FROM leads l
-                                    INNER JOIN users AS u on u.id = l.assigned_to
+                                    LEFT JOIN users AS u on u.id = l.assigned_to
                                     WHERE l.id = :id LIMIT 1");
             // Use bindValue instead of bindParam for consistency and simpler mocking
             $stmt->bindValue(":id", $id, PDO::PARAM_INT);

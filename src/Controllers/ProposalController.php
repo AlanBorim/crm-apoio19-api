@@ -5,6 +5,7 @@ namespace Apoio19\Crm\Controllers;
 use Apoio19\Crm\Models\Proposal;
 use Apoio19\Crm\Models\Lead;
 use Apoio19\Crm\Models\User;
+use Apoio19\Crm\Models\Client;
 use Apoio19\Crm\Services\PdfService;
 use Apoio19\Crm\Services\EmailService;
 use Apoio19\Crm\Middleware\AuthMiddleware;
@@ -274,6 +275,39 @@ class ProposalController extends BaseController
             // 🟢 AUDIT LOG - Log proposal update
             $this->logAudit($userData->id, 'update', 'proposals', $proposalId, $proposal, $updatedProposal);
 
+            // ---------------------------------------------------------
+            // 🚀 AUTOMATION: Create Client if Proposal is Accepted
+            // ---------------------------------------------------------
+            $newStatus = $requestData['status'] ?? $proposal->status;
+            if ($proposal->status !== 'aceita' && $newStatus === 'aceita' && $proposal->lead_id) {
+                $existingClient = Client::findByLeadId($proposal->lead_id);
+
+                if (!$existingClient) {
+                    $lead = Lead::findById($proposal->lead_id);
+                    if ($lead) {
+                        $clientData = [
+                            'lead_id' => $lead->id,
+                            'status' => 'active',
+                            'start_date' => date('Y-m-d'),
+                            'notes' => "Cliente criado automaticamente a partir da aceitação da proposta #{$proposalId}",
+                            // Map address fields from Lead
+                            'zip_code' => $lead->cep,
+                            'address' => $lead->address,
+                            'city' => $lead->city,
+                            'state' => $lead->state,
+                            // Map other fields if possible
+                            'fantasy_name' => $lead->company ?? $lead->name,
+                            // Client model has: lead_id, company_id, contact_id... 
+                            // It also has fiscal fields.
+                        ];
+
+                        // Check if Client model has create method (yes)
+                        Client::create($clientData);
+                    }
+                }
+            }
+            // ---------------------------------------------------------
+
             http_response_code(200);
             return [
                 "success" => true,
@@ -409,7 +443,7 @@ class ProposalController extends BaseController
             $manager = User::findById($proposal->responsavel_id);
             if ($manager) {
                 $managerEmail = $manager->email;
-                $responsibleName = $manager->name;
+                $responsibleName = $manager->name ?? 'Não definido';
             }
         }
 
