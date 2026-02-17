@@ -38,21 +38,15 @@ class AuthMiddleware
 
         if (!$token) {
             // No Authorization header provided
-            http_response_code(401);
-            echo json_encode(["erro" => "Cabeçalho de autorização ausente"]);
-            exit;
-        }
-
-        if (!$headers) {
-            http_response_code(401);
-            echo json_encode(["erro" => "Cabeçalho de autorização ausente"]);
-            exit;
+            $this->lastError = "Cabeçalho de autorização ausente";
+            error_log("Middleware: Authorization header missing.");
+            return null;
         }
 
         if (!preg_match('/Bearer\s(\S+)/', $token, $matches)) {
-            http_response_code(401);
-            echo json_encode(["erro" => "Formato do token inválido"]);
-            exit;
+            $this->lastError = "Formato do token inválido";
+            error_log("Middleware: Invalid token format.");
+            return null;
         }
 
         $token = $matches[1]; // apenas o token JWT sem o "Bearer"
