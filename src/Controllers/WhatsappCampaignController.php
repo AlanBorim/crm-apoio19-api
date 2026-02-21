@@ -396,7 +396,7 @@ class WhatsappCampaignController extends BaseController
                 );
 
                 if ($result['success']) {
-                    $messageModel->updateStatus($msg['id'], 'sent', $result['message_id'] ?? null);
+                    $messageModel->updateStatus($msg['id'], 'sent', $result['message_id'] ?? null, null, $result['phone_number_id'] ?? null);
                     $sentCount++;
                 } else {
                     $messageModel->updateStatus($msg['id'], 'failed', null, $result['error'] ?? 'Erro desconhecido');

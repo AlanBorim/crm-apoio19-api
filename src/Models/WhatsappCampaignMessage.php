@@ -134,7 +134,7 @@ class WhatsappCampaignMessage
     /**
      * Update message status
      */
-    public function updateStatus(int $id, string $status, ?string $messageId = null, ?string $errorMessage = null): bool
+    public function updateStatus(int $id, string $status, ?string $messageId = null, ?string $errorMessage = null, ?string $phoneNumberId = null): bool
     {
         $fields = ['status = ?'];
         $values = [$status];
@@ -163,6 +163,11 @@ class WhatsappCampaignMessage
         if ($errorMessage !== null) {
             $fields[] = 'error_message = ?';
             $values[] = $errorMessage;
+        }
+
+        if ($phoneNumberId !== null) {
+            $fields[] = 'phone_number_id = ?';
+            $values[] = $phoneNumberId;
         }
 
         $values[] = $id;

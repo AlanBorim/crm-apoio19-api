@@ -810,7 +810,7 @@ class WhatsappService
                 // For a test message, we might not have a contact_id, 
                 // but if we do later, we could also save it to whatsapp_chat_messages here.
 
-                return ['success' => true, 'message_id' => $whatsappMessageId];
+                return ['success' => true, 'message_id' => $whatsappMessageId, 'phone_number_id' => $phoneNumberId];
             }
 
             return ['success' => false, 'error' => 'Failed to send template'];

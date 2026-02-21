@@ -95,7 +95,8 @@ class WhatsappChatMessage
                         wcm.created_at,
                         wcm.updated_at,
                         u.name as user_name,
-                        'chat' as source_table
+                        'chat' as source_table,
+                        NULL as template_components
                     FROM whatsapp_chat_messages wcm
                     LEFT JOIN users u ON wcm.user_id = u.id
                     WHERE wcm.contact_id = ? {$phoneFilterChat}
@@ -120,14 +121,16 @@ class WhatsappChatMessage
                         cm.created_at,
                         cm.updated_at,
                         u.name as user_name,
-                        'campaign' as source_table
+                        'campaign' as source_table,
+                        wt.components as template_components
                     FROM whatsapp_campaign_messages cm
                     JOIN whatsapp_campaigns c ON cm.campaign_id = c.id
                     LEFT JOIN users u ON c.user_id = u.id
                     LEFT JOIN whatsapp_phone_numbers wpn ON c.phone_number_id = wpn.id
+                    LEFT JOIN whatsapp_templates wt ON cm.template_id = wt.id
                     WHERE cm.contact_id = ? {$phoneFilterCampaign}
                 ) as combined_messages
-                ORDER BY created_at DESC
+                ORDER BY created_at DESC, id DESC
                 LIMIT ? OFFSET ?
             ";
 
@@ -137,6 +140,22 @@ class WhatsappChatMessage
             $stmt = $this->db->prepare($sql);
             $stmt->execute($params);
             $messages = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+            // Extract template body text for campaign messages
+            foreach ($messages as &$msg) {
+                if ($msg['source_table'] === 'campaign' && !empty($msg['template_components'])) {
+                    $components = json_decode($msg['template_components'], true);
+                    if (is_array($components)) {
+                        foreach ($components as $comp) {
+                            if (isset($comp['type']) && strtoupper($comp['type']) === 'BODY') {
+                                $msg['message_content'] = $comp['text'];
+                                break;
+                            }
+                        }
+                    }
+                }
+                unset($msg['template_components']);
+            }
 
             // Reverse to show oldest first
             return array_reverse($messages);
