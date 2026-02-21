@@ -37,7 +37,7 @@ class WhatsappCampaign
         $fields = [];
         $values = [];
 
-        $allowedFields = ['name', 'description', 'status', 'scheduled_at', 'started_at', 'completed_at', 'phone_number_id'];
+        $allowedFields = ['name', 'description', 'status', 'scheduled_at', 'started_at', 'completed_at', 'phone_number_id', 'settings'];
 
         foreach ($data as $key => $value) {
             if (in_array($key, $allowedFields)) {

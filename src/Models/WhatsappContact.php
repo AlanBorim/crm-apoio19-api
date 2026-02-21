@@ -91,16 +91,15 @@ class WhatsappContact
 
     public function getAll(array $filters = []): array
     {
-        // Determine join type based on filter presence to ensure strict filtering
-        // Use INNER JOIN when filtering by phone_number_id to strictly exclude contacts 
-        // that do not have messages associated with that specific number.
+        // Filtro por phone_number_id usa INNER JOIN para retornar apenas contatos
+        // que têm mensagens associadas ao número selecionado
         $joinType = !empty($filters['phone_number_id']) ? 'INNER' : 'LEFT';
 
         if (!empty($filters['phone_number_id'])) {
             error_log("WhatsappContact::getAll - Strict filtering (INNER JOIN) for phone_number_id: " . $filters['phone_number_id']);
         }
 
-        // Excluir contatos que só têm mensagens de campanha
+        // Lista contatos que têm qualquer mensagem (recebidas, enviadas ou templates)
         $sql = "SELECT wc.*, 
                        l.name as lead_name, 
                        c.name as contact_name,
@@ -109,10 +108,6 @@ class WhatsappContact
                 LEFT JOIN leads l ON wc.lead_id = l.id
                 LEFT JOIN contacts c ON wc.contact_id = c.id
                 $joinType JOIN whatsapp_chat_messages wcm ON wc.id = wcm.contact_id
-                    AND NOT EXISTS (
-                        SELECT 1 FROM whatsapp_campaign_messages wccm 
-                        WHERE wccm.message_id = wcm.whatsapp_message_id
-                    )
                 WHERE 1=1";
         $params = [];
 
@@ -152,6 +147,38 @@ class WhatsappContact
         $contacts = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
         error_log("WhatsappContact::getAll - Contatos encontrados: " . count($contacts));
+
+        foreach ($contacts as &$contact) {
+            if (isset($contact['metadata'])) {
+                $contact['metadata'] = json_decode($contact['metadata'], true);
+            }
+        }
+
+        return $contacts;
+    }
+
+    public function getAllRaw(array $filters = []): array
+    {
+        $sql = "SELECT wc.*, l.name as lead_name, c.name as contact_name
+                FROM whatsapp_contacts wc
+                LEFT JOIN leads l ON wc.lead_id = l.id
+                LEFT JOIN contacts c ON wc.contact_id = c.id
+                WHERE 1=1";
+        $params = [];
+
+        if (!empty($filters['search'])) {
+            $sql .= ' AND (wc.name LIKE ? OR wc.phone_number LIKE ?)';
+            $searchTerm = '%' . $filters['search'] . '%';
+            $params[] = $searchTerm;
+            $params[] = $searchTerm;
+        }
+
+        $sql .= ' ORDER BY wc.name ASC, wc.phone_number ASC';
+
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
+
+        $contacts = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
         foreach ($contacts as &$contact) {
             if (isset($contact['metadata'])) {

@@ -474,7 +474,7 @@ CREATE TABLE `whatsapp_campaign_messages` (
 CREATE TABLE `whatsapp_chat_messages` (
   `id` int(11) NOT NULL,
   `contact_id` int(11) NOT NULL,
-  `user_id` int(11) NOT NULL,
+  `user_id` int(11) DEFAULT NULL COMMENT 'NULL = mensagem recebida; preenchido = enviada por usuário CRM',
   `phone_number_id` bigint(20) DEFAULT NULL COMMENT 'Phone Number ID da Meta API (não é FK)',
   `direction` enum('outgoing','incoming') NOT NULL,
   `message_type` varchar(50) NOT NULL DEFAULT 'text',

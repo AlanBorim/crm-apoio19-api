@@ -251,8 +251,11 @@ class WhatsappController extends BaseController
         $this->requirePermission($userData, 'whatsapp', 'edit');
 
         try {
-            $contactId = (int)($requestData['contact_id'] ?? 0);
-            $message = $requestData['message'] ?? '';
+            $contactId    = (int)($requestData['contact_id'] ?? 0);
+            $message      = $requestData['message'] ?? '';
+            // phone_number_id: ID da Meta do número que está sendo usado na conversa
+            // Enviado pelo frontend ao selecionar o número no seletor
+            $phoneNumberId = $requestData['phone_number_id'] ?? null;
 
             if (!$contactId || !$message) {
                 return $this->errorResponse(400, "contact_id e message são obrigatórios", "VALIDATION_ERROR", $traceId);
@@ -266,12 +269,13 @@ class WhatsappController extends BaseController
                 return $this->errorResponse(404, "Contato não encontrado", "NOT_FOUND", $traceId);
             }
 
-            // Send message via API
+            // Send message via API (phone_number_id garante envio pelo número correto)
             $result = $this->whatsappService->sendTextMessage(
                 $contact['phone_number'],
                 $message,
                 $userData->id,
-                $contactId
+                $contactId,
+                $phoneNumberId
             );
 
             if ($result['success']) {
@@ -284,6 +288,7 @@ class WhatsappController extends BaseController
             return $this->errorResponse(500, "Erro ao enviar mensagem", "ERROR", $traceId);
         }
     }
+
     /**
      * Process individual message
      */
@@ -325,242 +330,6 @@ class WhatsappController extends BaseController
         }
     }
 
-    // /**
-    //  * Send a WhatsApp message to a lead or contact.
-    //  *
-    //  * @param array $headers Request headers.
-    //  * @param array $requestData Expected keys: target_type ("lead" or "contact"), target_id, message
-    //  * @return array JSON response.
-    //  */
-    // public function sendMessage(array $headers, array $requestData): array
-    // {
-    //     $userData = $this->authMiddleware->handle($headers, ["comercial", "admin"]); // Or specific roles allowed to send
-    //     if (!$userData) {
-    //         http_response_code(401);
-    //         return ["error" => "Autenticação do CRM necessária."];
-    //     }
-
-    //     // Validate input
-    //     $targetType = $requestData["target_type"] ?? null;
-    //     $targetId = isset($requestData["target_id"]) ? (int)$requestData["target_id"] : null;
-    //     $message = $requestData["message"] ?? null;
-
-    //     if (!$targetType || !$targetId || !$message || !in_array($targetType, ["lead", "contact"])) {
-    //         http_response_code(400);
-    //         return ["error" => "Dados inválidos. Forneça target_type ('lead' ou 'contact'), target_id e message."];
-    //     }
-
-    //     $phoneNumber = null;
-    //     $leadId = null;
-    //     $contactId = null;
-
-    //     // Get phone number based on target type
-    //     if ($targetType === "lead") {
-    //         $lead = Lead::findById($targetId);
-    //         if (!$lead || empty($lead->telefone)) {
-    //             http_response_code(404);
-    //             return ["error" => "Lead não encontrado ou sem número de telefone cadastrado."];
-    //         }
-    //         $phoneNumber = $lead->telefone;
-    //         $leadId = $targetId;
-    //     } else { // targetType === "contact"
-    //         $contact = Contact::findById($targetId);
-    //         if (!$contact || empty($contact->telefone)) {
-    //             http_response_code(404);
-    //             return ["error" => "Contato não encontrado ou sem número de telefone cadastrado."];
-    //         }
-    //         $phoneNumber = $contact->telefone;
-    //         $contactId = $targetId;
-    //     }
-
-    //     // Format phone number if necessary for ZDG API (e.g., add @c.us)
-    //     // This depends heavily on how the ZDG API expects the number.
-    //     // Assuming it needs the format 55119XXXXXXXX@c.us
-    //     $formattedPhoneNumber = preg_replace("/[^0-9]/", "", $phoneNumber); // Remove non-digits
-    //     if (strlen($formattedPhoneNumber) >= 10) { // Basic check for BR numbers
-    //         if (strlen($formattedPhoneNumber) == 10) { // Add 9 for mobile without it
-    //             $formattedPhoneNumber = substr($formattedPhoneNumber, 0, 2) . '9' . substr($formattedPhoneNumber, 2);
-    //         }
-    //         if (substr($formattedPhoneNumber, 0, 2) !== '55') { // Add country code if missing
-    //             $formattedPhoneNumber = '55' . $formattedPhoneNumber;
-    //         }
-    //         $formattedPhoneNumber .= "@c.us";
-    //     } else {
-    //         http_response_code(400);
-    //         return ["error" => "Número de telefone inválido ou não formatado corretamente para WhatsApp: {$phoneNumber}"];
-    //     }
-
-
-    //     $result = $this->whatsappService->sendMessage(
-    //         $formattedPhoneNumber,
-    //         $message,
-    //         $userData->id,
-    //         $leadId,
-    //         $contactId
-    //     );
-
-    //     if ($result["success"]) {
-    //         http_response_code(200);
-    //         return ["message" => $result["message"], "external_id" => $result["external_id"]];
-    //     } else {
-    //         http_response_code(500); // Or specific error code based on result
-    //         return ["error" => $result["message"]];
-    //     }
-    // }
-
-    // /**
-    //  * Get WhatsApp message history for a specific lead or contact.
-    //  *
-    //  * @param array $headers Request headers.
-    //  * @param array $queryParams Expected keys: target_type ("lead" or "contact"), target_id
-    //  * @return array JSON response.
-    //  */
-    // public function getHistory(array $headers, array $queryParams): array
-    // {
-    //     $userData = $this->authMiddleware->handle($headers);
-    //     if (!$userData) {
-    //         http_response_code(401);
-    //         return ["error" => "Autenticação do CRM necessária."];
-    //     }
-
-    //     $targetType = $queryParams["target_type"] ?? null;
-    //     $targetId = isset($queryParams["target_id"]) ? (int)$queryParams["target_id"] : null;
-
-    //     if (!$targetType || !$targetId || !in_array($targetType, ["lead", "contact"])) {
-    //         http_response_code(400);
-    //         return ["error" => "Dados inválidos. Forneça target_type ('lead' ou 'contact') e target_id."];
-    //     }
-
-    //     $sql = "SELECT wh.*, u.nome as usuario_nome 
-    //             FROM whatsapp_historico wh
-    //             LEFT JOIN usuarios u ON wh.usuario_id = u.id 
-    //             WHERE ";
-    //     $params = [];
-
-    //     if ($targetType === "lead") {
-    //         $sql .= "wh.lead_id = :target_id";
-    //         $params[":target_id"] = $targetId;
-    //     } else { // targetType === "contact"
-    //         $sql .= "wh.contato_id = :target_id";
-    //         $params[":target_id"] = $targetId;
-    //     }
-
-    //     $sql .= " ORDER BY wh.data_registro DESC";
-    //     // Add pagination later if needed
-
-    //     try {
-    //         $pdo = Database::getInstance();
-    //         $stmt = $pdo->prepare($sql);
-    //         $stmt->execute($params);
-    //         $history = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-    //         http_response_code(200);
-    //         return ["data" => $history];
-    //     } catch (PDOException $e) {
-    //         error_log("Erro ao buscar histórico do WhatsApp para {$targetType} ID {$targetId}: " . $e->getMessage());
-    //         http_response_code(500);
-    //         return ["error" => "Erro interno ao buscar histórico do WhatsApp."];
-    //     }
-    // }
-
-
-
-    // /**
-    //  * Save WhatsApp configuration
-    //  */
-    // public function saveConfig(array $headers, array $requestData): array
-    // {
-    //     $traceId = bin2hex(random_bytes(8));
-    //     $userData = $this->authMiddleware->handle($headers);
-
-    //     if (!$userData) {
-    //         return $this->errorResponse(401, "Autenticação necessária.", "UNAUTHORIZED", $traceId);
-    //     }
-
-    //     $this->requirePermission($userData, 'configuracoes', 'edit');
-
-    //     try {
-    //         $pdo = Database::getInstance();
-
-    //         // Check if exists
-    //         $stmt = $pdo->query('SELECT id FROM whatsapp_phone_numbers WHERE status = "active" LIMIT 1');
-    //         $existing = $stmt->fetch(PDO::FETCH_ASSOC);
-
-    //         if ($existing) {
-    //             // Update
-    //             $stmt = $pdo->prepare('
-    //                 UPDATE whatsapp_phone_numbers
-    //                 SET name = ?, phone_number = ?, phone_number_id = ?,
-    //                     business_account_id = ?, webhook_verify_token = ?,
-    //                     updated_at = NOW()
-    //                 WHERE id = ?
-    //             ');
-    //             $stmt->execute([
-    //                 $requestData['nome'] ?? '',
-    //                 $requestData['numero'] ?? '',
-    //                 $requestData['phoneNumberId'] ?? '',
-    //                 $requestData['businessAccountId'] ?? '',
-    //                 $requestData['webhookVerifyToken'] ?? '',
-    //                 $existing['id']
-    //             ]);
-    //         } else {
-    //             // Insert
-    //             $stmt = $pdo->prepare('
-    //                 INSERT INTO whatsapp_phone_numbers
-    //                 (name, phone_number, phone_number_id, business_account_id, webhook_verify_token, status, created_at, updated_at)
-    //                 VALUES (?, ?, ?, ?, ?, "active", NOW(), NOW())
-    //             ');
-    //             $stmt->execute([
-    //                 $requestData['nome'] ?? '',
-    //                 $requestData['numero'] ?? '',
-    //                 $requestData['phoneNumberId'] ?? '',
-    //                 $requestData['businessAccountId'] ?? '',
-    //                 $requestData['webhookVerifyToken'] ?? ''
-    //             ]);
-    //         }
-
-    //         return $this->successResponse(null, "Configuração salva com sucesso", 200, $traceId);
-    //     } catch (\PDOException $e) {
-    //         error_log("Save config error: " . $e->getMessage());
-    //         return $this->errorResponse(500, "Erro ao salvar configuração", "DB_ERROR", $traceId);
-    //     }
-    // }
-
-
-    // /**
-    //  * Send test message
-    //  */
-    // public function sendTestMessage(array $headers, array $requestData): array
-    // {
-    //     $traceId = bin2hex(random_bytes(8));
-    //     $userData = $this->authMiddleware->handle($headers);
-
-    //     if (!$userData) {
-    //         return $this->errorResponse(401, "Autenticação necessária.", "UNAUTHORIZED", $traceId);
-    //     }
-
-    //     $this->requirePermission($userData, 'configuracoes', 'edit');
-
-    //     $number = $requestData['number'] ?? null;
-    //     $message = $requestData['message'] ?? null;
-
-    //     if (!$number || !$message) {
-    //         return $this->errorResponse(400, "Número e mensagem obrigatórios", "VALIDATION_ERROR", $traceId);
-    //     }
-
-    //     try {
-    //         $result = $this->whatsappService->sendTextMessage($number, $message);
-    //         return $this->successResponse($result, "Mensagem enviada", 200, $traceId);
-    //     } catch (\Exception $e) {
-    //         error_log("Send test error: " . $e->getMessage());
-    //         return $this->errorResponse(500, "Erro ao enviar", "ERROR", $traceId);
-    //     }
-    // }
-
-    // TODO: Implement webhook endpoint to receive incoming messages and status updates from ZDG API
-    // This would require a public endpoint in the CRM accessible by the ZDG API server.
-    // public function handleWebhook(array $request Data): array { ... }
-
     /**
      * Sync phone numbers from Meta API to database
      */
@@ -588,6 +357,7 @@ class WhatsappController extends BaseController
             $db = \Apoio19\Crm\Models\Database::getInstance();
             $synced = [];
             $errors = [];
+            $activePhoneIds = [];
 
             foreach ($phoneNumbers as $phoneData) {
                 try {
@@ -599,6 +369,8 @@ class WhatsappController extends BaseController
                     if (!$phoneNumberId || !$displayPhoneNumber) {
                         continue;
                     }
+
+                    $activePhoneIds[] = $phoneNumberId;
 
                     // Check if number already exists
                     $stmt = $db->prepare("
@@ -658,6 +430,14 @@ class WhatsappController extends BaseController
                         'error' => $e->getMessage()
                     ];
                 }
+            }
+
+            // Marcar como inativos os números que não vieram na listagem da Meta
+            if (!empty($activePhoneIds)) {
+                $placeholders = implode(',', array_fill(0, count($activePhoneIds), '?'));
+                $sql = "UPDATE whatsapp_phone_numbers SET status = 'inactive' WHERE phone_number_id NOT IN ($placeholders)";
+                $stmt = $db->prepare($sql);
+                $stmt->execute($activePhoneIds);
             }
 
             // ALSO SYNC TEMPLATES
@@ -958,65 +738,11 @@ class WhatsappController extends BaseController
         }
     }
 
-    /**
-     * Get campaign messages
-     */
-    public function getCampaignMessages(array $headers, int $campaignId): array
-    {
-        $traceId = bin2hex(random_bytes(8));
-        $userData = $this->authMiddleware->handle($headers);
-
-        if (!$userData) {
-            $errorDetails = $this->authMiddleware->getLastError();
-            return $this->errorResponse(401, "Autenticação necessária.", "UNAUTHORIZED", $traceId, $errorDetails);
-        }
-
-        $this->requirePermission($userData, 'whatsapp', 'view');
-
-        try {
-            $messageModel = new \Apoio19\Crm\Models\WhatsappCampaignMessage();
-            $messages = $messageModel->getByCampaignId($campaignId);
-
-            // Parse JSON params if present
-            foreach ($messages as &$message) {
-                if ($message['template_params']) {
-                    $message['template_params'] = json_decode($message['template_params'], true);
-                }
-            }
-
-            return $this->successResponse($messages, "Mensagens obtidas", 200, $traceId);
-        } catch (\Exception $e) {
-            error_log("Get campaign messages error: " . $e->getMessage());
-            return $this->errorResponse(500, "Erro ao buscar mensagens", "ERROR", $traceId);
-        }
-    }
 
     /**
-     * Get campaign contacts summary
+     * Send a test template message
      */
-    public function getCampaignContacts(array $headers, int $campaignId): array
-    {
-        $traceId = bin2hex(random_bytes(8));
-        $userData = $this->authMiddleware->handle($headers);
-
-        if (!$userData) {
-            return $this->errorResponse(401, "Autenticação necessária.", "UNAUTHORIZED", $traceId);
-        }
-
-        try {
-            $messageModel = new \Apoio19\Crm\Models\WhatsappCampaignMessage();
-            $contacts = $messageModel->getCampaignContacts($campaignId);
-            return $this->successResponse($contacts, "Contatos da campanha obtidos", 200, $traceId);
-        } catch (\Exception $e) {
-            error_log("Get campaign contacts error: " . $e->getMessage());
-            return $this->errorResponse(500, "Erro ao buscar contatos da campanha", "ERROR", $traceId);
-        }
-    }
-
-    /**
-     * Create campaign message
-     */
-    public function createCampaignMessage(array $headers, int $campaignId, array $requestData): array
+    public function sendTestMessage(array $headers, array $requestData): array
     {
         $traceId = bin2hex(random_bytes(8));
         $userData = $this->authMiddleware->handle($headers);
@@ -1029,138 +755,47 @@ class WhatsappController extends BaseController
         $this->requirePermission($userData, 'whatsapp', 'edit');
 
         try {
-            if (empty($requestData['template_id']) || empty($requestData['contact_id'])) {
-                return $this->errorResponse(400, "Template e contato são obrigatórios", "VALIDATION_ERROR", $traceId);
+            $phoneNumber = $requestData['phone_number'] ?? '';
+            $templateName = $requestData['template_name'] ?? '';
+            $language = $requestData['language'] ?? 'pt_BR';
+
+            if (empty($phoneNumber) || empty($templateName)) {
+                return $this->errorResponse(400, "phone_number e template_name são obrigatórios", "VALIDATION_ERROR", $traceId);
             }
 
-            $messageModel = new \Apoio19\Crm\Models\WhatsappCampaignMessage();
+            // Remove non-numeric characters from phone number
+            $phoneNumber = preg_replace('/[^0-9]/', '', $phoneNumber);
 
-            $data = [
-                'campaign_id' => $campaignId,
-                'template_id' => $requestData['template_id'],
-                'contact_id' => $requestData['contact_id'],
-                'template_params' => $requestData['template_params'] ?? [],
-                'status' => $requestData['status'] ?? 'pending'
-            ];
+            // Fetch the phone number ID from the request or fallback to config
+            $phoneNumberId = $requestData['phone_number_id'] ?? null;
 
-            $messageId = $messageModel->create($data);
-            $message = $messageModel->findById($messageId);
+            if (!$phoneNumberId) {
+                $config = \Apoio19\Crm\Models\Whatsapp::getConfig();
+                $phoneNumberId = $config['phone_number_id'] ?? null;
+            }
 
-            return $this->successResponse($message, "Mensagem criada", 201, $traceId);
+            if (!$phoneNumberId) {
+                return $this->errorResponse(500, "WhatsApp não está configurado ou número não fornecido", "CONFIG_ERROR", $traceId);
+            }
+
+            // Send template via Service
+            $result = $this->whatsappService->sendTemplateMessage(
+                $phoneNumber,
+                $templateName,
+                $language,
+                [], // No components for basic test
+                $userData->id,
+                $phoneNumberId
+            );
+
+            if ($result['success']) {
+                return $this->successResponse($result, "Mensagem de teste enviada", 200, $traceId);
+            } else {
+                return $this->errorResponse(500, $result['error'] ?? "Erro ao enviar mensagem de teste", "SEND_ERROR", $traceId);
+            }
         } catch (\Exception $e) {
-            error_log("Create campaign message error: " . $e->getMessage());
-            return $this->errorResponse(500, "Erro ao criar mensagem", "ERROR", $traceId);
-        }
-    }
-
-    /**
-     * Update campaign message
-     */
-    public function updateCampaignMessage(array $headers, int $campaignId, int $messageId, array $requestData): array
-    {
-        $traceId = bin2hex(random_bytes(8));
-        $userData = $this->authMiddleware->handle($headers);
-
-        if (!$userData) {
-            $errorDetails = $this->authMiddleware->getLastError();
-            return $this->errorResponse(401, "Autenticação necessária.", "UNAUTHORIZED", $traceId, $errorDetails);
-        }
-
-        $this->requirePermission($userData, 'whatsapp', 'edit');
-
-        try {
-            $messageModel = new \Apoio19\Crm\Models\WhatsappCampaignMessage();
-
-            $message = $messageModel->findById($messageId);
-            if (!$message || $message['campaign_id'] != $campaignId) {
-                return $this->errorResponse(404, "Mensagem não encontrada", "NOT_FOUND", $traceId);
-            }
-
-            $success = $messageModel->update($messageId, $requestData);
-
-            if ($success) {
-                $updated = $messageModel->findById($messageId);
-                return $this->successResponse($updated, "Mensagem atualizada", 200, $traceId);
-            }
-
-            return $this->errorResponse(500, "Erro ao atualizar mensagem", "UPDATE_ERROR", $traceId);
-        } catch (\Exception $e) {
-            error_log("Update campaign message error: " . $e->getMessage());
-            return $this->errorResponse(500, "Erro ao atualizar mensagem", "ERROR", $traceId);
-        }
-    }
-
-    /**
-     * Delete campaign message
-     */
-    public function deleteCampaignMessage(array $headers, int $campaignId, int $messageId): array
-    {
-        $traceId = bin2hex(random_bytes(8));
-        $userData = $this->authMiddleware->handle($headers);
-
-        if (!$userData) {
-            $errorDetails = $this->authMiddleware->getLastError();
-            return $this->errorResponse(401, "Autenticação necessária.", "UNAUTHORIZED", $traceId, $errorDetails);
-        }
-
-        $this->requirePermission($userData, 'whatsapp', 'edit');
-
-        try {
-            $messageModel = new \Apoio19\Crm\Models\WhatsappCampaignMessage();
-
-            $message = $messageModel->findById($messageId);
-            if (!$message || $message['campaign_id'] != $campaignId) {
-                return $this->errorResponse(404, "Mensagem não encontrada", "NOT_FOUND", $traceId);
-            }
-
-            $success = $messageModel->delete($messageId);
-
-            if ($success) {
-                return $this->successResponse(null, "Mensagem deletada", 200, $traceId);
-            }
-
-            return $this->errorResponse(500, "Erro ao deletar mensagem", "DELETE_ERROR", $traceId);
-        } catch (\Exception $e) {
-            error_log("Delete campaign message error: " . $e->getMessage());
-            return $this->errorResponse(500, "Erro ao deletar mensagem", "ERROR", $traceId);
-        }
-    }
-
-    /**
-     * Resend campaign message
-     */
-    public function resendCampaignMessage(array $headers, int $campaignId, int $messageId): array
-    {
-        $traceId = bin2hex(random_bytes(8));
-        $userData = $this->authMiddleware->handle($headers);
-
-        if (!$userData) {
-            $errorDetails = $this->authMiddleware->getLastError();
-            return $this->errorResponse(401, "Autenticação necessária.", "UNAUTHORIZED", $traceId, $errorDetails);
-        }
-
-        $this->requirePermission($userData, 'whatsapp', 'edit');
-
-        try {
-            $messageModel = new \Apoio19\Crm\Models\WhatsappCampaignMessage();
-
-            $message = $messageModel->findById($messageId);
-            if (!$message || $message['campaign_id'] != $campaignId) {
-                return $this->errorResponse(404, "Mensagem não encontrada", "NOT_FOUND", $traceId);
-            }
-
-            // Reset message to pending status for resend
-            $success = $messageModel->resetForResend($messageId);
-
-            if ($success) {
-                $updated = $messageModel->findById($messageId);
-                return $this->successResponse($updated, "Mensagem agendada para reenvio", 200, $traceId);
-            }
-
-            return $this->errorResponse(500, "Erro ao agendar reenvio", "RESEND_ERROR", $traceId);
-        } catch (\Exception $e) {
-            error_log("Resend campaign message error: " . $e->getMessage());
-            return $this->errorResponse(500, "Erro ao agendar reenvio", "ERROR", $traceId);
+            error_log("Erro ao enviar mensagem de teste: " . $e->getMessage());
+            return $this->errorResponse(500, "Erro ao enviar mensagem", "ERROR", $traceId);
         }
     }
 
@@ -1197,6 +832,35 @@ class WhatsappController extends BaseController
         } catch (\Exception $e) {
             error_log("Get templates error: " . $e->getMessage());
             return $this->errorResponse(500, "Erro ao buscar templates", "ERROR", $traceId);
+        }
+    }
+
+    /**
+     * Get all raw contacts for selection
+     */
+    public function getContacts(array $headers, array $queryParams = []): array
+    {
+        $traceId = bin2hex(random_bytes(8));
+        $userData = $this->authMiddleware->handle($headers);
+
+        if (!$userData) {
+            $errorDetails = $this->authMiddleware->getLastError();
+            return $this->errorResponse(401, "Autenticação necessária.", "UNAUTHORIZED", $traceId, $errorDetails);
+        }
+
+        try {
+            $contactModel = new \Apoio19\Crm\Models\WhatsappContact();
+            $filters = [];
+
+            if (!empty($queryParams['search'])) {
+                $filters['search'] = $queryParams['search'];
+            }
+
+            $contacts = $contactModel->getAllRaw($filters);
+            return $this->successResponse($contacts, "Contatos obtidos", 200, $traceId);
+        } catch (\Exception $e) {
+            error_log("Erro ao buscar contatos base: " . $e->getMessage());
+            return $this->errorResponse(500, "Erro ao buscar contatos", "ERROR", $traceId);
         }
     }
 }

@@ -331,34 +331,220 @@ class WhatsappService
             $phoneNumber = $message['from'] ?? null;
             if (!$phoneNumber) return;
 
+            $whatsappMessageId = $message['id'] ?? null;
+
+            error_log("Processando mensagem recebida - from: {$phoneNumber}, phone_number_id: {$phoneNumberId}, message_id: {$whatsappMessageId}");
+
+            // Evitar inserção duplicada em caso de retry do webhook
+            if ($whatsappMessageId) {
+                $whatsappMessageModel = new \Apoio19\Crm\Models\WhatsappChatMessage();
+                $existing = $whatsappMessageModel->findByWhatsappMessageId($whatsappMessageId);
+                if ($existing) {
+                    error_log("Mensagem duplicada ignorada: {$whatsappMessageId}");
+                    return;
+                }
+            }
+
             $whatsappContact = new \Apoio19\Crm\Models\WhatsappContact();
             $contact = $whatsappContact->findByPhoneNumber($phoneNumber);
 
             if (!$contact) {
+                // Tenta extrair o nome do perfil do remetente, se disponível no payload
+                $profileName = $message['profile']['name'] ?? $phoneNumber;
                 $contactId = $whatsappContact->create([
                     'phone_number' => $phoneNumber,
-                    'name' => $phoneNumber
+                    'name' => $profileName
                 ]);
+                error_log("Novo contato criado: {$phoneNumber} (ID: {$contactId})");
             } else {
                 $contactId = $contact['id'];
             }
 
             $messageType = $message['type'] ?? 'text';
-            $messageContent = $message['text']['body'] ?? '[Media]';
+
+            // Extrair conteúdo conforme o tipo da mensagem
+            switch ($messageType) {
+                case 'text':
+                    $messageContent = $message['text']['body'] ?? '';
+                    break;
+                case 'image':
+                    $messageContent = $message['image']['caption'] ?? '[Imagem]';
+                    $mediaUrl = $message['image']['id'] ?? null;
+                    break;
+                case 'audio':
+                    $messageContent = '[Áudio]';
+                    $mediaUrl = $message['audio']['id'] ?? null;
+                    break;
+                case 'video':
+                    $messageContent = $message['video']['caption'] ?? '[Vídeo]';
+                    $mediaUrl = $message['video']['id'] ?? null;
+                    break;
+                case 'document':
+                    $messageContent = $message['document']['filename'] ?? '[Documento]';
+                    $mediaUrl = $message['document']['id'] ?? null;
+                    break;
+                case 'sticker':
+                    $messageContent = '[Sticker]';
+                    $mediaUrl = $message['sticker']['id'] ?? null;
+                    break;
+                case 'location':
+                    $lat = $message['location']['latitude'] ?? '';
+                    $lng = $message['location']['longitude'] ?? '';
+                    $messageContent = "[Localização: {$lat}, {$lng}]";
+                    break;
+                case 'button':
+                    $messageContent = $message['button']['text'] ?? '[Botão]';
+                    break;
+                case 'interactive':
+                    $interactiveType = $message['interactive']['type'] ?? '';
+                    if ($interactiveType === 'button_reply') {
+                        $messageContent = $message['interactive']['button_reply']['title'] ?? '[Botão]';
+                    } elseif ($interactiveType === 'list_reply') {
+                        $messageContent = $message['interactive']['list_reply']['title'] ?? '[Lista]';
+                    } else {
+                        $messageContent = '[Interativo]';
+                    }
+                    break;
+                default:
+                    $messageContent = "[{$messageType}]";
+            }
 
             $whatsappMessage = new \Apoio19\Crm\Models\WhatsappChatMessage();
-            $whatsappMessage->create([
-                'contact_id' => $contactId,
-                'user_id' => 1,
-                'phone_number_id' => $phoneNumberId, // Save phone_number_id from webhook
-                'direction' => 'incoming',
-                'message_type' => $messageType,
-                'message_content' => $messageContent,
-                'whatsapp_message_id' => $message['id'] ?? null,
-                'status' => 'delivered'
+            $created = $whatsappMessage->create([
+                'contact_id'          => $contactId,
+                'user_id'             => null, // null = mensagem recebida (sem usuário CRM)
+                'phone_number_id'     => $phoneNumberId, // ID do número da Meta que recebeu a mensagem
+                'direction'           => 'incoming',
+                'message_type'        => $messageType,
+                'message_content'     => $messageContent,
+                'media_url'           => $mediaUrl ?? null,
+                'whatsapp_message_id' => $whatsappMessageId,
+                'status'              => 'delivered'
             ]);
+
+            error_log("Mensagem armazenada - contact_id: {$contactId}, phone_number_id: {$phoneNumberId}, db_id: {$created}");
+
+            // NOVO: Verificar se é resposta a uma campanha
+            $replyToWamid = $message['context']['id'] ?? null;
+            if ($replyToWamid) {
+                $db = \Apoio19\Crm\Models\Database::getInstance();
+                $stmt = $db->prepare('SELECT id, campaign_id FROM whatsapp_campaign_messages WHERE message_id = ? LIMIT 1');
+                $stmt->execute([$replyToWamid]);
+                $campaignMsg = $stmt->fetch(\PDO::FETCH_ASSOC);
+
+                if ($campaignMsg) {
+                    // Registrar a resposta na tabela de respostas de campanha
+                    $stmtResponse = $db->prepare('
+                        INSERT INTO whatsapp_message_responses 
+                        (message_id, from_number, response_text, response_type, media_url, received_at) 
+                        VALUES (?, ?, ?, ?, ?, NOW())
+                    ');
+
+                    $stmtResponse->execute([
+                        $campaignMsg['id'],
+                        $phoneNumber,
+                        $messageContent,
+                        $messageType,
+                        $mediaUrl ?? null
+                    ]);
+                    error_log("Resposta à campanha {$campaignMsg['campaign_id']} registrada na tabela whatsapp_message_responses");
+
+                    // Executar ação configurada (ex: envio de template automático)
+                    $this->processCampaignResponseAction($campaignMsg['campaign_id'], $contactId, $messageContent, $phoneNumber, $phoneNumberId);
+                }
+            }
         } catch (\Exception $e) {
-            error_log("Error processing message: " . $e->getMessage());
+            error_log("Erro ao processar mensagem recebida: " . $e->getMessage() . "\n" . $e->getTraceAsString());
+        }
+    }
+
+    /**
+     * Processa a ação (flow_auto_reply, etc) baseada na resposta de campanha recebida
+     */
+    private function processCampaignResponseAction(int $campaignId, int $contactId, string $responseText, string $phoneNumber, ?string $phoneNumberId): void
+    {
+        try {
+            $db = \Apoio19\Crm\Models\Database::getInstance();
+            $stmt = $db->prepare('SELECT settings, user_id, phone_number_id FROM whatsapp_campaigns WHERE id = ? LIMIT 1');
+            $stmt->execute([$campaignId]);
+            $campaign = $stmt->fetch(\PDO::FETCH_ASSOC);
+
+            if (!$campaign || empty($campaign['settings'])) {
+                return;
+            }
+
+            $settings = json_decode($campaign['settings'], true);
+            if (!isset($settings['responses_config'][$responseText])) {
+                return;
+            }
+
+            $config = $settings['responses_config'][$responseText];
+            $action = $config['action'] ?? null;
+
+            if ($action === 'flow_auto_reply') {
+                $templateId = $config['template_id'] ?? null;
+                if ($templateId) {
+                    $templateModel = new \Apoio19\Crm\Models\WhatsappTemplate();
+                    $template = $templateModel->findById($templateId);
+
+                    if ($template && $template['status'] === 'APPROVED') {
+                        error_log("Enviando auto-reply para a campanha {$campaignId} usando o template {$template['name']}");
+
+                        // Para templates simples, assumimos components vazios
+                        $result = $this->sendTemplateMessage(
+                            $phoneNumber,
+                            $template['name'],
+                            $template['language'] ?? 'pt_BR',
+                            [],
+                            $campaign['user_id'],
+                            $campaign['phone_number_id'] ?? $phoneNumberId
+                        );
+
+                        if ($result['success'] && isset($result['message_id'])) {
+                            // Extract body component if parsing is possible
+                            $bodyText = "[Resposta Automática: {$template['name']}]";
+                            if (!empty($template['components'])) {
+                                $componentsInfo = is_string($template['components']) ? json_decode($template['components'], true) : $template['components'];
+                                if (is_array($componentsInfo)) {
+                                    foreach ($componentsInfo as $comp) {
+                                        if (isset($comp['type']) && $comp['type'] === 'BODY') {
+                                            $bodyText = $comp['text'];
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+
+                            $chatMsgModel = new \Apoio19\Crm\Models\WhatsappChatMessage();
+                            $chatMsgModel->create([
+                                'contact_id'          => $contactId,
+                                'user_id'             => $campaign['user_id'],
+                                'phone_number_id'     => $phoneNumberId, // Meta phone number ID
+                                'direction'           => 'outgoing',
+                                'message_type'        => 'template',
+                                'message_content'     => $bodyText,
+                                'whatsapp_message_id' => $result['message_id'],
+                                'status'              => 'sent'
+                            ]);
+                            error_log("Auto-reply template saved to whatsapp_chat_messages for contact $contactId");
+                        }
+                    }
+                }
+            } elseif ($action === 'status_interessado' || $action === 'status_perdido') {
+                error_log("Alteração de status do lead planejada: Contato {$contactId} para {$action}");
+                $stmtContact = $db->prepare('SELECT lead_id FROM whatsapp_contacts WHERE id = ? LIMIT 1');
+                $stmtContact->execute([$contactId]);
+                $contact = $stmtContact->fetch(\PDO::FETCH_ASSOC);
+
+                if (!empty($contact['lead_id'])) {
+                    $statusId = ($action === 'status_interessado') ? 2 : 4; // Exemplo de IDs de interessado e perdido
+                    $stmtUpdate = $db->prepare('UPDATE leads SET status_id = ? WHERE id = ?');
+                    $stmtUpdate->execute([$statusId, $contact['lead_id']]);
+                    error_log("Status do lead {$contact['lead_id']} atualizado para {$statusId} ({$action})");
+                }
+            }
+        } catch (\Exception $e) {
+            error_log("Erro ao processar ação de resposta de campanha: " . $e->getMessage());
         }
     }
 
@@ -488,7 +674,7 @@ class WhatsappService
     }
 
 
-    public function sendTextMessage(string $phoneNumber, string $message, int $userId, int $contactId): array
+    public function sendTextMessage(string $phoneNumber, string $message, int $userId, int $contactId, ?string $phoneNumberId = null): array
     {
         try {
             $config = \Apoio19\Crm\Models\Whatsapp::getConfig();
@@ -496,8 +682,25 @@ class WhatsappService
                 return ['success' => false, 'error' => 'WhatsApp não configurado'];
             }
 
-            $phoneNumberId = $config['phone_number_id'];
-            $accessToken = $config['access_token'];
+            // Usar phone_number_id passado explicitamente ou cair no padrão do config
+            if ($phoneNumberId) {
+                // Buscar o access_token específico do número selecionado
+                $db = \Apoio19\Crm\Models\Database::getInstance();
+                $stmt = $db->prepare('SELECT * FROM whatsapp_phone_numbers WHERE phone_number_id = ? AND status = "active" LIMIT 1');
+                $stmt->execute([$phoneNumberId]);
+                $numberConfig = $stmt->fetch(\PDO::FETCH_ASSOC);
+
+                if (!$numberConfig) {
+                    error_log("sendTextMessage: phone_number_id {$phoneNumberId} não encontrado, usando config padrão");
+                    $phoneNumberId = $config['phone_number_id'];
+                    $accessToken = $config['access_token'];
+                } else {
+                    $accessToken = $numberConfig['access_token'];
+                }
+            } else {
+                $phoneNumberId = $config['phone_number_id'];
+                $accessToken = $config['access_token'];
+            }
 
             $endpoint = "/{$phoneNumberId}/messages";
             $payload = [
@@ -522,15 +725,17 @@ class WhatsappService
 
                 $whatsappMessage = new \Apoio19\Crm\Models\WhatsappChatMessage();
                 $whatsappMessage->create([
-                    'contact_id' => $contactId,
-                    'user_id' => $userId,
-                    'phone_number_id' => $phoneNumberId, // Save phone_number_id from config
-                    'direction' => 'outgoing',
-                    'message_type' => 'text',
-                    'message_content' => $message,
+                    'contact_id'          => $contactId,
+                    'user_id'             => $userId,
+                    'phone_number_id'     => $phoneNumberId,
+                    'direction'           => 'outgoing',
+                    'message_type'        => 'text',
+                    'message_content'     => $message,
                     'whatsapp_message_id' => $whatsappMessageId,
-                    'status' => 'sent'
+                    'status'              => 'sent'
                 ]);
+
+                error_log("Mensagem enviada - contact_id: {$contactId}, phone_number_id: {$phoneNumberId}, wamid: {$whatsappMessageId}");
 
                 return ['success' => true, 'message_id' => $whatsappMessageId];
             }
@@ -541,6 +746,80 @@ class WhatsappService
             if ($e->hasResponse()) {
                 $body = json_decode($e->getResponse()->getBody()->getContents(), true);
                 $error = $body['error']['message'] ?? $error;
+            }
+            return ['success' => false, 'error' => $error];
+        } catch (Exception $e) {
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+
+    /**
+     * Send a template message
+     */
+    public function sendTemplateMessage(string $phoneNumber, string $templateName, string $language, array $components, int $userId, ?string $phoneNumberId = null): array
+    {
+        try {
+            $config = \Apoio19\Crm\Models\Whatsapp::getConfig();
+            if (!$config) {
+                return ['success' => false, 'error' => 'WhatsApp não configurado'];
+            }
+
+            if ($phoneNumberId) {
+                $db = \Apoio19\Crm\Models\Database::getInstance();
+                $stmt = $db->prepare('SELECT * FROM whatsapp_phone_numbers WHERE phone_number_id = ? AND status = "active" LIMIT 1');
+                $stmt->execute([$phoneNumberId]);
+                $numberConfig = $stmt->fetch(\PDO::FETCH_ASSOC);
+
+                if (!$numberConfig) {
+                    $phoneNumberId = $config['phone_number_id'];
+                    $accessToken = $config['access_token'];
+                } else {
+                    $accessToken = $numberConfig['access_token'];
+                }
+            } else {
+                $phoneNumberId = $config['phone_number_id'];
+                $accessToken = $config['access_token'];
+            }
+
+            $endpoint = "/{$phoneNumberId}/messages";
+            $payload = [
+                'messaging_product' => 'whatsapp',
+                'to' => $phoneNumber,
+                'type' => 'template',
+                'template' => [
+                    'name' => $templateName,
+                    'language' => ['code' => $language],
+                    'components' => $components
+                ]
+            ];
+
+            $response = $this->httpClient->post($endpoint, [
+                'headers' => [
+                    'Authorization' => 'Bearer ' . $accessToken,
+                    'Content-Type' => 'application/json'
+                ],
+                'json' => $payload
+            ]);
+
+            $body = json_decode($response->getBody()->getContents(), true);
+
+            if (isset($body['messages'][0]['id'])) {
+                $whatsappMessageId = $body['messages'][0]['id'];
+
+                // For a test message, we might not have a contact_id, 
+                // but if we do later, we could also save it to whatsapp_chat_messages here.
+
+                return ['success' => true, 'message_id' => $whatsappMessageId];
+            }
+
+            return ['success' => false, 'error' => 'Failed to send template'];
+        } catch (RequestException $e) {
+            $error = $e->getMessage();
+            if ($e->hasResponse()) {
+                $body = json_decode($e->getResponse()->getBody()->getContents(), true);
+                $error = $body['error']['message'] ?? $error;
+                error_log("Meta API Template Error: " . json_encode($body));
             }
             return ['success' => false, 'error' => $error];
         } catch (Exception $e) {

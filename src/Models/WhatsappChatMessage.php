@@ -25,14 +25,15 @@ class WhatsappChatMessage
         try {
             $stmt = $this->db->prepare(
                 'INSERT INTO whatsapp_chat_messages 
-                (contact_id, user_id, direction, message_type, message_content, media_url, 
+                (contact_id, user_id, phone_number_id, direction, message_type, message_content, media_url, 
                  whatsapp_message_id, status, sent_at) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
             );
 
             $stmt->execute([
                 $data['contact_id'],
-                $data['user_id'],
+                $data['user_id'] ?? null,
+                $data['phone_number_id'] ?? null, // Meta phone_number_id — identifica qual número recebeu/enviou
                 $data['direction'], // 'incoming' or 'outgoing'
                 $data['message_type'] ?? 'text',
                 $data['message_content'],
@@ -61,27 +62,74 @@ class WhatsappChatMessage
     public function getConversation(int $contactId, int $limit = 100, int $offset = 0, ?int $phoneNumberId = null): array
     {
         try {
-            // Exclude messages that are part of campaigns
-            $sql = 'SELECT wcm.*, u.name as user_name
-                FROM whatsapp_chat_messages wcm
-                LEFT JOIN users u ON wcm.user_id = u.id
-                WHERE wcm.contact_id = ?
-                AND NOT EXISTS (
-                    SELECT 1 
-                    FROM whatsapp_campaign_messages wccm 
-                    WHERE wccm.message_id = wcm.whatsapp_message_id
-                )';
+            $phoneFilterChat = '';
+            $phoneFilterCampaign = '';
+            $params = [];
 
-            $params = [$contactId];
-
-            // Filter by phone_number_id if provided (strict filter)
             if ($phoneNumberId !== null) {
-                $sql .= ' AND wcm.phone_number_id = ?';
-                $params[] = $phoneNumberId;
+                $phoneFilterChat = ' AND wcm.phone_number_id = ?';
+                $phoneFilterCampaign = ' AND COALESCE(cm.phone_number_id, wpn.phone_number_id) = ?';
+                $params = [$contactId, $phoneNumberId, $contactId, $phoneNumberId];
+            } else {
+                $params = [$contactId, $contactId];
             }
 
-            $sql .= ' ORDER BY wcm.created_at DESC
-                LIMIT ? OFFSET ?';
+            // Unir mensagens de chat direto e mensagens enviadas via campanhas (templates)
+            $sql = "
+                SELECT * FROM (
+                    SELECT 
+                        wcm.id,
+                        wcm.contact_id,
+                        wcm.user_id,
+                        wcm.phone_number_id,
+                        wcm.direction,
+                        wcm.message_type,
+                        wcm.message_content,
+                        wcm.media_url,
+                        wcm.whatsapp_message_id,
+                        wcm.status,
+                        wcm.error_message,
+                        wcm.sent_at,
+                        wcm.delivered_at,
+                        wcm.read_at,
+                        wcm.created_at,
+                        wcm.updated_at,
+                        u.name as user_name,
+                        'chat' as source_table
+                    FROM whatsapp_chat_messages wcm
+                    LEFT JOIN users u ON wcm.user_id = u.id
+                    WHERE wcm.contact_id = ? {$phoneFilterChat}
+
+                    UNION ALL
+
+                    SELECT 
+                        cm.id,
+                        cm.contact_id,
+                        c.user_id,
+                        COALESCE(cm.phone_number_id, wpn.phone_number_id) as phone_number_id,
+                        'outgoing' as direction,
+                        'template' as message_type,
+                        CONCAT('[Campanha: ', c.name, '] Template enviado') as message_content,
+                        NULL as media_url,
+                        cm.message_id as whatsapp_message_id,
+                        cm.status,
+                        cm.error_message,
+                        cm.sent_at,
+                        cm.delivered_at,
+                        cm.read_at,
+                        cm.created_at,
+                        cm.updated_at,
+                        u.name as user_name,
+                        'campaign' as source_table
+                    FROM whatsapp_campaign_messages cm
+                    JOIN whatsapp_campaigns c ON cm.campaign_id = c.id
+                    LEFT JOIN users u ON c.user_id = u.id
+                    LEFT JOIN whatsapp_phone_numbers wpn ON c.phone_number_id = wpn.id
+                    WHERE cm.contact_id = ? {$phoneFilterCampaign}
+                ) as combined_messages
+                ORDER BY created_at DESC
+                LIMIT ? OFFSET ?
+            ";
 
             $params[] = $limit;
             $params[] = $offset;
@@ -216,16 +264,11 @@ class WhatsappChatMessage
     public function getLastMessage(int $contactId): ?array
     {
         try {
-            // Exclude messages that are part of a campaign
+            // Última mensagem do contato (qualquer tipo: recebida, enviada, template)
             $stmt = $this->db->prepare('
                 SELECT wcm.*
                 FROM whatsapp_chat_messages wcm
                 WHERE wcm.contact_id = ?
-                AND NOT EXISTS (
-                    SELECT 1 
-                    FROM whatsapp_campaign_messages wccm 
-                    WHERE wccm.message_id = wcm.whatsapp_message_id
-                )
                 ORDER BY wcm.created_at DESC
                 LIMIT 1
             ');

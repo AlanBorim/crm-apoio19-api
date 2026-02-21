@@ -33,8 +33,7 @@ class AuthMiddleware
     public function handle(array $headers, array $allowedRoles = []): ?object
     {
         $this->lastError = null;
-
-        $token = $headers["Authorization"] ?? $headers["authorization"] ?? null;
+        $token = $headers["Authorization"] ?? $headers["authorization"] ?? $_SERVER['HTTP_AUTHORIZATION'] ?? null;
 
         if (!$token) {
             // No Authorization header provided

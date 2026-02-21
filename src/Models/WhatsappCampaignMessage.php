@@ -26,7 +26,12 @@ class WhatsappCampaignMessage
                    wt.language as template_language,
                    wt.components as template_components,
                    wc.name as contact_name,
-                   wc.phone_number as contact_phone
+                   wc.phone_number as contact_phone,
+                   (SELECT response_text FROM whatsapp_message_responses WHERE message_id = wcm.id ORDER BY received_at DESC LIMIT 1) as response_text,
+                   (SELECT response_type FROM whatsapp_message_responses WHERE message_id = wcm.id ORDER BY received_at DESC LIMIT 1) as response_type,
+                   (SELECT received_at FROM whatsapp_message_responses WHERE message_id = wcm.id ORDER BY received_at DESC LIMIT 1) as response_received_at,
+                   (SELECT cm.message_content FROM whatsapp_chat_messages cm WHERE cm.contact_id = wcm.contact_id AND cm.direction = 'outgoing' AND cm.created_at >= (SELECT received_at FROM whatsapp_message_responses WHERE message_id = wcm.id ORDER BY received_at DESC LIMIT 1) ORDER BY cm.created_at ASC LIMIT 1) as auto_reply_text,
+                   (SELECT cm.created_at FROM whatsapp_chat_messages cm WHERE cm.contact_id = wcm.contact_id AND cm.direction = 'outgoing' AND cm.created_at >= (SELECT received_at FROM whatsapp_message_responses WHERE message_id = wcm.id ORDER BY received_at DESC LIMIT 1) ORDER BY cm.created_at ASC LIMIT 1) as auto_reply_received_at
             FROM whatsapp_campaign_messages wcm
             LEFT JOIN whatsapp_templates wt ON wcm.template_id = wt.id
             LEFT JOIN whatsapp_contacts wc ON wcm.contact_id = wc.id
@@ -177,14 +182,13 @@ class WhatsappCampaignMessage
         return $stmt->execute([$id]);
     }
 
-    /**
-     * Get messages by status
-     */
     public function getByStatus(int $campaignId, string $status): array
     {
         $stmt = $this->db->prepare("
             SELECT wcm.*, 
                    wt.name as template_name,
+                   wt.language as template_language,
+                   wt.components as template_components,
                    wc.name as contact_name,
                    wc.phone_number as contact_phone
             FROM whatsapp_campaign_messages wcm
@@ -195,7 +199,17 @@ class WhatsappCampaignMessage
         ");
 
         $stmt->execute([$campaignId, $status]);
-        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $messages = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        // Decode template components JSON and add direction
+        foreach ($messages as &$message) {
+            $message['direction'] = 'outgoing'; // Campaign messages are always outgoing
+            if (isset($message['template_components'])) {
+                $message['template_components'] = json_decode($message['template_components'], true);
+            }
+        }
+
+        return $messages;
     }
 
     /**
