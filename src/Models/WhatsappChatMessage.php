@@ -96,7 +96,8 @@ class WhatsappChatMessage
                         wcm.updated_at,
                         u.name as user_name,
                         'chat' as source_table,
-                        NULL as template_components
+                        NULL as template_components,
+                        wcm.reaction_emoji
                     FROM whatsapp_chat_messages wcm
                     LEFT JOIN users u ON wcm.user_id = u.id
                     WHERE wcm.contact_id = ? {$phoneFilterChat}
@@ -122,7 +123,8 @@ class WhatsappChatMessage
                         cm.updated_at,
                         u.name as user_name,
                         'campaign' as source_table,
-                        wt.components as template_components
+                        wt.components as template_components,
+                        NULL as reaction_emoji
                     FROM whatsapp_campaign_messages cm
                     JOIN whatsapp_campaigns c ON cm.campaign_id = c.id
                     LEFT JOIN users u ON c.user_id = u.id
@@ -325,6 +327,25 @@ class WhatsappChatMessage
         } catch (PDOException $e) {
             error_log("Error finding message by WhatsApp ID: " . $e->getMessage());
             return null;
+        }
+    }
+
+    /**
+     * Add a reaction to a specific message
+     *
+     * @param string $whatsappMessageId The WhatsApp message ID that received the reaction
+     * @param string $emoji The reaction emoji
+     * @return bool Success status
+     */
+    public function updateReaction(string $whatsappMessageId, string $emoji): bool
+    {
+        try {
+            $sql = 'UPDATE whatsapp_chat_messages SET reaction_emoji = ? WHERE whatsapp_message_id = ?';
+            $stmt = $this->db->prepare($sql);
+            return $stmt->execute([$emoji, $whatsappMessageId]);
+        } catch (PDOException $e) {
+            error_log("Error updating message reaction: " . $e->getMessage());
+            return false;
         }
     }
 }

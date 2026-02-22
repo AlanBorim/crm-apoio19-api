@@ -85,6 +85,28 @@ if (strpos($requestUri, $basePath) === 0) {
 
 $requestMethod = $_SERVER["REQUEST_METHOD"];
 
+// Route to serve internal API uploads dynamically since frontend no longer manages it
+if (strpos($requestPath, '/uploads/') === 0 && $requestMethod === 'GET') {
+    $filePath = BASE_PATH . $requestPath;
+
+    if (file_exists($filePath) && !is_dir($filePath)) {
+        $mime_type = mime_content_type($filePath);
+        if ($mime_type) {
+            header("Content-Type: " . $mime_type);
+        }
+
+        // Cache control para melhorar performance no cliente
+        header("Cache-Control: public, max-age=31536000"); // 1 ano cache
+
+        readfile($filePath);
+        exit;
+    } else {
+        http_response_code(404);
+        echo json_encode(["error" => "Arquivo não encontrado."]);
+        exit;
+    }
+}
+
 // Rota de Login
 if ($requestPath === '/login' && $requestMethod === 'POST') {
 
@@ -854,6 +876,96 @@ if (preg_match('#^/settings/leads/(\d+)$#', $requestPath, $matches) && $requestM
             "error" => "Erro interno no servidor.",
             "detalhes" => $e->getMessage()
         ]);
+    }
+    exit;
+}
+
+// --- Endpoints de Configurações de Layout ---
+
+// GET /settings/layout - Obter configurações de layout
+if ($requestPath === '/settings/layout' && $requestMethod === 'GET') {
+    try {
+        $headers = getallheaders();
+        $controller = new ConfiguracoesController();
+        $response = $controller->getLayoutConfig($headers);
+
+        if (is_array($response)) {
+            echo json_encode($response);
+        } else {
+            http_response_code(500);
+            echo json_encode(["error" => "Erro interno. Resposta inesperada do servidor."]);
+        }
+    } catch (\Exception $e) {
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno.", "detalhes" => $e->getMessage()]);
+    }
+    exit;
+}
+
+// PUT /settings/layout - Atualizar configurações de layout
+if ($requestPath === '/settings/layout' && $requestMethod === 'PUT') {
+    try {
+        $headers = getallheaders();
+        $input = json_decode(file_get_contents('php://input'), true);
+
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            http_response_code(400);
+            echo json_encode(["error" => "JSON inválido."]);
+            exit;
+        }
+
+        $controller = new ConfiguracoesController();
+        $response = $controller->updateLayoutConfig($headers, $input);
+
+        if (is_array($response)) {
+            echo json_encode($response);
+        } else {
+            http_response_code(500);
+            echo json_encode(["error" => "Erro interno. Resposta inesperada do servidor."]);
+        }
+    } catch (\Exception $e) {
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno.", "detalhes" => $e->getMessage()]);
+    }
+    exit;
+}
+
+// POST /settings/upload-logo - Fazer upload do logo
+if ($requestPath === '/settings/upload-logo' && $requestMethod === 'POST') {
+    try {
+        $headers = getallheaders();
+        $controller = new ConfiguracoesController();
+        $response = $controller->uploadLogo($headers, $_FILES);
+
+        if (is_array($response)) {
+            echo json_encode($response);
+        } else {
+            http_response_code(500);
+            echo json_encode(["error" => "Erro interno. Resposta inesperada do servidor."]);
+        }
+    } catch (\Exception $e) {
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno.", "detalhes" => $e->getMessage()]);
+    }
+    exit;
+}
+
+// POST /settings/upload-logo-icon - Fazer upload do ícone (logo collapse)
+if ($requestPath === '/settings/upload-logo-icon' && $requestMethod === 'POST') {
+    try {
+        $headers = getallheaders();
+        $controller = new ConfiguracoesController();
+        $response = $controller->uploadLogoIcon($headers, $_FILES);
+
+        if (is_array($response)) {
+            echo json_encode($response);
+        } else {
+            http_response_code(500);
+            echo json_encode(["error" => "Erro interno. Resposta inesperada do servidor."]);
+        }
+    } catch (\Exception $e) {
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno.", "detalhes" => $e->getMessage()]);
     }
     exit;
 }

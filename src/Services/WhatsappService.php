@@ -405,8 +405,35 @@ class WhatsappService
                         $messageContent = '[Interativo]';
                     }
                     break;
+                case 'reaction':
+                    $reactedMessageId = $message['reaction']['message_id'] ?? null;
+                    $emoji = $message['reaction']['emoji'] ?? ''; // Can be empty if the reaction was removed
+
+                    if ($reactedMessageId) {
+                        $whatsappMessageModel = new \Apoio19\Crm\Models\WhatsappChatMessage();
+                        $success = $whatsappMessageModel->updateReaction($reactedMessageId, $emoji);
+                        error_log("Reação atualizada para a mensagem {$reactedMessageId} com emoji: {$emoji}. Sucesso: " . ($success ? 'Sim' : 'Não'));
+                    }
+
+                    // As reações não são novas mensagens na lista, então podemos encerrar o processamento aqui
+                    return;
                 default:
                     $messageContent = "[{$messageType}]";
+            }
+
+            // NOVO: Fazer download da mídia (se houver) antes de salvar
+            if ($mediaUrl) {
+                // Determine a subpasta baseada no tipo da mensagem para organizar os uploads
+                $subfolder = 'others';
+                if ($messageType === 'image' || $messageType === 'sticker') $subfolder = 'images';
+                elseif ($messageType === 'video') $subfolder = 'videos';
+                elseif ($messageType === 'audio') $subfolder = 'audios';
+                elseif ($messageType === 'document') $subfolder = 'documents';
+
+                $downloadedPath = $this->downloadMedia($mediaUrl, $phoneNumberId, $subfolder);
+                if ($downloadedPath) {
+                    $mediaUrl = $downloadedPath; // Substitui o ID da mídia do Meta pelo path local
+                }
             }
 
             $whatsappMessage = new \Apoio19\Crm\Models\WhatsappChatMessage();
@@ -455,6 +482,146 @@ class WhatsappService
             }
         } catch (\Exception $e) {
             error_log("Erro ao processar mensagem recebida: " . $e->getMessage() . "\n" . $e->getTraceAsString());
+        }
+    }
+
+    /**
+     * Download media from WhatsApp API and save locally
+     * 
+     * @param string $mediaId ID from WhatsApp Meta API
+     * @param string|null $phoneNumberId Sender phone ID (to get access token)
+     * @param string $subfolder Directory to save (images, videos, etc)
+     * @return string|null Local path to the file or null if failed
+     */
+    private function downloadMedia(string $mediaId, ?string $phoneNumberId, string $subfolder = 'others'): ?string
+    {
+        try {
+            $config = \Apoio19\Crm\Models\Whatsapp::getConfig();
+            if (!$config) {
+                error_log("downloadMedia: WhatsApp não configurado.");
+                return null;
+            }
+
+            // Descobrir Token
+            $accessToken = $config['access_token'];
+            if ($phoneNumberId) {
+                $db = \Apoio19\Crm\Models\Database::getInstance();
+                $stmt = $db->prepare('SELECT access_token FROM whatsapp_phone_numbers WHERE phone_number_id = ? AND status = "active" LIMIT 1');
+                $stmt->execute([$phoneNumberId]);
+                $numberConfig = $stmt->fetch(\PDO::FETCH_ASSOC);
+
+                if ($numberConfig && !empty($numberConfig['access_token'])) {
+                    $accessToken = $numberConfig['access_token'];
+                }
+            }
+
+            // Primeiro: Buscar a URL da mídia pelo ID
+            // GET https://graph.facebook.com/vXX.X/{media-id}
+            $mediaInfoEndpoint = "/{$mediaId}";
+            $infoResponse = $this->httpClient->get($mediaInfoEndpoint, [
+                'headers' => [
+                    'Authorization' => 'Bearer ' . $accessToken
+                ]
+            ]);
+
+            $infoStatusCode = $infoResponse->getStatusCode();
+            if ($infoStatusCode !== 200) {
+                error_log("downloadMedia: Falha ao obter informações da mídia {$mediaId}. Status: {$infoStatusCode}");
+                return null;
+            }
+
+            $mediaInfo = json_decode($infoResponse->getBody()->getContents(), true);
+            $mediaUrl = $mediaInfo['url'] ?? null;
+            $mimeType = $mediaInfo['mime_type'] ?? 'application/octet-stream';
+
+            if (!$mediaUrl) {
+                error_log("downloadMedia: URL da mídia vazia na resposta da Meta.");
+                return null;
+            }
+
+            // Segundo: Realizar o download do arquivo de fato
+            // Necessário Header de Auth
+            $downloadResponse = $this->httpClient->get($mediaUrl, [
+                'headers' => [
+                    'Authorization' => 'Bearer ' . $accessToken
+                ]
+            ]);
+
+            $downloadStatusCode = $downloadResponse->getStatusCode();
+            if ($downloadStatusCode !== 200) {
+                error_log("downloadMedia: Erro HTTP {$downloadStatusCode} ao baixar a mídia da URL: {$mediaUrl}");
+                return null;
+            }
+
+            // Resolver extensão baseada no Mimetype ou usar dat
+            $extension = 'dat';
+            $mimeToExt = [
+                'image/jpeg' => 'jpg',
+                'image/png' => 'png',
+                'image/webp' => 'webp', // Stickers
+                'audio/ogg' => 'ogg',
+                'audio/ogg; codecs=opus' => 'ogg',
+                'audio/mpeg' => 'mp3',
+                'audio/amr' => 'amr',
+                'video/mp4' => 'mp4',
+                'application/pdf' => 'pdf',
+                'application/msword' => 'doc',
+                'application/vnd.openxmlformats-officedocument.wordprocessingml.document' => 'docx',
+                'application/vnd.ms-excel' => 'xls',
+                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' => 'xlsx',
+            ];
+
+            // Normalize mime_type (sometimes Meta returns codecs in audio)
+            $cleanMime = explode(';', $mimeType)[0];
+            if (isset($mimeToExt[$cleanMime])) {
+                $extension = $mimeToExt[$cleanMime];
+            } else if (isset($mimeToExt[$mimeType])) {
+                $extension = $mimeToExt[$mimeType];
+            }
+
+            // Define caminhos e diretórios
+            // Caminho público que vai ser exibido no navegador
+            $publicPath = "/uploads/whatsapp/{$subfolder}";
+
+            // Ajustar o diretório de destino baseado na estrutura (salvando na pasta public do crm-frontend)
+            $frontendPublicDir = dirname(BASE_PATH) . '/crm-frontend/public';
+            if (!is_dir(dirname(BASE_PATH) . '/crm-frontend')) {
+                // Fallback para o ambiente de desenvolvimento local
+                $frontendPublicDir = dirname(BASE_PATH) . '/crm-apoio19/public';
+            }
+            $targetDir = $frontendPublicDir . $publicPath;
+
+            error_log("downloadMedia -> Salvando midia em: " . $targetDir);
+
+            if (!is_dir($targetDir)) {
+                mkdir($targetDir, 0777, true);
+            }
+
+            // Nome do arquivo
+            $fileName = uniqid('wa_media_') . '_' . time() . '.' . $extension;
+            $fullFilePath = $targetDir . '/' . $fileName;
+
+            // Salva o conteúdo binário
+            $fileContent = $downloadResponse->getBody()->getContents();
+            if (file_put_contents($fullFilePath, $fileContent) === false) {
+                error_log("downloadMedia: Falha ao escrever arquivo no disco: {$fullFilePath}");
+                return null;
+            }
+
+            error_log("downloadMedia: Mídia {$mediaId} salva com sucesso em {$fullFilePath}");
+
+            // Retorna o URI base
+            return "{$publicPath}/{$fileName}";
+        } catch (RequestException $e) {
+            $error = $e->getMessage();
+            if ($e->hasResponse()) {
+                $error .= ' | Response: ' . $e->getResponse()->getBody()->getContents();
+            }
+            error_log("downloadMedia: Erro de requisição. Detalhes: " . $error);
+            return null;
+        } catch (\Exception $e) {
+            error_log("downloadMedia: Erro desconhecido durante o download da mídia. Exception: " . $e->getMessage() . "\n" . $e->getTraceAsString());
+            return null;
         }
     }
 
