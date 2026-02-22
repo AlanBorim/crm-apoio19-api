@@ -1633,6 +1633,24 @@ if ($requestPath === '/kanban/logs' && $requestMethod === 'POST') {
 }
 
 // ============================================================================
+// Rotas de Relatórios do WhatsApp
+if ($requestPath === '/whatsapp/analytics' && $requestMethod === 'GET') {
+    try {
+        $headers = getallheaders();
+        $controller = new WhatsappController();
+        $response = $controller->getAnalytics($headers, $_GET);
+
+        http_response_code(200);
+        echo json_encode($response);
+    } catch (\Throwable $th) {
+        error_log("Erro em GET /whatsapp/analytics: " . $th->getMessage() . "\n" . $th->getTraceAsString());
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno", "detalhes" => "Resposta inválida"]);
+    }
+    exit;
+}
+
+// ============================================================================
 // Rotas de Configuração do WhatsApp
 if ($requestPath === '/whatsapp/config' && $requestMethod === 'GET') {
     try {

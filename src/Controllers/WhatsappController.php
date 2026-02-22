@@ -863,4 +863,74 @@ class WhatsappController extends BaseController
             return $this->errorResponse(500, "Erro ao buscar contatos", "ERROR", $traceId);
         }
     }
+
+    /**
+     * Get WhatsApp analytics data
+     */
+    public function getAnalytics(array $headers, array $queryParams = []): array
+    {
+        $traceId = bin2hex(random_bytes(8));
+        $userData = $this->authMiddleware->handle($headers);
+
+        if (!$userData) {
+            $errorDetails = $this->authMiddleware->getLastError();
+            return $this->errorResponse(401, "Autenticação necessária.", "UNAUTHORIZED", $traceId, $errorDetails);
+        }
+
+        $this->requirePermission($userData, 'whatsapp', 'view');
+
+        try {
+            $internalPhoneId = $queryParams['phone_number_id'] ?? null;
+            $db = \Apoio19\Crm\Models\Database::getInstance();
+
+            // Convert internal phone number ID to Meta API phone_number_id
+            $metaPhoneNumberId = null;
+            if (!empty($internalPhoneId)) {
+                $stmt = $db->prepare('SELECT phone_number_id FROM whatsapp_phone_numbers WHERE id = ?');
+                $stmt->execute([(int)$internalPhoneId]);
+                $phoneData = $stmt->fetch(\PDO::FETCH_ASSOC);
+
+                if ($phoneData && !empty($phoneData['phone_number_id'])) {
+                    $metaPhoneNumberId = $phoneData['phone_number_id'];
+                }
+            }
+
+            $sql = "
+                SELECT 
+                    COUNT(DISTINCT contact_id) as new_contacts,
+                    SUM(CASE WHEN direction = 'outgoing' THEN 1 ELSE 0 END) as total_sent,
+                    SUM(CASE WHEN direction = 'outgoing' AND (status IN ('delivered', 'read') OR delivered_at IS NOT NULL OR read_at IS NOT NULL) THEN 1 ELSE 0 END) as delivered_count,
+                    SUM(CASE WHEN direction = 'outgoing' AND (status = 'read' OR read_at IS NOT NULL) THEN 1 ELSE 0 END) as read_count
+                FROM whatsapp_chat_messages
+            ";
+            $params = [];
+
+            if (!empty($metaPhoneNumberId)) {
+                $sql .= " WHERE phone_number_id = ?";
+                $params[] = $metaPhoneNumberId;
+            }
+
+            $stmt = $db->prepare($sql);
+            $stmt->execute($params);
+
+            $result = $stmt->fetch(\PDO::FETCH_ASSOC);
+            $newContacts = $result['new_contacts'] ?? 0;
+            $totalSent = $result['total_sent'] ?? 0;
+            $deliveredCount = $result['delivered_count'] ?? 0;
+            $readCount = $result['read_count'] ?? 0;
+
+            $deliveryRate = $totalSent > 0 ? round(($deliveredCount / $totalSent) * 100) : 0;
+            $readRate = $totalSent > 0 ? round(($readCount / $totalSent) * 100) : 0;
+
+            return $this->successResponse([
+                'new_contacts' => (int)$newContacts,
+                'total_sent' => (int)$totalSent,
+                'delivery_rate' => (int)$deliveryRate,
+                'read_rate' => (int)$readRate
+            ], "Métricas obtidas com sucesso", 200, $traceId);
+        } catch (\Exception $e) {
+            error_log("Get analytics error: " . $e->getMessage());
+            return $this->errorResponse(500, "Erro ao buscar métricas", "ERROR", $traceId);
+        }
+    }
 }
