@@ -19,61 +19,72 @@ class PermissionService
             'leads' => ['view' => true, 'create' => true, 'edit' => true, 'delete' => true, 'assign' => true],
             'clients' => ['view' => true, 'create' => true, 'edit' => true, 'delete' => true],
             'proposals' => ['view' => true, 'create' => true, 'edit' => true, 'delete' => true, 'approve' => true],
+            'tasks' => ['view' => true, 'create' => true, 'edit' => true, 'delete' => true, 'assign' => true],
             'whatsapp' => ['view' => true, 'create' => true, 'edit' => true, 'delete' => true],
-            'configuracoes' => ['view' => true, 'create' => true, 'edit' => true, 'delete' => true],
-            'relatorios' => ['view' => true, 'export' => true],
             'kanban' => ['view' => true, 'create' => true, 'edit' => true, 'delete' => true, 'assign' => true],
+            'configuracoes' => ['view' => true, 'create' => true, 'edit' => true, 'delete' => true],
             'dashboard' => ['view' => true],
+            'relatorios' => ['view' => true, 'export' => true],
         ],
         'gerente' => [
-            'users' => ['view' => true, 'create' => true, 'edit' => true, 'delete' => false],
-            'leads' => ['view' => true, 'create' => true, 'edit' => true, 'delete' => true],
-            'clients' => ['view' => true, 'create' => true, 'edit' => true, 'delete' => true],
-            'proposals' => ['view' => true, 'create' => true, 'edit' => true, 'delete' => true],
-            'tasks' => ['view' => true, 'create' => true, 'edit' => true, 'delete' => true],
-            'campaigns' => ['view' => true, 'create' => true, 'edit' => true, 'delete' => true],
+            'usuarios' => ['view' => true, 'create' => true, 'edit' => true, 'delete' => false],
+            'leads' => ['view' => true, 'create' => true, 'edit' => true, 'delete' => false],
+            'clients' => ['view' => true, 'create' => true, 'edit' => true, 'delete' => false],
+            'proposals' => ['view' => true, 'create' => true, 'edit' => true, 'delete' => false, 'approve' => true],
+            'tasks' => ['view' => true, 'create' => true, 'edit' => true, 'delete' => false],
+            'whatsapp' => ['view' => true, 'create' => true, 'edit' => true, 'delete' => false],
+            'kanban' => ['view' => true, 'create' => true, 'edit' => true, 'delete' => false],
+            'configuracoes' => ['view' => true, 'edit' => true, 'create' => false, 'delete' => false],
             'dashboard' => ['view' => true],
-            'reports' => ['view' => true, 'export' => true],
-        ],
-        'vendedor' => [
-            'users' => ['view' => true, 'create' => false, 'edit' => false, 'delete' => false],
-            'leads' => ['view' => true, 'create' => true, 'edit' => 'own', 'delete' => 'own'],
-            'clients' => ['view' => true, 'create' => true, 'edit' => 'own', 'delete' => 'own'],
-            'proposals' => ['view' => 'own', 'create' => true, 'edit' => 'own', 'delete' => 'own'],
-            'tasks' => ['view' => 'own', 'create' => true, 'edit' => 'own', 'delete' => 'own'],
-            'campaigns' => ['view' => 'own', 'create' => true, 'edit' => 'own', 'delete' => 'own'],
-            'dashboard' => ['view' => true],
-            'reports' => ['view' => false, 'export' => false],
+            'relatorios' => ['view' => true, 'export' => true],
         ],
         'comercial' => [
-            'users' => ['view' => true, 'create' => false, 'edit' => false, 'delete' => false],
-            'leads' => ['view' => true, 'create' => true, 'edit' => 'own', 'delete' => 'own'],
-            'clients' => ['view' => true, 'create' => true, 'edit' => 'own', 'delete' => 'own'],
-            'proposals' => ['view' => 'own', 'create' => true, 'edit' => 'own', 'delete' => 'own'],
-            'tasks' => ['view' => 'own', 'create' => true, 'edit' => 'own', 'delete' => 'own'],
-            'campaigns' => ['view' => 'own', 'create' => true, 'edit' => 'own', 'delete' => 'own'],
+            'usuarios' => ['view' => false, 'create' => false, 'edit' => false, 'delete' => false],
+            'leads' => ['view' => true, 'create' => true, 'edit' => true, 'delete' => false],
+            'clients' => ['view' => false, 'create' => false, 'edit' => false, 'delete' => false],
+            'proposals' => ['view' => true, 'create' => true, 'edit' => true, 'delete' => false],
+            'tasks' => ['view' => true, 'create' => true, 'edit' => true, 'delete' => false],
+            'whatsapp' => ['view' => false, 'create' => false, 'edit' => false, 'delete' => false],
+            'kanban' => ['view' => false, 'create' => false, 'edit' => false, 'delete' => false],
+            'configuracoes' => ['view' => false, 'create' => false, 'edit' => false, 'delete' => false],
             'dashboard' => ['view' => true],
-            'reports' => ['view' => false, 'export' => false],
+            'relatorios' => ['view' => false, 'export' => false],
         ],
         'suporte' => [
-            'users' => ['view' => true, 'create' => false, 'edit' => false, 'delete' => false],
-            'leads' => ['view' => true, 'create' => false, 'edit' => true, 'delete' => false],
-            'clients' => ['view' => true, 'create' => false, 'edit' => true, 'delete' => false],
-            'proposals' => ['view' => true, 'create' => false, 'edit' => false, 'delete' => false],
-            'tasks' => ['view' => 'own', 'create' => true, 'edit' => 'own', 'delete' => 'own'],
-            'campaigns' => ['view' => false, 'create' => false, 'edit' => false, 'delete' => false],
+            'usuarios' => ['view' => false, 'create' => false, 'edit' => false, 'delete' => false],
+            'leads' => ['view' => true, 'create' => true, 'edit' => true, 'delete' => false],
+            'clients' => ['view' => false, 'create' => false, 'edit' => false, 'delete' => false],
+            'proposals' => ['view' => false, 'create' => false, 'edit' => false, 'delete' => false],
+            'tasks' => ['view' => true, 'create' => true, 'edit' => true, 'delete' => false],
+            'whatsapp' => ['view' => false, 'create' => false, 'edit' => false, 'delete' => false],
+            'kanban' => ['view' => true, 'create' => true, 'edit' => true, 'delete' => false],
+            'configuracoes' => ['view' => false, 'create' => false, 'edit' => false, 'delete' => false],
             'dashboard' => ['view' => true],
-            'reports' => ['view' => false, 'export' => false],
+            'relatorios' => ['view' => false, 'export' => false],
         ],
         'financeiro' => [
-            'users' => ['view' => true, 'create' => false, 'edit' => false, 'delete' => false],
-            'leads' => ['view' => true, 'create' => false, 'edit' => false, 'delete' => false],
+            'usuarios' => ['view' => false, 'create' => false, 'edit' => false, 'delete' => false],
+            'leads' => ['view' => false, 'create' => false, 'edit' => false, 'delete' => false],
             'clients' => ['view' => true, 'create' => false, 'edit' => false, 'delete' => false],
             'proposals' => ['view' => true, 'create' => false, 'edit' => false, 'delete' => false],
-            'tasks' => ['view' => 'own', 'create' => true, 'edit' => 'own', 'delete' => 'own'],
-            'campaigns' => ['view' => false, 'create' => false, 'edit' => false, 'delete' => false],
-            'dashboard' => ['view' => true],
-            'reports' => ['view' => true, 'export' => true],
+            'tasks' => ['view' => false, 'create' => false, 'edit' => false, 'delete' => false],
+            'whatsapp' => ['view' => false, 'create' => false, 'edit' => false, 'delete' => false],
+            'kanban' => ['view' => false, 'create' => false, 'edit' => false, 'delete' => false],
+            'configuracoes' => ['view' => false, 'create' => false, 'edit' => false, 'delete' => false],
+            'dashboard' => ['view' => false],
+            'relatorios' => ['view' => true, 'export' => true],
+        ],
+        'cliente' => [
+            'usuarios' => ['view' => false, 'create' => false, 'edit' => false, 'delete' => false],
+            'leads' => ['view' => false, 'create' => false, 'edit' => false, 'delete' => false],
+            'clients' => ['view' => 'own', 'create' => false, 'edit' => false, 'delete' => false],
+            'proposals' => ['view' => false, 'create' => false, 'edit' => false, 'delete' => false],
+            'tasks' => ['view' => false, 'create' => false, 'edit' => false, 'delete' => false],
+            'whatsapp' => ['view' => 'own', 'create' => false, 'edit' => false, 'delete' => false],
+            'kanban' => ['view' => false, 'create' => false, 'edit' => false, 'delete' => false],
+            'configuracoes' => ['view' => false, 'create' => false, 'edit' => false, 'delete' => false],
+            'dashboard' => ['view' => false],
+            'relatorios' => ['view' => false, 'export' => false],
         ],
     ];
 
@@ -104,7 +115,7 @@ class PermissionService
         }
         // PRIORITY 2: Fallback to Role Defaults only if 'permissions' property is missing or null
         else {
-            $permissions = $this->getDefaultPermissions($user->role ?? 'comercial');
+            $permissions = $this->getDefaultPermissions(strtolower($user->funcao ?? 'comercial'));
         }
 
         // Check if resource exists in permissions
@@ -175,7 +186,7 @@ class PermissionService
         }
 
         // PRIORITY 2: Role Defaults
-        return $this->getDefaultPermissions($user->role ?? 'comercial');
+        return $this->getDefaultPermissions(strtolower($user->funcao ?? 'comercial'));
     }
 
     /**
@@ -198,7 +209,7 @@ class PermissionService
      */
     public function isAdmin(object $user): bool
     {
-        return strtolower($user->role ?? '') === 'admin';
+        return strtolower($user->funcao ?? '') === 'admin';
     }
 
     /**

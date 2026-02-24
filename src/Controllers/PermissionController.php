@@ -174,7 +174,7 @@ class PermissionController extends BaseController
         }
 
         try {
-            $roles = ['admin', 'gerente', 'vendedor', 'comercial', 'suporte', 'financeiro'];
+            $roles = ['admin', 'gerente', 'comercial', 'suporte', 'financeiro', 'cliente'];
             $templates = [];
 
             foreach ($roles as $role) {

@@ -480,7 +480,7 @@ class WhatsappController extends BaseController
             return $this->errorResponse(401, "Autenticação necessária.", "UNAUTHORIZED", $traceId, $errorDetails);
         }
 
-        $this->requirePermission($userData, 'configuracoes', 'view');
+        $this->requirePermission($userData, 'whatsapp', 'view');
 
         try {
             $db = \Apoio19\Crm\Models\Database::getInstance();

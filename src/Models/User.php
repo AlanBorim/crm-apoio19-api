@@ -497,43 +497,8 @@ class User
      */
     public static function getDefaultPermissionsForRole(string $role): array
     {
-        $rolePermissions = [
-            'Admin' => ['all'],
-            'Gerente' => [
-                'leads.read',
-                'leads.write',
-                'leads.assign',
-                'propostas.read',
-                'propostas.write',
-                'propostas.approve',
-                'kanban.read',
-                'kanban.write',
-                'whatsapp.read',
-                'whatsapp.write',
-                'relatorios.read',
-                'relatorios.export',
-                'users.read'
-            ],
-            'Vendedor' => [
-                'leads.read',
-                'leads.write',
-                'propostas.read',
-                'propostas.write',
-                'kanban.read',
-                'kanban.write',
-                'whatsapp.read',
-                'whatsapp.write'
-            ],
-            'Suporte' => [
-                'leads.read',
-                'kanban.read',
-                'whatsapp.read',
-                'whatsapp.write',
-                'configuracoes.read'
-            ]
-        ];
-
-        return $rolePermissions[$role] ?? [];
+        $permissionService = new \Apoio19\Crm\Services\PermissionService();
+        return $permissionService->getDefaultPermissions(strtolower($role));
     }
 
     /**

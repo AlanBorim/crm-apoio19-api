@@ -120,6 +120,7 @@ class AuthController extends BaseController
                         "id" => $user->id,
                         "nome" => $user->nome,
                         "email" => $user->email,
+                        "funcao" => $user->funcao,
                         "role" => $user->funcao,
                         "permissions" => $permissions
                     ]
@@ -339,6 +340,7 @@ class AuthController extends BaseController
                 "id" => $userData['id'],
                 "nome" => $userData['nome'],
                 "email" => $userData['email'],
+                "funcao" => $userData['role'],
                 "role" => $userData['role'],
                 "permissions" => $permissions
             ]
