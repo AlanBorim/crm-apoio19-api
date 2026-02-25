@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Código de Verificação - Apoio19 CRM</title>
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; background-color: #f5f5f5; margin: 0; padding: 0; }
+        .wrapper { max-width: 600px; margin: 40px auto; }
+        .container { background: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.08); }
+        .header { background: linear-gradient(135deg, #f97316 0%, #ea580c 100%); color: white; padding: 36px 30px; text-align: center; }
+        .header h1 { margin: 0; font-size: 24px; font-weight: 700; letter-spacing: -0.5px; }
+        .header p { margin: 8px 0 0 0; opacity: 0.9; font-size: 14px; }
+        .content { padding: 36px 30px; }
+        .greeting { font-size: 16px; color: #374151; margin-bottom: 20px; }
+        .code-box { background: #fff7ed; border: 2px dashed #f97316; border-radius: 12px; padding: 28px; text-align: center; margin: 28px 0; }
+        .code-box p { margin: 0 0 8px 0; font-size: 13px; color: #92400e; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; }
+        .code { font-size: 48px; font-weight: 800; color: #ea580c; letter-spacing: 12px; font-family: 'Courier New', Courier, monospace; }
+        .expiry { font-size: 13px; color: #92400e; margin: 10px 0 0 0; }
+        .info { background: #f9fafb; border-radius: 8px; padding: 16px 20px; margin: 20px 0; }
+        .info p { margin: 0; font-size: 14px; color: #6b7280; }
+        .info strong { color: #374151; }
+        .warning { color: #dc2626; font-size: 13px; margin-top: 20px; }
+        .footer { text-align: center; padding: 24px 30px; color: #9ca3af; font-size: 12px; border-top: 1px solid #f3f4f6; }
+    </style>
+</head>
+<body>
+    <div class="wrapper">
+        <div class="container">
+            <div class="header">
+                <h1>🔐 Verificação de Identidade</h1>
+                <p>Autenticação de Dois Fatores — Apoio19 CRM</p>
+            </div>
+            <div class="content">
+                <p class="greeting">Olá, <strong>{{nome_usuario}}</strong>!</p>
+                <p style="color:#374151; font-size:15px;">
+                    Recebemos uma solicitação de acesso ao Apoio19 CRM. Use o código abaixo para concluir seu login:
+                </p>
+                <div class="code-box">
+                    <p>Seu código de verificação</p>
+                    <div class="code">{{codigo_2fa}}</div>
+                    <p class="expiry">⏱ Válido por <strong>10 minutos</strong></p>
+                </div>
+                <div class="info">
+                    <p><strong>Não solicitou este acesso?</strong><br>
+                    Ignore este e-mail. Sua conta continua segura — ninguém conseguirá acessá-la sem este código.</p>
+                </div>
+                <p class="warning">⚠ Nunca compartilhe este código com ninguém. A equipe da Apoio19 jamais solicitará seu código de verificação.</p>
+            </div>
+            <div class="footer">
+                <p>Este é um e-mail automático. Não responda esta mensagem.</p>
+                <p>© {{year}} Apoio19 CRM. Todos os direitos reservados.</p>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

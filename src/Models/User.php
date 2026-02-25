@@ -645,4 +645,73 @@ class User
             return false;
         }
     }
+
+    /**
+     * Salva o código de 2FA e sua expiração para um usuário.
+     *
+     * @param int $userId ID do usuário
+     * @param string $code Código de 6 dígitos
+     * @param string $expiresAt Data/hora de expiração (Y-m-d H:i:s)
+     * @return bool
+     */
+    public static function set2FACode(int $userId, string $code, string $expiresAt): bool
+    {
+        try {
+            $pdo = Database::getInstance();
+            $stmt = $pdo->prepare(
+                "UPDATE users SET twofa_code = :code, twofa_expires_at = :expires_at WHERE id = :id"
+            );
+            $stmt->bindParam(':code', $code);
+            $stmt->bindParam(':expires_at', $expiresAt);
+            $stmt->bindParam(':id', $userId, PDO::PARAM_INT);
+            return $stmt->execute();
+        } catch (PDOException $e) {
+            error_log("Erro ao salvar código 2FA: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Limpa o código de 2FA após utilização ou expiração.
+     *
+     * @param int $userId ID do usuário
+     * @return bool
+     */
+    public static function clear2FACode(int $userId): bool
+    {
+        try {
+            $pdo = Database::getInstance();
+            $stmt = $pdo->prepare(
+                "UPDATE users SET twofa_code = NULL, twofa_expires_at = NULL WHERE id = :id"
+            );
+            $stmt->bindParam(':id', $userId, PDO::PARAM_INT);
+            return $stmt->execute();
+        } catch (PDOException $e) {
+            error_log("Erro ao limpar código 2FA: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Busca usuário por ID incluindo dados de 2FA para validação.
+     *
+     * @param int $userId ID do usuário
+     * @return array|null Dados do usuário com código 2FA ou null se não encontrado
+     */
+    public static function findByIdForTwoFA(int $userId): ?array
+    {
+        try {
+            $pdo = Database::getInstance();
+            $stmt = $pdo->prepare(
+                "SELECT id, name, email, role, twofa_code, twofa_expires_at FROM users WHERE id = :id AND active = '1' LIMIT 1"
+            );
+            $stmt->bindParam(':id', $userId, PDO::PARAM_INT);
+            $stmt->execute();
+            $result = $stmt->fetch(PDO::FETCH_ASSOC);
+            return $result ?: null;
+        } catch (PDOException $e) {
+            error_log("Erro ao buscar usuário para 2FA: " . $e->getMessage());
+            return null;
+        }
+    }
 }

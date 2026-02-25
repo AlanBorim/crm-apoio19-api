@@ -3,8 +3,11 @@
 ini_set('display_errors', 1);
 ini_set('display_startup_errors', 1);
 error_reporting(E_ALL);
-// Define o cabeçalho de resposta como JSON
-header("Content-Type: application/json");
+// Define o cabeçalho de resposta como JSON (exceto para upload de arquivos)
+$requestUriForHeader = $_SERVER['REQUEST_URI'] ?? '';
+if (!preg_match('#/upload-pdf$#', $requestUriForHeader)) {
+    header("Content-Type: application/json");
+}
 // Define o diretório base da aplicação
 define("BASE_PATH", dirname(__DIR__));
 
@@ -103,6 +106,26 @@ if (strpos($requestPath, '/uploads/') === 0 && $requestMethod === 'GET') {
     } else {
         http_response_code(404);
         echo json_encode(["error" => "Arquivo não encontrado."]);
+        exit;
+    }
+}
+
+// Route to serve proposal PDFs from dedicated storage directory
+if (strpos($requestPath, '/storage/proposals/') === 0 && $requestMethod === 'GET') {
+    $filePath = '/var/www/html/crm/storage' . substr($requestPath, strlen('/storage'));
+
+    if (file_exists($filePath) && !is_dir($filePath)) {
+        $mime_type = mime_content_type($filePath);
+        if ($mime_type) {
+            header("Content-Type: " . $mime_type);
+        }
+        header("Cache-Control: private, max-age=3600");
+        header("Content-Disposition: inline; filename=\"" . basename($filePath) . "\"");
+        readfile($filePath);
+        exit;
+    } else {
+        http_response_code(404);
+        echo json_encode(["error" => "Arquivo PDF não encontrado."]);
         exit;
     }
 }
@@ -206,6 +229,67 @@ if ($requestPath === '/logout' && $requestMethod === 'POST') {
         echo json_encode(["error" => "Erro interno ao processar o logout.", "status" => $th->getMessage() . "\n" . $th->getTraceAsString()]);
         exit;
     }
+}
+
+// Rota de verificação de 2FA
+if ($requestPath === '/2fa/verify' && $requestMethod === 'POST') {
+    try {
+        $input = json_decode(file_get_contents('php://input'), true);
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            http_response_code(400);
+            echo json_encode(["error" => "JSON inválido no corpo da requisição."]);
+            exit;
+        }
+        $controller = new AuthController();
+        $response = $controller->verify2FA($input);
+        echo json_encode($response);
+    } catch (\Throwable $th) {
+        error_log("Erro no AuthController->verify2FA: " . $th->getMessage() . "\n" . $th->getTraceAsString());
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno ao verificar código 2FA."]);
+    }
+    exit;
+}
+
+// GET - Configurações de segurança (2FA)
+if ($requestPath === '/settings/security' && $requestMethod === 'GET') {
+    try {
+        $headers = getallheaders();
+        $controller = new ConfiguracoesController();
+        $response = $controller->getSecurityConfig($headers);
+        if (is_array($response)) {
+            echo json_encode($response);
+        } else {
+            http_response_code(500);
+            echo json_encode(["error" => "Erro interno."]);
+        }
+    } catch (\Throwable $th) {
+        error_log("Erro em getSecurityConfig: " . $th->getMessage());
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno ao recuperar configurações de segurança."]);
+    }
+    exit;
+}
+
+// PUT - Atualizar configurações de segurança (2FA)
+if ($requestPath === '/settings/security' && $requestMethod === 'PUT') {
+    try {
+        $headers = getallheaders();
+        $input = json_decode(file_get_contents('php://input'), true) ?? [];
+        $controller = new ConfiguracoesController();
+        $response = $controller->updateSecurityConfig($headers, $input);
+        if (is_array($response)) {
+            echo json_encode($response);
+        } else {
+            http_response_code(500);
+            echo json_encode(["error" => "Erro interno."]);
+        }
+    } catch (\Throwable $th) {
+        error_log("Erro em updateSecurityConfig: " . $th->getMessage());
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno ao salvar configurações de segurança."]);
+    }
+    exit;
 }
 
 // Rotas de Leads 
@@ -2413,6 +2497,21 @@ if (preg_match('#^/proposals/(\d+)$#', $requestPath, $matches) && $requestMethod
     } catch (\Exception $e) {
         http_response_code(500);
         echo json_encode(["error" => "Erro ao excluir proposta: " . $e->getMessage()]);
+    }
+    exit;
+}
+
+// Upload de PDF externo para proposta
+if (preg_match('#^/proposals/(\d+)/upload-pdf$#', $requestPath, $matches) && $requestMethod === 'POST') {
+    header("Content-Type: application/json"); // Ensure JSON response
+    try {
+        $headers = getallheaders();
+        $controller = new ProposalController();
+        $response = $controller->uploadPdf($headers, (int)$matches[1]);
+        echo json_encode($response);
+    } catch (\Exception $e) {
+        http_response_code(500);
+        echo json_encode(["error" => "Erro ao fazer upload do PDF: " . $e->getMessage()]);
     }
     exit;
 }

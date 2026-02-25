@@ -84,6 +84,56 @@ class AuthController extends BaseController
         }
 
         if (password_verify($senha, $user->senha_hash)) {
+
+            // Verificar se 2FA está ativo nas configurações do sistema
+            $twofaConfig = \Apoio19\Crm\Models\SystemConfig::get('security.twofa_enabled');
+            $twofaEnabled = $twofaConfig && ($twofaConfig['config_value'] === '1' || $twofaConfig['config_value'] === 'true');
+
+            if ($twofaEnabled) {
+                // Gerar código de 6 dígitos
+                $code = str_pad((string)random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+                $expiresAt = (new \DateTime())->modify('+10 minutes')->format('Y-m-d H:i:s');
+
+                // Salvar código no banco
+                User::set2FACode($user->id, $code, $expiresAt);
+
+                // Montar e enviar e-mail com o código
+                $emailBody = \Apoio19\Crm\Views\EmailView::render('codigo_2fa.html', [
+                    'nome_usuario' => $user->nome,
+                    'codigo_2fa'   => $code,
+                    'year'         => date('Y'),
+                ]);
+
+                if ($emailBody) {
+                    $this->emailService->send(
+                        $user->email,
+                        $user->nome,
+                        'Código de Verificação - Apoio19 CRM',
+                        $emailBody
+                    );
+                }
+
+                AuditLogService::log(
+                    $user->id,
+                    "login_2fa_enviado",
+                    "users",
+                    $user->id,
+                    null,
+                    ['message' => 'Código 2FA enviado por e-mail', 'email' => $user->email],
+                    $ipAddress,
+                    $_SERVER['HTTP_USER_AGENT'] ?? null
+                );
+
+                http_response_code(200);
+                return [
+                    "requires_2fa" => true,
+                    "user_id"      => $user->id,
+                    "email_hint"   => preg_replace('/(?<=.{2}).(?=.*@)/u', '*', $user->email),
+                    "message"      => "Código de verificação enviado para seu e-mail."
+                ];
+            }
+
+            // --- Fluxo normal sem 2FA ---
             $token = $this->authService->generateToken($user->id, $user->email, $user->funcao, $user->nome);
             $refreshToken = $this->authService->generateRefreshToken($user->id, $user->email);
 
@@ -108,20 +158,18 @@ class AuthController extends BaseController
                     $_SERVER['HTTP_USER_AGENT'] ?? null
                 );
 
-                // Atualizar último login
                 User::updateLastLogin($user->id);
 
-                // Get user permissions
                 $permissions = $this->permissionService->getUserPermissions($user);
 
                 return [
                     "token" => $token,
                     "user" => [
-                        "id" => $user->id,
-                        "nome" => $user->nome,
-                        "email" => $user->email,
-                        "funcao" => $user->funcao,
-                        "role" => $user->funcao,
+                        "id"          => $user->id,
+                        "nome"        => $user->nome,
+                        "email"       => $user->email,
+                        "funcao"      => $user->funcao,
+                        "role"        => $user->funcao,
                         "permissions" => $permissions
                     ]
                 ];
@@ -506,5 +554,114 @@ class AuthController extends BaseController
         );
 
         return ["message" => "Logout realizado com sucesso."];
+    }
+
+    /**
+     * Verifica o código de 2FA e emite o JWT se válido.
+     *
+     * @param array $requestData Deve conter 'user_id' e 'code'.
+     * @return array Resposta da API.
+     */
+    public function verify2FA(array $requestData): array
+    {
+        $userId = isset($requestData['user_id']) ? (int)$requestData['user_id'] : null;
+        $code   = trim($requestData['code'] ?? '');
+        $ipAddress = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+
+        if (!$userId || !$code) {
+            http_response_code(400);
+            return ['error' => 'user_id e code são obrigatórios.'];
+        }
+
+        $userData = User::findByIdForTwoFA($userId);
+
+        if (!$userData) {
+            http_response_code(404);
+            return ['error' => 'Usuário não encontrado ou inativo.'];
+        }
+
+        // Verificar se há código válido
+        if (empty($userData['twofa_code']) || empty($userData['twofa_expires_at'])) {
+            http_response_code(400);
+            return ['error' => 'Nenhum código de verificação pendente. Faça o login novamente.'];
+        }
+
+        // Verificar expiração
+        $expiresAt = new \DateTime($userData['twofa_expires_at']);
+        $now = new \DateTime();
+        if ($now > $expiresAt) {
+            User::clear2FACode($userId);
+            http_response_code(401);
+            return ['error' => 'Código expirado. Faça o login novamente para receber um novo código.'];
+        }
+
+        // Verificar código
+        if ($code !== $userData['twofa_code']) {
+            AuditLogService::log(
+                $userId,
+                "login_2fa_falha",
+                "users",
+                $userId,
+                null,
+                ['error' => 'Código 2FA incorreto.'],
+                $ipAddress,
+                $_SERVER['HTTP_USER_AGENT'] ?? null
+            );
+            http_response_code(401);
+            return ['error' => 'Código de verificação inválido.'];
+        }
+
+        // Código correto — limpar e emitir JWT
+        User::clear2FACode($userId);
+
+        $user = User::findById($userId);
+        if (!$user) {
+            http_response_code(500);
+            return ['error' => 'Erro ao carregar dados do usuário.'];
+        }
+
+        $token = $this->authService->generateToken($user->id, $user->email, $user->funcao, $user->nome);
+        $refreshToken = $this->authService->generateRefreshToken($user->id, $user->email);
+
+        if (!$token) {
+            http_response_code(500);
+            return ['error' => 'Erro ao gerar token de autenticação.'];
+        }
+
+        setcookie('refresh_token', $refreshToken, [
+            'expires'  => time() + (60 * 60 * 24 * 7),
+            'httponly' => true,
+            'secure'   => true,
+            'samesite' => 'Strict',
+            'path'     => '/refresh'
+        ]);
+
+        User::updateLastLogin($user->id);
+
+        $permissions = $this->permissionService->getUserPermissions($user);
+
+        AuditLogService::log(
+            $user->id,
+            "login_2fa_sucesso",
+            "users",
+            $user->id,
+            null,
+            ['message' => 'Login com 2FA bem-sucedido', 'email' => $user->email],
+            $ipAddress,
+            $_SERVER['HTTP_USER_AGENT'] ?? null
+        );
+
+        http_response_code(200);
+        return [
+            "token" => $token,
+            "user"  => [
+                "id"          => $user->id,
+                "nome"        => $user->nome,
+                "email"       => $user->email,
+                "funcao"      => $user->funcao,
+                "role"        => $user->funcao,
+                "permissions" => $permissions
+            ]
+        ];
     }
 }

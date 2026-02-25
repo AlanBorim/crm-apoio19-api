@@ -223,4 +223,68 @@ class ConfiguracoesController extends BaseController
             return $this->errorResponse(500, "Erro ao processar upload.", "INTERNAL_ERROR", $traceId, $this->debugDetails($e));
         }
     }
+
+    /**
+     * GET /settings/security
+     * Retorna as configurações de segurança do sistema
+     */
+    public function getSecurityConfig(array $headers): array
+    {
+        $traceId = bin2hex(random_bytes(8));
+        $userData = $this->authMiddleware->handle($headers);
+
+        if (!$userData) {
+            return $this->errorResponse(401, "Autenticação necessária.", "UNAUTHENTICATED", $traceId);
+        }
+
+        $this->requirePermission($userData, 'configuracoes', 'view');
+
+        try {
+            $twofaConfig = \Apoio19\Crm\Models\SystemConfig::get('security.twofa_enabled');
+            $twofaEnabled = $twofaConfig && ($twofaConfig['config_value'] === '1' || $twofaConfig['config_value'] === 'true');
+
+            return $this->successResponse(
+                ['twofa_enabled' => $twofaEnabled],
+                "Configurações de segurança recuperadas.",
+                200,
+                $traceId
+            );
+        } catch (\Exception $e) {
+            return $this->errorResponse(500, "Erro ao recuperar configurações de segurança.", "INTERNAL_ERROR", $traceId, $this->debugDetails($e));
+        }
+    }
+
+    /**
+     * PUT /settings/security
+     * Atualiza as configurações de segurança do sistema
+     */
+    public function updateSecurityConfig(array $headers, array $requestData): array
+    {
+        $traceId = bin2hex(random_bytes(8));
+        $userData = $this->authMiddleware->handle($headers);
+
+        if (!$userData) {
+            return $this->errorResponse(401, "Autenticação necessária.", "UNAUTHENTICATED", $traceId);
+        }
+
+        $this->requirePermission($userData, 'configuracoes', 'edit');
+
+        try {
+            if (isset($requestData['twofa_enabled'])) {
+                $value = $requestData['twofa_enabled'] ? '1' : '0';
+                \Apoio19\Crm\Models\SystemConfig::set('security.twofa_enabled', $value, 'string', $userData->id);
+            }
+
+            $this->logAudit($userData->id, 'update', 'system_configs', null, null, $requestData);
+
+            return $this->successResponse(
+                ['twofa_enabled' => ($value ?? '0') === '1'],
+                "Configurações de segurança salvas.",
+                200,
+                $traceId
+            );
+        } catch (\Exception $e) {
+            return $this->errorResponse(500, "Erro ao salvar configurações de segurança.", "INTERNAL_ERROR", $traceId, $this->debugDetails($e));
+        }
+    }
 }

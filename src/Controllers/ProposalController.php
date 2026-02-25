@@ -418,15 +418,26 @@ class ProposalController extends BaseController
             return ["error" => "Proposta não encontrada."];
         }
 
-        // Generate PDF if not exists
-        if (empty($proposal->pdf_path) || !file_exists($proposal->pdf_path)) {
-            $pdfPath = $this->pdfService->generateProposalPdf($proposalId);
-            if (!$pdfPath) {
-                http_response_code(500);
-                return ["error" => "Falha ao gerar PDF."];
+        // Use uploaded PDF if available, otherwise generate one
+        if (!empty($proposal->uploaded_pdf_path)) {
+            $absPath = $this->relativeToAbsolutePath($proposal->uploaded_pdf_path);
+            if ($absPath && file_exists($absPath)) {
+                $pdfPath = $absPath;
             }
-        } else {
-            $pdfPath = $proposal->pdf_path;
+        }
+
+        if (empty($pdfPath)) {
+            if (!empty($proposal->pdf_path) && file_exists($proposal->pdf_path)) {
+                $pdfPath = $proposal->pdf_path;
+            } else {
+                $pdfPath = $this->pdfService->generateProposalPdf($proposalId);
+                if (!$pdfPath) {
+                    http_response_code(500);
+                    return ["error" => "Falha ao gerar PDF."];
+                }
+                // Save generated pdf_path to the proposal
+                Proposal::update($proposalId, ['pdf_path' => $pdfPath], [], $userData->id);
+            }
         }
 
         // Get client data
@@ -489,6 +500,103 @@ class ProposalController extends BaseController
             http_response_code(500);
             return ["error" => "Falha ao enviar e-mail."];
         }
+    }
+
+    /**
+     * Upload an external PDF file for a proposal.
+     */
+    public function uploadPdf(array $headers, int $proposalId): array
+    {
+        $userData = $this->authMiddleware->handle($headers);
+        if (!$userData) {
+            http_response_code(401);
+            return ["error" => "Autenticação necessária."];
+        }
+
+        $this->requirePermission($userData, 'proposals', 'edit');
+
+        $proposal = Proposal::findById($proposalId);
+        if (!$proposal) {
+            http_response_code(404);
+            return ["error" => "Proposta não encontrada."];
+        }
+
+        if (!isset($_FILES['pdf']) || $_FILES['pdf']['error'] !== UPLOAD_ERR_OK) {
+            $uploadError = $_FILES['pdf']['error'] ?? 'Arquivo não enviado';
+            http_response_code(400);
+            return ["error" => "Arquivo PDF inválido ou não enviado. Código de erro: {$uploadError}"];
+        }
+
+        $file = $_FILES['pdf'];
+
+        // Validate MIME type
+        $finfo = new \finfo(FILEINFO_MIME_TYPE);
+        $mimeType = $finfo->file($file['tmp_name']);
+        if ($mimeType !== 'application/pdf') {
+            http_response_code(400);
+            return ["error" => "Apenas arquivos PDF são permitidos."];
+        }
+
+        // Validate file size (10 MB max)
+        $maxSize = 10 * 1024 * 1024;
+        if ($file['size'] > $maxSize) {
+            http_response_code(400);
+            return ["error" => "O arquivo PDF não pode ser maior que 10 MB."];
+        }
+
+        // Create upload directory in the dedicated storage path
+        $uploadDir = '/var/www/html/crm/storage/proposals/' . $proposalId . '/';
+        if (!is_dir($uploadDir)) {
+            mkdir($uploadDir, 0755, true);
+        }
+
+        // Remove old uploaded PDF if exists (stored path is relative, convert to absolute)
+        if (!empty($proposal->uploaded_pdf_path)) {
+            $oldAbsPath = $this->relativeToAbsolutePath($proposal->uploaded_pdf_path);
+            if ($oldAbsPath && file_exists($oldAbsPath)) {
+                @unlink($oldAbsPath);
+            }
+        }
+
+        $filename = 'uploaded_' . time() . '.pdf';
+        $destination = $uploadDir . $filename;
+
+        if (!move_uploaded_file($file['tmp_name'], $destination)) {
+            http_response_code(500);
+            return ["error" => "Falha ao salvar o arquivo PDF."];
+        }
+
+        // Store RELATIVE path in DB so it can be served via /api/storage/proposals/ route
+        $relativePath = '/storage/proposals/' . $proposalId . '/' . $filename;
+
+        Proposal::update($proposalId, ['uploaded_pdf_path' => $relativePath], [], $userData->id);
+        Proposal::addHistory($proposalId, $userData->id, 'PDF Externo Enviado', 'PDF externo enviado pelo usuário.');
+
+        http_response_code(200);
+        return [
+            "success" => true,
+            "message" => "PDF enviado com sucesso.",
+            "uploaded_pdf_path" => $relativePath
+        ];
+    }
+
+    /**
+     * Convert a stored relative PDF path to an absolute filesystem path.
+     * Supports: /storage/proposals/... and /uploads/...
+     */
+    private function relativeToAbsolutePath(string $relativePath): ?string
+    {
+        if (str_starts_with($relativePath, '/storage/')) {
+            return '/var/www/html/crm/storage' . substr($relativePath, strlen('/storage'));
+        }
+        if (str_starts_with($relativePath, '/uploads/')) {
+            return BASE_PATH . $relativePath;
+        }
+        // Already absolute
+        if (str_starts_with($relativePath, '/')) {
+            return $relativePath;
+        }
+        return null;
     }
 
     /**

@@ -24,6 +24,7 @@ class Proposal
     public ?string $data_envio;
     public ?string $data_validade;
     public ?string $pdf_path;
+    public ?string $uploaded_pdf_path;
     public ?int $modelo_id;
     public string $criado_em;
     public string $atualizado_em;
@@ -370,7 +371,7 @@ class Proposal
     {
         $fields = [];
         $params = [":id" => $id];
-        $allowedFields = ['titulo', 'lead_id', 'contato_id', 'empresa_id', 'responsavel_id', 'descricao', 'condicoes', 'observacoes', 'status', 'data_envio', 'data_validade', 'pdf_path', 'modelo_id'];
+        $allowedFields = ['titulo', 'lead_id', 'contato_id', 'empresa_id', 'responsavel_id', 'descricao', 'condicoes', 'observacoes', 'status', 'data_envio', 'data_validade', 'pdf_path', 'uploaded_pdf_path', 'modelo_id'];
         $statusChanged = false;
         $oldStatus = null;
 
@@ -691,6 +692,7 @@ class Proposal
         $p->data_envio    = $data['data_envio']    ?? null;
         $p->data_validade = $data['data_validade'] ?? null;
         $p->pdf_path      = $data['pdf_path']      ?? null;
+        $p->uploaded_pdf_path = $data['uploaded_pdf_path'] ?? null;
         $p->criado_em     = $data['criado_em']     ?? null;
         $p->atualizado_em = $data['atualizado_em'] ?? null;
         $p->lead_nome     = $data['lead_nome']     ?? null;
