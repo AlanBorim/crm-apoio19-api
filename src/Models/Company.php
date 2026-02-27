@@ -28,7 +28,7 @@ class Company
     {
         try {
             $pdo = Database::getInstance();
-            $stmt = $pdo->prepare("SELECT * FROM companies WHERE id = :id LIMIT 1");
+            $stmt = $pdo->prepare("SELECT * FROM companies WHERE id = :id AND deleted_at IS NULL LIMIT 1");
             $stmt->bindParam(":id", $id, PDO::PARAM_INT);
             $stmt->execute();
             $companyData = $stmt->fetch();
@@ -54,7 +54,7 @@ class Company
         $companies = [];
         try {
             $pdo = Database::getInstance();
-            $stmt = $pdo->prepare("SELECT * FROM companies ORDER BY name ASC LIMIT :limit OFFSET :offset");
+            $stmt = $pdo->prepare("SELECT * FROM companies WHERE deleted_at IS NULL ORDER BY name ASC LIMIT :limit OFFSET :offset");
             $stmt->bindParam(":limit", $limit, PDO::PARAM_INT);
             $stmt->bindParam(":offset", $offset, PDO::PARAM_INT);
             $stmt->execute();
@@ -78,7 +78,7 @@ class Company
     {
         try {
             $pdo = Database::getInstance();
-            $stmt = $pdo->query("SELECT COUNT(*) FROM companies");
+            $stmt = $pdo->query("SELECT COUNT(*) FROM companies WHERE deleted_at IS NULL");
             return (int) $stmt->fetchColumn();
         } catch (PDOException $e) {
             error_log("Erro ao contar empresas: " . $e->getMessage());
@@ -92,7 +92,7 @@ class Company
      * @param array $data Associative array of company data.
      * @return int|false The ID of the new company or false on failure.
      */
-    public static function create(array $data): int|false
+    public static function create(array $data)
     {
         $sql = "INSERT INTO companies (name, cnpj, address, phone, email, city, state, zip_code) 
                 VALUES (:name, :cnpj, :address, :phone, :email, :city, :state, :zip_code)";
@@ -158,23 +158,41 @@ class Company
     }
 
     /**
-     * Delete a company.
+     * Delete a company (Soft Delete).
      *
      * @param int $id Company ID.
      * @return bool True on success, false on failure.
      */
     public static function delete(int $id): bool
     {
-        // Consider implications: deleting a company might affect contacts, proposals, etc.
-        // FK constraints (ON DELETE SET NULL) will handle some cases, but business logic might be needed.
-        $sql = "DELETE FROM companies WHERE id = :id";
+        $sql = "UPDATE companies SET deleted_at = NOW() WHERE id = :id";
         try {
             $pdo = Database::getInstance();
             $stmt = $pdo->prepare($sql);
             $stmt->bindParam(":id", $id, PDO::PARAM_INT);
             return $stmt->execute();
         } catch (PDOException $e) {
-            error_log("Erro ao deletar empresa ID {$id}: " . $e->getMessage());
+            error_log("Erro ao deletar (soft delete) empresa ID {$id}: " . $e->getMessage());
+        }
+        return false;
+    }
+
+    /**
+     * Restore a deleted company.
+     *
+     * @param int $id Company ID.
+     * @return bool True on success, false on failure.
+     */
+    public static function restore(int $id): bool
+    {
+        $sql = "UPDATE companies SET deleted_at = NULL WHERE id = :id";
+        try {
+            $pdo = Database::getInstance();
+            $stmt = $pdo->prepare($sql);
+            $stmt->bindParam(":id", $id, PDO::PARAM_INT);
+            return $stmt->execute();
+        } catch (PDOException $e) {
+            error_log("Erro ao restaurar empresa ID {$id}: " . $e->getMessage());
         }
         return false;
     }

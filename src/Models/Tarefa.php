@@ -56,7 +56,7 @@ class Tarefa
                 LEFT JOIN users u_resp ON t.responsavel_id = u_resp.id
                 LEFT JOIN users u_criador ON t.criador_id = u_criador.id";
 
-        $whereClauses = [];
+        $whereClauses = ["t.deleted_at IS NULL"];
         $params = [];
 
         if (!empty($filters)) {
@@ -112,7 +112,7 @@ class Tarefa
                 LEFT JOIN kanban_colunas kc ON t.kanban_coluna_id = kc.id
                 LEFT JOIN users u_resp ON t.responsavel_id = u_resp.id
                 LEFT JOIN users u_criador ON t.criador_id = u_criador.id
-                WHERE t.id = :id";
+                WHERE t.id = :id AND t.deleted_at IS NULL";
         try {
             $pdo = Database::getInstance();
             $stmt = $pdo->prepare($sql);
@@ -280,21 +280,41 @@ class Tarefa
     }
 
     /**
-     * Deletar uma tarefa.
+     * Deletar uma tarefa (Soft Delete).
      *
      * @param int $id
      * @return bool
      */
     public static function delete(int $id): bool
     {
-        $sql = "DELETE FROM tarefas WHERE id = :id";
+        $sql = "UPDATE tarefas SET deleted_at = NOW() WHERE id = :id";
         try {
             $pdo = Database::getInstance();
             $stmt = $pdo->prepare($sql);
             $stmt->bindParam(":id", $id, PDO::PARAM_INT);
             return $stmt->execute();
         } catch (PDOException $e) {
-            error_log("Erro ao deletar tarefa ID {$id}: " . $e->getMessage());
+            error_log("Erro ao deletar (soft delete) tarefa ID {$id}: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Restaurar uma tarefa excluída.
+     *
+     * @param int $id
+     * @return bool
+     */
+    public static function restore(int $id): bool
+    {
+        $sql = "UPDATE tarefas SET deleted_at = NULL WHERE id = :id";
+        try {
+            $pdo = Database::getInstance();
+            $stmt = $pdo->prepare($sql);
+            $stmt->bindParam(":id", $id, PDO::PARAM_INT);
+            return $stmt->execute();
+        } catch (PDOException $e) {
+            error_log("Erro ao restaurar tarefa ID {$id}: " . $e->getMessage());
             return false;
         }
     }
@@ -307,7 +327,7 @@ class Tarefa
      */
     private static function getNextOrderInColumn(?int $kanbanColunaId): int
     {
-        $sql = "SELECT MAX(ordem_na_coluna) FROM tarefas WHERE ";
+        $sql = "SELECT MAX(ordem_na_coluna) FROM tarefas WHERE deleted_at IS NULL AND ";
         $params = [];
         if ($kanbanColunaId === null) {
             $sql .= "kanban_coluna_id IS NULL";

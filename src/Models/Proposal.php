@@ -52,7 +52,7 @@ class Proposal
             $sql = "SELECT p.*, l.name as lead_nome 
                     FROM proposals p 
                     LEFT JOIN leads l ON p.lead_id = l.id 
-                    WHERE p.id = :id LIMIT 1";
+                    WHERE p.id = :id AND p.deleted_at IS NULL LIMIT 1";
             $stmt = $pdo->prepare($sql);
             $stmt->bindParam(":id", $id, PDO::PARAM_INT);
             $stmt->execute();
@@ -89,7 +89,7 @@ class Proposal
                     LEFT JOIN contacts c ON p.contact_id = c.id
                     LEFT JOIN companies e ON p.company_id = e.id
                     LEFT JOIN users u ON p.responsavel_id = u.id";
-        $whereClauses = [];
+        $whereClauses = ["p.deleted_at IS NULL"];
         $params = [];
 
         if (!empty($filters['status'])) {
@@ -182,7 +182,7 @@ class Proposal
      * @param array $items Array of proposal items.
      * @return int|false The ID of the new proposal or false on failure.
      */
-    public static function create(array $data, array $items = []): int|false
+    public static function create(array $data, array $items = [])
     {
         $pdo = Database::getInstance();
         try {
@@ -350,7 +350,7 @@ class Proposal
             error_log("PDOException ao criar proposta: " . $e->getMessage());
             error_log("Stack trace: " . $e->getTraceAsString());
             return false;
-        } catch (Exception $e) {
+        } catch (\Exception $e) {
             $pdo->rollBack();
             error_log("Exception ao criar proposta: " . $e->getMessage());
             error_log("Stack trace: " . $e->getTraceAsString());
@@ -480,18 +480,16 @@ class Proposal
     }
 
     /**
-     * Delete a proposal and its items.
+     * Delete a proposal and its items (Soft Delete).
      *
      * @param int $id Proposal ID.
      * @return bool True on success, false on failure.
      */
     public static function delete(int $id): bool
     {
-        // Consider soft deletes
-        $sql = "DELETE FROM proposals WHERE id = :id";
+        $sql = "UPDATE proposals SET deleted_at = NOW() WHERE id = :id";
         $pdo = Database::getInstance();
         try {
-            // Deletion cascades to items and history due to FK constraints ON DELETE CASCADE
             $pdo->beginTransaction();
             $stmt = $pdo->prepare($sql);
             $stmt->bindParam(":id", $id, PDO::PARAM_INT);
@@ -500,7 +498,27 @@ class Proposal
             return $deleted;
         } catch (PDOException $e) {
             $pdo->rollBack();
-            error_log("Erro ao deletar proposta ID {$id}: " . $e->getMessage());
+            error_log("Erro ao deletar (soft delete) proposta ID {$id}: " . $e->getMessage());
+        }
+        return false;
+    }
+
+    /**
+     * Restore a deleted proposal.
+     *
+     * @param int $id Proposal ID.
+     * @return bool True on success, false on failure.
+     */
+    public static function restore(int $id): bool
+    {
+        $sql = "UPDATE proposals SET deleted_at = NULL WHERE id = :id";
+        try {
+            $pdo = Database::getInstance();
+            $stmt = $pdo->prepare($sql);
+            $stmt->bindParam(":id", $id, PDO::PARAM_INT);
+            return $stmt->execute();
+        } catch (PDOException $e) {
+            error_log("Erro ao restaurar proposta ID {$id}: " . $e->getMessage());
         }
         return false;
     }

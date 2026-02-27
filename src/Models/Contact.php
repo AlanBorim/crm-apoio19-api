@@ -34,7 +34,7 @@ class Contact
             $stmt = $pdo->prepare("SELECT c.*, e.name as empresa_nome 
                                    FROM contacts c 
                                    LEFT JOIN companies e ON c.company_id = e.id 
-                                   WHERE c.id = :id LIMIT 1");
+                                   WHERE c.id = :id AND c.deleted_at IS NULL LIMIT 1");
             $stmt->bindParam(":id", $id, PDO::PARAM_INT);
             $stmt->execute();
             $contactData = $stmt->fetch();
@@ -59,7 +59,7 @@ class Contact
         $contacts = [];
         try {
             $pdo = Database::getInstance();
-            $stmt = $pdo->prepare("SELECT * FROM contacts WHERE company_id = :company_id ORDER BY name ASC");
+            $stmt = $pdo->prepare("SELECT * FROM contacts WHERE company_id = :company_id AND deleted_at IS NULL ORDER BY name ASC");
             $stmt->bindParam(":company_id", $companyId, PDO::PARAM_INT);
             $stmt->execute();
             $results = $stmt->fetchAll();
@@ -85,10 +85,11 @@ class Contact
         $contacts = [];
         try {
             $pdo = Database::getInstance();
-            // Join with empresas to get company name
+            // Join with empresas to get company name, applying soft delete check
             $stmt = $pdo->prepare("SELECT c.*, e.name as empresa_nome 
                                    FROM contacts c 
                                    LEFT JOIN companies e ON c.company_id = e.id 
+                                   WHERE c.deleted_at IS NULL
                                    ORDER BY c.name ASC LIMIT :limit OFFSET :offset");
             $stmt->bindParam(":limit", $limit, PDO::PARAM_INT);
             $stmt->bindParam(":offset", $offset, PDO::PARAM_INT);
@@ -113,7 +114,7 @@ class Contact
     {
         try {
             $pdo = Database::getInstance();
-            $stmt = $pdo->query("SELECT COUNT(*) FROM contacts");
+            $stmt = $pdo->query("SELECT COUNT(*) FROM contacts WHERE deleted_at IS NULL");
             return (int) $stmt->fetchColumn();
         } catch (PDOException $e) {
             error_log("Erro ao contar contatos: " . $e->getMessage());
@@ -127,7 +128,7 @@ class Contact
      * @param array $data Associative array of contact data.
      * @return int|false The ID of the new contact or false on failure.
      */
-    public static function create(array $data): int|false
+    public static function create(array $data)
     {
         $sql = "INSERT INTO contacts (name, company_id, position, email, phone, notes) 
                 VALUES (:name, :company_id, :position, :email, :phone, :notes)";
@@ -196,23 +197,41 @@ class Contact
     }
 
     /**
-     * Delete a contact.
+     * Delete a contact (Soft Delete).
      *
      * @param int $id Contact ID.
      * @return bool True on success, false on failure.
      */
     public static function delete(int $id): bool
     {
-        // Consider implications: deleting a contact might affect leads, proposals, etc.
-        // FK constraints (ON DELETE SET NULL) handle some cases.
-        $sql = "DELETE FROM contacts WHERE id = :id";
+        $sql = "UPDATE contacts SET deleted_at = NOW() WHERE id = :id";
         try {
             $pdo = Database::getInstance();
             $stmt = $pdo->prepare($sql);
             $stmt->bindParam(":id", $id, PDO::PARAM_INT);
             return $stmt->execute();
         } catch (PDOException $e) {
-            error_log("Erro ao deletar contato ID {$id}: " . $e->getMessage());
+            error_log("Erro ao deletar (soft delete) contato ID {$id}: " . $e->getMessage());
+        }
+        return false;
+    }
+
+    /**
+     * Restore a deleted contact.
+     *
+     * @param int $id Contact ID.
+     * @return bool True on success, false on failure.
+     */
+    public static function restore(int $id): bool
+    {
+        $sql = "UPDATE contacts SET deleted_at = NULL WHERE id = :id";
+        try {
+            $pdo = Database::getInstance();
+            $stmt = $pdo->prepare($sql);
+            $stmt->bindParam(":id", $id, PDO::PARAM_INT);
+            return $stmt->execute();
+        } catch (PDOException $e) {
+            error_log("Erro ao restaurar contato ID {$id}: " . $e->getMessage());
         }
         return false;
     }

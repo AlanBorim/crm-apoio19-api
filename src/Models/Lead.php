@@ -49,7 +49,7 @@ class Lead
             $pdo = Database::getInstance();
             $stmt = $pdo->prepare("SELECT l.*,u.name AS responsavelNome FROM leads l
                                     LEFT JOIN users AS u on u.id = l.assigned_to
-                                    WHERE l.id = :id LIMIT 1");
+                                    WHERE l.id = :id AND l.deleted_at IS NULL LIMIT 1");
             // Use bindValue instead of bindParam for consistency and simpler mocking
             $stmt->bindValue(":id", $id, PDO::PARAM_INT);
             $stmt->execute();
@@ -78,7 +78,7 @@ class Lead
         try {
             $pdo = Database::getInstance();
             // Add ORDER BY for consistent results
-            $stmt = $pdo->prepare("SELECT * FROM leads ORDER BY created_at DESC LIMIT :limit OFFSET :offset");
+            $stmt = $pdo->prepare("SELECT * FROM leads WHERE deleted_at IS NULL ORDER BY created_at DESC LIMIT :limit OFFSET :offset");
             $stmt->bindValue(":limit", $limit, PDO::PARAM_INT);
             $stmt->bindValue(":offset", $offset, PDO::PARAM_INT);
             $stmt->execute();
@@ -102,7 +102,7 @@ class Lead
     {
         try {
             $pdo = Database::getInstance();
-            $stmt = $pdo->query("SELECT COUNT(*) FROM leads");
+            $stmt = $pdo->query("SELECT COUNT(*) FROM leads WHERE deleted_at IS NULL");
             return (int) $stmt->fetchColumn();
         } catch (PDOException $e) {
             error_log("Erro ao contar leads: " . $e->getMessage());
@@ -198,15 +198,14 @@ class Lead
     }
 
     /**
-     * Delete a lead.
+     * Delete a lead (Soft Delete).
      *
      * @param int $id Lead ID.
      * @return bool True on success, false on failure.
      */
     public static function delete(int $id): bool
     {
-        // Consider soft deletes instead of hard deletes in a real CRM
-        $sql = "UPDATE leads SET active = :active WHERE id = :id";
+        $sql = "UPDATE leads SET deleted_at = NOW(), active = :active WHERE id = :id";
         try {
             $pdo = Database::getInstance();
             $stmt = $pdo->prepare($sql);
@@ -214,7 +213,28 @@ class Lead
             $stmt->bindValue(":active", '0', PDO::PARAM_INT);
             return $stmt->execute();
         } catch (PDOException $e) {
-            error_log("Erro ao deletar lead ID {$id}: " . $e->getMessage());
+            error_log("Erro ao deletar (soft delete) lead ID {$id}: " . $e->getMessage());
+        }
+        return false;
+    }
+
+    /**
+     * Restore a deleted lead.
+     *
+     * @param int $id Lead ID.
+     * @return bool True on success, false on failure.
+     */
+    public static function restore(int $id): bool
+    {
+        $sql = "UPDATE leads SET deleted_at = NULL, active = :active WHERE id = :id";
+        try {
+            $pdo = Database::getInstance();
+            $stmt = $pdo->prepare($sql);
+            $stmt->bindValue(":id", $id, PDO::PARAM_INT);
+            $stmt->bindValue(":active", '1', PDO::PARAM_INT);
+            return $stmt->execute();
+        } catch (PDOException $e) {
+            error_log("Erro ao restaurar lead ID {$id}: " . $e->getMessage());
         }
         return false;
     }

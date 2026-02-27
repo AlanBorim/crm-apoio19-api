@@ -31,6 +31,7 @@ use Apoio19\Crm\Controllers\ClientController;
 use Apoio19\Crm\Controllers\ClientProjectController;
 use Apoio19\Crm\Controllers\ProposalTemplateController;
 use Apoio19\Crm\Controllers\ConfiguracoesController;
+use Apoio19\Crm\Controllers\TrashController;
 
 // --- Lógica de Extração de Caminho Corrigida ---
 $requestUri = $_SERVER['REQUEST_URI']; // ex: /api/login?param=1
@@ -128,6 +129,11 @@ if (strpos($requestPath, '/storage/proposals/') === 0 && $requestMethod === 'GET
         echo json_encode(["error" => "Arquivo PDF não encontrado."]);
         exit;
     }
+}
+
+if ($requestPath === '/process_campaign' && $requestMethod === 'GET') {
+    require BASE_PATH . '/scripts/process_althaia_campaign.php';
+    exit;
 }
 
 // Rota de Login
@@ -794,6 +800,48 @@ if ($requestPath === '/notifications' && $requestMethod === 'DELETE') {
         error_log("Erro ao excluir notificações: " . $th->getMessage());
         http_response_code(500);
         echo json_encode(["error" => "Erro interno ao excluir notificações"]);
+    }
+    exit;
+}
+
+// Rotas da Lixeira (Trash)
+if ($requestPath === '/trash' && $requestMethod === 'GET') {
+    try {
+        $headers = getallheaders();
+        $controller = new TrashController();
+        $response = $controller->index($headers);
+        if (is_array($response)) {
+            echo json_encode($response);
+        } else {
+            http_response_code(500);
+            echo json_encode(["error" => "Erro interno. Resposta inesperada do servidor."]);
+        }
+    } catch (\Throwable $th) {
+        error_log("Erro no TrashController->index: " . $th->getMessage());
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno ao listar itens da lixeira."]);
+    }
+    exit;
+}
+
+if (preg_match('#^/trash/([^/]+)/(\d+)/restore$#', $requestPath, $matches) && $requestMethod === 'POST') {
+    $type = $matches[1];
+    $id = (int)$matches[2];
+
+    try {
+        $headers = getallheaders();
+        $controller = new TrashController();
+        $response = $controller->restore($headers, $type, $id);
+        if (is_array($response)) {
+            echo json_encode($response);
+        } else {
+            http_response_code(500);
+            echo json_encode(["error" => "Erro interno. Resposta inesperada do servidor."]);
+        }
+    } catch (\Throwable $th) {
+        error_log("Erro no TrashController->restore: " . $th->getMessage());
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno ao restaurar item."]);
     }
     exit;
 }

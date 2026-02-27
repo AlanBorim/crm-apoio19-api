@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: localhost:3306
--- Tempo de geração: 14/02/2026 às 02:06
+-- Tempo de geração: 27/02/2026 às 18:24
 -- Versão do servidor: 10.11.14-MariaDB-0+deb12u2
 -- Versão do PHP: 8.2.29
 
@@ -61,6 +61,58 @@ CREATE TABLE `audit_logs` (
 -- --------------------------------------------------------
 
 --
+-- Estrutura para tabela `clients`
+--
+
+CREATE TABLE `clients` (
+  `id` int(11) NOT NULL,
+  `lead_id` int(11) DEFAULT NULL COMMENT 'Link to original Lead',
+  `company_id` int(11) DEFAULT NULL,
+  `contact_id` int(11) DEFAULT NULL,
+  `person_type` enum('PF','PJ') DEFAULT 'PJ',
+  `document` varchar(20) DEFAULT NULL,
+  `corporate_name` varchar(255) DEFAULT NULL,
+  `fantasy_name` varchar(255) DEFAULT NULL,
+  `state_registration` varchar(50) DEFAULT NULL,
+  `municipal_registration` varchar(50) DEFAULT NULL,
+  `zip_code` varchar(10) DEFAULT NULL,
+  `address` varchar(255) DEFAULT NULL,
+  `address_number` varchar(20) DEFAULT NULL,
+  `complement` varchar(100) DEFAULT NULL,
+  `district` varchar(100) DEFAULT NULL,
+  `city` varchar(100) DEFAULT NULL,
+  `state` varchar(2) DEFAULT NULL,
+  `status` enum('active','inactive','churned') NOT NULL DEFAULT 'active',
+  `start_date` date DEFAULT NULL,
+  `notes` text DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  `deleted_at` datetime DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Estrutura para tabela `client_projects`
+--
+
+CREATE TABLE `client_projects` (
+  `id` int(11) NOT NULL,
+  `client_id` int(11) NOT NULL,
+  `name` varchar(255) NOT NULL,
+  `description` text DEFAULT NULL,
+  `status` enum('pending','in_progress','completed','halted','cancelled') NOT NULL DEFAULT 'pending',
+  `start_date` date DEFAULT NULL,
+  `end_date` date DEFAULT NULL,
+  `value` decimal(10,2) DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  `deleted_at` datetime DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+
+--
 -- Estrutura para tabela `companies`
 --
 
@@ -75,7 +127,8 @@ CREATE TABLE `companies` (
   `state` varchar(50) DEFAULT NULL,
   `zip_code` varchar(10) DEFAULT NULL,
   `created_at` timestamp NULL DEFAULT current_timestamp(),
-  `updated_at` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+  `updated_at` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  `deleted_at` datetime DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------
@@ -94,7 +147,8 @@ CREATE TABLE `contacts` (
   `notes` text DEFAULT NULL,
   `created_at` timestamp NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
-  `whatsapp_contact_id` int(11) DEFAULT NULL COMMENT 'Vinculação com contato WhatsApp'
+  `whatsapp_contact_id` int(11) DEFAULT NULL COMMENT 'Vinculação com contato WhatsApp',
+  `deleted_at` datetime DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------
@@ -142,7 +196,8 @@ CREATE TABLE `kanban_colunas` (
   `cor` varchar(20) DEFAULT NULL,
   `limite_cards` int(11) DEFAULT NULL,
   `criado_em` timestamp NULL DEFAULT current_timestamp(),
-  `atualizado_em` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+  `atualizado_em` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  `deleted_at` datetime DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
@@ -176,7 +231,8 @@ CREATE TABLE `leads` (
   `created_at` timestamp NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
   `active` enum('0','1') NOT NULL DEFAULT '1',
-  `whatsapp_contact_id` int(11) DEFAULT NULL COMMENT 'Vinculação com contato WhatsApp'
+  `whatsapp_contact_id` int(11) DEFAULT NULL COMMENT 'Vinculação com contato WhatsApp',
+  `deleted_at` datetime DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------
@@ -246,10 +302,12 @@ CREATE TABLE `proposals` (
   `data_envio` date DEFAULT NULL,
   `data_validade` date DEFAULT NULL,
   `pdf_path` varchar(255) DEFAULT NULL,
+  `uploaded_pdf_path` varchar(512) DEFAULT NULL,
   `modelo_id` int(11) DEFAULT NULL COMMENT 'Template utilizado (opcional)',
   `observacoes` text DEFAULT NULL,
   `criado_em` timestamp NULL DEFAULT current_timestamp(),
-  `atualizado_em` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+  `atualizado_em` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  `deleted_at` datetime DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------
@@ -289,6 +347,23 @@ CREATE TABLE `proposta_itens` (
 -- --------------------------------------------------------
 
 --
+-- Estrutura para tabela `system_configs`
+--
+
+CREATE TABLE `system_configs` (
+  `id` int(11) NOT NULL,
+  `config_key` varchar(100) NOT NULL,
+  `config_value` text DEFAULT NULL,
+  `config_type` enum('string','json','boolean','number') DEFAULT 'string',
+  `descricao` varchar(255) DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  `updated_by` int(11) DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+
+--
 -- Estrutura para tabela `tarefas`
 --
 
@@ -309,7 +384,8 @@ CREATE TABLE `tarefas` (
   `ordem_na_coluna` int(11) DEFAULT 0,
   `tags` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`tags`)),
   `criado_em` timestamp NULL DEFAULT current_timestamp(),
-  `atualizado_em` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+  `atualizado_em` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  `deleted_at` datetime DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
@@ -328,7 +404,8 @@ CREATE TABLE `tarefas_usuario` (
   `usuario_id` int(11) NOT NULL,
   `lead_id` int(11) DEFAULT NULL,
   `created_at` datetime DEFAULT current_timestamp(),
-  `updated_at` datetime DEFAULT current_timestamp() ON UPDATE current_timestamp()
+  `updated_at` datetime DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  `deleted_at` datetime DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
@@ -371,7 +448,7 @@ CREATE TABLE `users` (
   `email` varchar(255) NOT NULL,
   `phone` varchar(30) DEFAULT NULL,
   `password` varchar(255) NOT NULL,
-  `role` enum('admin','gerente','vendedor','suporte','comercial','financeiro') DEFAULT 'comercial',
+  `role` enum('admin','gerente','suporte','comercial','financeiro','cliente') DEFAULT 'comercial',
   `permissions` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`permissions`)),
   `2fa_secret` text DEFAULT NULL,
   `active` enum('0','1') NOT NULL,
@@ -379,7 +456,9 @@ CREATE TABLE `users` (
   `password_reset_token` varchar(255) DEFAULT NULL,
   `created_at` timestamp NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
-  `last_login` datetime DEFAULT NULL
+  `last_login` datetime DEFAULT NULL,
+  `twofa_code` varchar(6) DEFAULT NULL COMMENT 'Código de 2FA gerado',
+  `twofa_expires_at` datetime DEFAULT NULL COMMENT 'Expiração do código de 2FA'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------
@@ -395,6 +474,7 @@ CREATE TABLE `whatsapp_campaigns` (
   `name` varchar(255) NOT NULL,
   `description` text DEFAULT NULL,
   `status` enum('draft','scheduled','processing','completed','cancelled') NOT NULL DEFAULT 'draft',
+  `settings` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`settings`)),
   `scheduled_at` datetime DEFAULT NULL,
   `started_at` datetime DEFAULT NULL,
   `completed_at` datetime DEFAULT NULL,
@@ -482,6 +562,7 @@ CREATE TABLE `whatsapp_chat_messages` (
   `media_url` varchar(500) DEFAULT NULL,
   `whatsapp_message_id` varchar(255) DEFAULT NULL,
   `status` enum('pending','sent','delivered','read','failed') NOT NULL DEFAULT 'pending',
+  `reaction_emoji` varchar(8) DEFAULT NULL,
   `error_message` text DEFAULT NULL,
   `sent_at` datetime DEFAULT NULL,
   `delivered_at` datetime DEFAULT NULL,
@@ -700,6 +781,24 @@ ALTER TABLE `audit_logs`
   ADD KEY `user_id` (`user_id`);
 
 --
+-- Índices de tabela `clients`
+--
+ALTER TABLE `clients`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `uk_lead_id` (`lead_id`),
+  ADD KEY `idx_company_id` (`company_id`),
+  ADD KEY `idx_contact_id` (`contact_id`),
+  ADD KEY `idx_status` (`status`);
+
+--
+-- Índices de tabela `client_projects`
+--
+ALTER TABLE `client_projects`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_client_id` (`client_id`),
+  ADD KEY `idx_status` (`status`);
+
+--
 -- Índices de tabela `companies`
 --
 ALTER TABLE `companies`
@@ -792,6 +891,15 @@ ALTER TABLE `proposal_templates`
 ALTER TABLE `proposta_itens`
   ADD PRIMARY KEY (`id`),
   ADD KEY `proposal_id` (`proposal_id`);
+
+--
+-- Índices de tabela `system_configs`
+--
+ALTER TABLE `system_configs`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `config_key` (`config_key`),
+  ADD KEY `updated_by` (`updated_by`),
+  ADD KEY `idx_config_key` (`config_key`);
 
 --
 -- Índices de tabela `tarefas`
@@ -1007,6 +1115,18 @@ ALTER TABLE `audit_logs`
   MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
 
 --
+-- AUTO_INCREMENT de tabela `clients`
+--
+ALTER TABLE `clients`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT de tabela `client_projects`
+--
+ALTER TABLE `client_projects`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
 -- AUTO_INCREMENT de tabela `companies`
 --
 ALTER TABLE `companies`
@@ -1076,6 +1196,12 @@ ALTER TABLE `proposal_templates`
 -- AUTO_INCREMENT de tabela `proposta_itens`
 --
 ALTER TABLE `proposta_itens`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT de tabela `system_configs`
+--
+ALTER TABLE `system_configs`
   MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
 
 --
@@ -1216,6 +1342,20 @@ ALTER TABLE `audit_logs`
   ADD CONSTRAINT `audit_logs_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL;
 
 --
+-- Restrições para tabelas `clients`
+--
+ALTER TABLE `clients`
+  ADD CONSTRAINT `fk_clients_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE SET NULL,
+  ADD CONSTRAINT `fk_clients_contact` FOREIGN KEY (`contact_id`) REFERENCES `contacts` (`id`) ON DELETE SET NULL,
+  ADD CONSTRAINT `fk_clients_lead` FOREIGN KEY (`lead_id`) REFERENCES `leads` (`id`) ON DELETE SET NULL;
+
+--
+-- Restrições para tabelas `client_projects`
+--
+ALTER TABLE `client_projects`
+  ADD CONSTRAINT `fk_client_projects_client` FOREIGN KEY (`client_id`) REFERENCES `clients` (`id`) ON DELETE CASCADE;
+
+--
 -- Restrições para tabelas `contacts`
 --
 ALTER TABLE `contacts`
@@ -1265,6 +1405,12 @@ ALTER TABLE `proposals`
 --
 ALTER TABLE `proposta_itens`
   ADD CONSTRAINT `proposta_itens_ibfk_1` FOREIGN KEY (`proposal_id`) REFERENCES `proposals` (`id`) ON DELETE CASCADE;
+
+--
+-- Restrições para tabelas `system_configs`
+--
+ALTER TABLE `system_configs`
+  ADD CONSTRAINT `system_configs_ibfk_1` FOREIGN KEY (`updated_by`) REFERENCES `users` (`id`) ON DELETE SET NULL;
 
 --
 -- Restrições para tabelas `tarefas_usuario`

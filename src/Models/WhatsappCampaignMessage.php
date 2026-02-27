@@ -255,9 +255,17 @@ class WhatsappCampaignMessage
                     FROM whatsapp_campaign_messages 
                     WHERE contact_id = wcm.contact_id
                     AND campaign_id = ? 
-                    ORDER BY sent_at DESC 
+                    ORDER BY id DESC 
                     LIMIT 1
-                ) as last_status
+                ) as last_status,
+                (
+                    SELECT error_message 
+                    FROM whatsapp_campaign_messages 
+                    WHERE contact_id = wcm.contact_id
+                    AND campaign_id = ? 
+                    ORDER BY id DESC 
+                    LIMIT 1
+                ) as last_error_message
             FROM whatsapp_campaign_messages wcm
             LEFT JOIN whatsapp_contacts wc ON wcm.contact_id = wc.id
             WHERE wcm.campaign_id = ?
@@ -265,7 +273,7 @@ class WhatsappCampaignMessage
             ORDER BY last_interaction_at DESC
         ");
 
-        $stmt->execute([$campaignId, $campaignId]);
+        $stmt->execute([$campaignId, $campaignId, $campaignId]);
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
