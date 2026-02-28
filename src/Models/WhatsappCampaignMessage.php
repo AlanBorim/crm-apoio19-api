@@ -62,6 +62,7 @@ class WhatsappCampaignMessage
             SELECT wcm.*, 
                    wt.name as template_name,
                    wt.template_id as meta_template_id,
+                   wt.language as template_language,
                    wc.name as contact_name,
                    wc.phone_number as contact_phone
             FROM whatsapp_campaign_messages wcm
@@ -71,6 +72,31 @@ class WhatsappCampaignMessage
         ");
 
         $stmt->execute([$id]);
+        $result = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        return $result ?: null;
+    }
+
+    /**
+     * Get single message by Campaign and Contact
+     */
+    public function findByCampaignAndContact(int $campaignId, int $contactId): ?array
+    {
+        $stmt = $this->db->prepare("
+            SELECT wcm.*, 
+                   wt.name as template_name,
+                   wt.template_id as meta_template_id,
+                   wt.language as template_language,
+                   wc.name as contact_name,
+                   wc.phone_number as contact_phone
+            FROM whatsapp_campaign_messages wcm
+            LEFT JOIN whatsapp_templates wt ON wcm.template_id = wt.id
+            LEFT JOIN whatsapp_contacts wc ON wcm.contact_id = wc.id
+            WHERE wcm.campaign_id = ? AND wcm.contact_id = ?
+            ORDER BY wcm.id DESC LIMIT 1
+        ");
+
+        $stmt->execute([$campaignId, $contactId]);
         $result = $stmt->fetch(PDO::FETCH_ASSOC);
 
         return $result ?: null;
@@ -90,7 +116,7 @@ class WhatsappCampaignMessage
         $stmt->execute([
             $data['campaign_id'],
             $data['contact_id'],
-            $data['template_id'],
+            $data['template_id'] ?? null,
             isset($data['template_params']) ? json_encode($data['template_params']) : null,
             $data['status'] ?? 'pending'
         ]);

@@ -207,7 +207,10 @@ class WhatsappCampaignController extends BaseController
                     while (($row = fgetcsv($handle)) !== false) {
                         if (empty($row[0])) continue;
 
-                        $phoneNumber = preg_replace('/[^0-9]/', '', $row[0]);
+                        $phoneNumber = preg_replace('/[^0-9+]/', '', $row[0]);
+                        if (substr($phoneNumber, 0, 1) !== '+' && substr($phoneNumber, 0, 2) !== '55' && (strlen($phoneNumber) == 10 || strlen($phoneNumber) == 11)) {
+                            $phoneNumber = '55' . $phoneNumber;
+                        }
                         $name = $row[1] ?? null;
 
                         // Buscar ou criar contato
@@ -239,7 +242,10 @@ class WhatsappCampaignController extends BaseController
                     $leads = $stmt->fetchAll(\PDO::FETCH_ASSOC);
 
                     foreach ($leads as $lead) {
-                        $phoneNumber = preg_replace('/[^0-9]/', '', $lead['phone']);
+                        $phoneNumber = preg_replace('/[^0-9+]/', '', $lead['phone']);
+                        if (substr($phoneNumber, 0, 1) !== '+' && substr($phoneNumber, 0, 2) !== '55' && (strlen($phoneNumber) == 10 || strlen($phoneNumber) == 11)) {
+                            $phoneNumber = '55' . $phoneNumber;
+                        }
 
                         $contact = $this->contactModel->findByPhoneNumber($phoneNumber);
 
@@ -488,6 +494,139 @@ class WhatsappCampaignController extends BaseController
     }
 
     /**
+     * Clonar campanha mantendo apenas os contatos (pendentes e vazias)
+     */
+    public function cloneCampaign(array $headers, int $id): array
+    {
+        $userData = $this->authMiddleware->handle($headers);
+        if (!$userData) {
+            http_response_code(401);
+            return ["error" => "Autenticação necessária"];
+        }
+
+        try {
+            $campaign = $this->campaignModel->findById($id);
+            if (!$campaign) {
+                http_response_code(404);
+                return ["error" => "Campanha não encontrada"];
+            }
+
+            $this->requirePermission($userData, "whatsapp", "create");
+
+            // 1. Criar nova campanha (Draft) com mesmo nome + [Clone]
+            $newName = "[Clone] " . $campaign['name'];
+            $newCampaignId = $this->campaignModel->create([
+                'name' => $newName,
+                'user_id' => $userData->id,
+                'phone_number_id' => $campaign['phone_number_id'] ?? null,
+                'status' => 'draft'
+                // template_id deliberately omitted so it needs to be set up again
+            ]);
+
+            // 2. Copiar os contatos da velha para a nova gerando messages 'pending'
+            $db = \Apoio19\Crm\Models\Database::getInstance();
+            // Puxar IDs de contatos e os últimos templates usados
+            $stmt = $db->prepare("SELECT contact_id, template_id, template_params FROM whatsapp_campaign_messages WHERE campaign_id = ? GROUP BY contact_id, template_id, template_params");
+            $stmt->execute([$id]);
+            $contacts = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+
+            $messageModel = new \Apoio19\Crm\Models\WhatsappCampaignMessage();
+            $copiedCount = 0;
+
+            // Garantir que copiamos mantendo o template_id que é NOT NULL configurado na estrutura atual
+            foreach ($contacts as $c) {
+                if (!empty($c['contact_id'])) {
+                    $messageModel->create([
+                        'campaign_id' => $newCampaignId,
+                        'contact_id' => $c['contact_id'],
+                        'template_id' => $c['template_id'] ?? 0, // Fallback se fosse null
+                        'template_params' => isset($c['template_params']) ? json_decode($c['template_params'], true) : null,
+                        'status' => 'pending'
+                    ]);
+                    $copiedCount++;
+                }
+            }
+
+            http_response_code(200);
+            return [
+                "success" => true,
+                "message" => "Campanha clonada com sucesso. {$copiedCount} contatos copiados.",
+                "new_campaign_id" => $newCampaignId
+            ];
+        } catch (\Exception $e) {
+            error_log("Erro ao clonar campanha: " . $e->getMessage() . "\n" . $e->getTraceAsString());
+            http_response_code(500);
+            return [
+                "error" => "Erro ao clonar campanha: " . $e->getMessage()
+            ];
+        }
+    }
+
+    /**
+     * Reenviar uma única mensagem que falhou
+     */
+    public function resendMessage(array $headers, int $campaignId, int $contactId): array
+    {
+        $userData = $this->authMiddleware->handle($headers);
+        if (!$userData) {
+            http_response_code(401);
+            return ["error" => "Autenticação necessária"];
+        }
+
+        try {
+            $messageModel = new \Apoio19\Crm\Models\WhatsappCampaignMessage();
+            $msg = $messageModel->findByCampaignAndContact($campaignId, $contactId);
+
+            if (!$msg) {
+                http_response_code(404);
+                return ["error" => "Mensagem não encontrada"];
+            }
+
+            $messageId = $msg['id'];
+
+            // Verificar se temos os dados necessários para o reenvio
+            if (empty($msg['contact_phone']) || empty($msg['template_name']) || empty($msg['template_language'])) {
+                http_response_code(400);
+                return ["error" => "Faltam dados do template ou do contato para reenviar esta mensagem."];
+            }
+
+            $components = isset($msg['template_params']) ? json_decode($msg['template_params'], true) : [];
+
+            $whatsappService = new \Apoio19\Crm\Services\WhatsappService();
+            $result = $whatsappService->sendTemplateMessage(
+                $msg['contact_phone'],
+                $msg['template_name'],
+                $msg['template_language'],
+                $components ?: [],
+                $userData->id,
+                $msg['phone_number_id'] ?? null
+            );
+
+            if ($result['success']) {
+                $messageModel->updateStatus($messageId, 'sent', $result['message_id'] ?? null, null, $result['phone_number_id'] ?? null);
+                http_response_code(200);
+                return [
+                    "success" => true,
+                    "message" => "Mensagem reenviada com sucesso",
+                    "status" => "sent"
+                ];
+            } else {
+                $messageModel->updateStatus($messageId, 'failed', null, $result['error'] ?? 'Falha no reenvio');
+                http_response_code(400);
+                return [
+                    "success" => false,
+                    "error" => "Falha ao reenviar: " . ($result['error'] ?? 'Erro desconhecido'),
+                    "status" => "failed"
+                ];
+            }
+        } catch (\Exception $e) {
+            error_log("Erro no reenvio de mensagem: " . $e->getMessage());
+            http_response_code(500);
+            return ["error" => "Erro interno ao reenviar mensagem"];
+        }
+    }
+
+    /**
      * Deletar campanha
      */
     public function delete(array $headers, int $id): array
@@ -603,7 +742,10 @@ class WhatsappCampaignController extends BaseController
                 $leads = $stmt->fetchAll(\PDO::FETCH_ASSOC);
 
                 foreach ($leads as $lead) {
-                    $phoneNumber = preg_replace('/[^0-9]/', '', $lead['phone']);
+                    $phoneNumber = preg_replace('/[^0-9+]/', '', $lead['phone']);
+                    if (substr($phoneNumber, 0, 1) !== '+' && substr($phoneNumber, 0, 2) !== '55' && (strlen($phoneNumber) == 10 || strlen($phoneNumber) == 11)) {
+                        $phoneNumber = '55' . $phoneNumber;
+                    }
                     $contact = $this->contactModel->findByPhoneNumber($phoneNumber);
 
                     if ($contact) {
@@ -626,7 +768,10 @@ class WhatsappCampaignController extends BaseController
 
                 while (($row = fgetcsv($handle)) !== false) {
                     if (empty($row[0])) continue;
-                    $phoneNumber = preg_replace('/[^0-9]/', '', $row[0]);
+                    $phoneNumber = preg_replace('/[^0-9+]/', '', $row[0]);
+                    if (substr($phoneNumber, 0, 1) !== '+' && substr($phoneNumber, 0, 2) !== '55' && (strlen($phoneNumber) == 10 || strlen($phoneNumber) == 11)) {
+                        $phoneNumber = '55' . $phoneNumber;
+                    }
                     $name = $row[1] ?? null;
 
                     $contact = $this->contactModel->findByPhoneNumber($phoneNumber);

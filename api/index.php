@@ -2090,6 +2090,35 @@ if (preg_match('#^/whatsapp/campaigns/(\d+)/messages$#', $requestPath, $matches)
     exit;
 }
 
+// Campanhas WhatsApp - Reenviar Mensagem Específica
+if (preg_match('#^/whatsapp/campaigns/(\d+)/contacts/(\d+)/resend$#', $requestPath, $matches) && $requestMethod === 'POST') {
+    try {
+        $headers = getallheaders();
+        $controller = new WhatsappCampaignController();
+        // matches[1] = campaign_id, matches[2] = contact_id
+        $response = $controller->resendMessage($headers, (int)$matches[1], (int)$matches[2]);
+        echo json_encode($response);
+    } catch (\Exception $e) {
+        http_response_code(500);
+        echo json_encode(["error" => "Erro ao reenviar mensagem"]);
+    }
+    exit;
+}
+
+// Campanhas WhatsApp - Clonar Campanha
+if (preg_match('#^/whatsapp/campaigns/(\d+)/clone$#', $requestPath, $matches) && $requestMethod === 'POST') {
+    try {
+        $headers = getallheaders();
+        $controller = new WhatsappCampaignController();
+        $response = $controller->cloneCampaign($headers, (int)$matches[1]);
+        echo json_encode($response);
+    } catch (\Exception $e) {
+        http_response_code(500);
+        echo json_encode(["error" => "Erro ao clonar campanha"]);
+    }
+    exit;
+}
+
 // Campanhas WhatsApp - Adicionar Contatos (via Wizard)
 if (preg_match('#^/whatsapp/campaigns/(\d+)/contacts$#', $requestPath, $matches) && $requestMethod === 'POST') {
     try {
