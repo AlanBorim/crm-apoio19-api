@@ -18,6 +18,7 @@ class ClientProject
     public ?float $value;
     public string $created_at;
     public string $updated_at;
+    public ?string $deleted_at = null;
 
     /**
      * Find project by ID.
@@ -29,7 +30,7 @@ class ClientProject
     {
         try {
             $pdo = Database::getInstance();
-            $sql = "SELECT * FROM client_projects WHERE id = :id LIMIT 1";
+            $sql = "SELECT * FROM client_projects WHERE id = :id AND deleted_at IS NULL LIMIT 1";
             $stmt = $pdo->prepare($sql);
             $stmt->bindValue(":id", $id, PDO::PARAM_INT);
             $stmt->execute();
@@ -55,7 +56,7 @@ class ClientProject
         $projects = [];
         try {
             $pdo = Database::getInstance();
-            $sql = "SELECT * FROM client_projects WHERE client_id = :client_id ORDER BY created_at DESC";
+            $sql = "SELECT * FROM client_projects WHERE client_id = :client_id AND deleted_at IS NULL ORDER BY created_at DESC";
             $stmt = $pdo->prepare($sql);
             $stmt->bindValue(":client_id", $clientId, PDO::PARAM_INT);
             $stmt->execute();
@@ -80,11 +81,11 @@ class ClientProject
     {
         try {
             $pdo = Database::getInstance();
-            
+
             $fields = implode(", ", array_keys($data));
             $placeholders = ":" . implode(", :", array_keys($data));
             $sql = "INSERT INTO client_projects ({$fields}) VALUES ({$placeholders})";
-            
+
             $stmt = $pdo->prepare($sql);
 
             foreach ($data as $key => $value) {
@@ -111,19 +112,19 @@ class ClientProject
     {
         try {
             $pdo = Database::getInstance();
-            
+
             $fields = [];
             foreach ($data as $key => $value) {
                 $fields[] = "`{$key}` = :{$key}";
             }
-            
+
             if (empty($fields)) {
                 return false;
             }
 
             $sql = "UPDATE client_projects SET " . implode(", ", $fields) . " WHERE id = :id";
             $stmt = $pdo->prepare($sql);
-            
+
             $data['id'] = $id;
             foreach ($data as $key => $value) {
                 $stmt->bindValue(":{$key}", $value);
@@ -146,12 +147,32 @@ class ClientProject
     {
         try {
             $pdo = Database::getInstance();
-            $sql = "DELETE FROM client_projects WHERE id = :id";
+            $sql = "UPDATE client_projects SET deleted_at = NOW() WHERE id = :id";
             $stmt = $pdo->prepare($sql);
             $stmt->bindValue(":id", $id, PDO::PARAM_INT);
             return $stmt->execute();
         } catch (PDOException $e) {
             error_log("Erro ao deletar projeto ID {$id}: " . $e->getMessage());
+        }
+        return false;
+    }
+
+    /**
+     * Restore a project.
+     *
+     * @param int $id
+     * @return bool
+     */
+    public static function restore(int $id): bool
+    {
+        try {
+            $pdo = Database::getInstance();
+            $sql = "UPDATE client_projects SET deleted_at = NULL WHERE id = :id";
+            $stmt = $pdo->prepare($sql);
+            $stmt->bindValue(":id", $id, PDO::PARAM_INT);
+            return $stmt->execute();
+        } catch (PDOException $e) {
+            error_log("Erro ao restaurar projeto ID {$id}: " . $e->getMessage());
         }
         return false;
     }

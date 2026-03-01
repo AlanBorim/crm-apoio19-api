@@ -27,6 +27,7 @@ class Tarefa
     public $tags;
     public $criado_em;
     public $atualizado_em;
+    public $deleted_at;
 
     // Propriedades para dados relacionados
     public $responsavel_nome;

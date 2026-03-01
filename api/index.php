@@ -8,6 +8,17 @@ $requestUriForHeader = $_SERVER['REQUEST_URI'] ?? '';
 if (!preg_match('#/upload-pdf$#', $requestUriForHeader)) {
     header("Content-Type: application/json");
 }
+
+// Configurações globais de CORS
+header("Access-Control-Allow-Origin: *");
+header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, PATCH, OPTIONS");
+header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With");
+
+// Tratar requisições preflight (OPTIONS)
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    http_response_code(200);
+    exit;
+}
 // Define o diretório base da aplicação
 define("BASE_PATH", dirname(__DIR__));
 
@@ -2681,6 +2692,42 @@ if ($requestPath === '/dashboard/metrics' && $requestMethod === 'GET') {
     exit;
 }
 
+// =================================================================================
+// ROTAS DE LIXEIRA
+// =================================================================================
+
+// Listar lixeira
+if ($requestPath === '/trash' && $requestMethod === 'GET') {
+    try {
+        $headers = getallheaders();
+        $controller = new TrashController();
+        $response = $controller->index($headers);
+        echo json_encode($response);
+    } catch (\Exception $e) {
+        error_log("Erro em GET /trash: " . $e->getMessage());
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno ao listar lixeira."]);
+    }
+    exit;
+}
+
+// Restaurar item
+if (preg_match('#^/trash/(lead|proposal|company|contact|task|campaign)/(\d+)/restore$#', $requestPath, $matches) && $requestMethod === 'POST') {
+    try {
+        $type = $matches[1];
+        $id = (int)$matches[2];
+        $headers = getallheaders();
+        $controller = new TrashController();
+        $response = $controller->restore($headers, $type, $id);
+        echo json_encode($response);
+    } catch (\Exception $e) {
+        error_log("Erro em POST /trash/.../restore: " . $e->getMessage());
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno ao restaurar item."]);
+    }
+    exit;
+}
+
 // --- Fim do Roteamento ---
 
 
@@ -2885,6 +2932,28 @@ if (preg_match('#^/client-projects/(\d+)$#', $requestPath, $matches) && $request
         $headers = getallheaders();
         $controller = new ClientProjectController();
         $response = $controller->update($headers, $id, $input);
+        if (is_array($response)) {
+            http_response_code(200);
+            echo json_encode($response);
+        } else {
+            http_response_code(500);
+            echo json_encode(["error" => "Erro interno", "detalhes" => $response]);
+        }
+    } catch (\Throwable $th) {
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno", "detalhes" => $th->getMessage()]);
+    }
+    exit;
+}
+
+// Deletar Cliente
+if (preg_match('#^/clients/(\d+)$#', $requestPath, $matches) && $requestMethod === 'DELETE') {
+    try {
+        $id = $matches[1];
+        $headers = getallheaders();
+        $controller = new ClientController();
+        $response = $controller->destroy($headers, $id);
+
         if (is_array($response)) {
             http_response_code(200);
             echo json_encode($response);

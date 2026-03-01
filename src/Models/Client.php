@@ -17,6 +17,7 @@ class Client
     public ?string $notes;
     public string $created_at;
     public string $updated_at;
+    public ?string $deleted_at = null;
 
     // Helper properties for joined data
     public ?string $lead_name = null;
@@ -53,7 +54,7 @@ class Client
                     LEFT JOIN leads l ON c.lead_id = l.id
                     LEFT JOIN companies comp ON c.company_id = comp.id
                     LEFT JOIN contacts cont ON c.contact_id = cont.id
-                    WHERE c.id = :id LIMIT 1";
+                    WHERE c.id = :id AND c.deleted_at IS NULL LIMIT 1";
             $stmt = $pdo->prepare($sql);
             $stmt->bindValue(":id", $id, PDO::PARAM_INT);
             $stmt->execute();
@@ -78,7 +79,7 @@ class Client
     {
         try {
             $pdo = Database::getInstance();
-            $sql = "SELECT * FROM clients WHERE lead_id = :lead_id LIMIT 1";
+            $sql = "SELECT * FROM clients WHERE lead_id = :lead_id AND deleted_at IS NULL LIMIT 1";
             $stmt = $pdo->prepare($sql);
             $stmt->bindValue(":lead_id", $leadId, PDO::PARAM_INT);
             $stmt->execute();
@@ -109,6 +110,7 @@ class Client
                     FROM clients c
                     LEFT JOIN leads l ON c.lead_id = l.id
                     LEFT JOIN companies comp ON c.company_id = comp.id
+                    WHERE c.deleted_at IS NULL
                     ORDER BY c.created_at DESC LIMIT :limit OFFSET :offset";
             $stmt = $pdo->prepare($sql);
             $stmt->bindValue(":limit", $limit, PDO::PARAM_INT);
@@ -219,6 +221,46 @@ class Client
             return $stmt->execute();
         } catch (PDOException $e) {
             error_log("Erro ao atualizar cliente ID {$id}: " . $e->getMessage());
+        }
+        return false;
+    }
+
+    /**
+     * Excluir logicamente um cliente.
+     *
+     * @param int $id
+     * @return bool
+     */
+    public static function delete(int $id): bool
+    {
+        try {
+            $pdo = Database::getInstance();
+            $sql = "UPDATE clients SET deleted_at = NOW() WHERE id = :id";
+            $stmt = $pdo->prepare($sql);
+            $stmt->bindValue(":id", $id, PDO::PARAM_INT);
+            return $stmt->execute();
+        } catch (PDOException $e) {
+            error_log("Erro ao excluir cliente ID {$id}: " . $e->getMessage());
+        }
+        return false;
+    }
+
+    /**
+     * Restaurar um cliente.
+     *
+     * @param int $id
+     * @return bool
+     */
+    public static function restore(int $id): bool
+    {
+        try {
+            $pdo = Database::getInstance();
+            $sql = "UPDATE clients SET deleted_at = NULL WHERE id = :id";
+            $stmt = $pdo->prepare($sql);
+            $stmt->bindValue(":id", $id, PDO::PARAM_INT);
+            return $stmt->execute();
+        } catch (PDOException $e) {
+            error_log("Erro ao restaurar cliente ID {$id}: " . $e->getMessage());
         }
         return false;
     }

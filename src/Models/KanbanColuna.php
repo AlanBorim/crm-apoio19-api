@@ -13,6 +13,7 @@ class KanbanColuna
     public int $ordem;
     public ?string $cor = null;
     public ?int $limite_cards = null;
+    public ?string $deleted_at = null;
     public string $criado_em;
     public string $atualizado_em;
 
@@ -23,7 +24,7 @@ class KanbanColuna
      */
     public static function findAll(): array
     {
-        $sql = "SELECT * FROM kanban_colunas ORDER BY ordem ASC";
+        $sql = "SELECT * FROM kanban_colunas WHERE deleted_at IS NULL ORDER BY ordem ASC";
         try {
             $pdo = Database::getInstance();
             $stmt = $pdo->query($sql);
@@ -123,7 +124,7 @@ class KanbanColuna
         }
 
         $sql = "UPDATE kanban_colunas SET " . implode(', ', $updates) . ", atualizado_em = NOW() WHERE id = :id";
-        
+
         try {
             $pdo = Database::getInstance();
             $stmt = $pdo->prepare($sql);
@@ -144,19 +145,65 @@ class KanbanColuna
      */
     public static function delete(int $id): bool
     {
-        // Before deleting, potentially move tasks to a default column or handle them
-        // Example: UPDATE tarefas SET kanban_coluna_id = NULL WHERE kanban_coluna_id = :id;
-
-        $sql = "DELETE FROM kanban_colunas WHERE id = :id";
         try {
             $pdo = Database::getInstance();
+            $pdo->beginTransaction();
+
+            // Soft delete the column
+            $sql = "UPDATE kanban_colunas SET deleted_at = NOW() WHERE id = :id";
             $stmt = $pdo->prepare($sql);
             $stmt->bindParam(":id", $id, PDO::PARAM_INT);
-            return $stmt->execute();
+            $stmt->execute();
+
+            // Soft delete tasks that belong to this column
+            $sqlTasks = "UPDATE tarefas SET deleted_at = NOW() WHERE kanban_coluna_id = :id AND deleted_at IS NULL";
+            $stmtTasks = $pdo->prepare($sqlTasks);
+            $stmtTasks->bindParam(":id", $id, PDO::PARAM_INT);
+            $stmtTasks->execute();
+
+            $pdo->commit();
+            return true;
         } catch (PDOException $e) {
-            error_log("Erro ao deletar coluna Kanban ID {$id}: " . $e->getMessage());
+            if (isset($pdo) && $pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            error_log("Erro ao deletar (soft delete) coluna Kanban ID {$id} e tarefas em cascata: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Restore a deleted Kanban column.
+     *
+     * @param int $id
+     * @return bool True on success, false on failure.
+     */
+    public static function restore(int $id): bool
+    {
+        try {
+            $pdo = Database::getInstance();
+            $pdo->beginTransaction();
+
+            // Restore the column
+            $sql = "UPDATE kanban_colunas SET deleted_at = NULL WHERE id = :id";
+            $stmt = $pdo->prepare($sql);
+            $stmt->bindParam(":id", $id, PDO::PARAM_INT);
+            $stmt->execute();
+
+            // Restore tasks that belong to this column
+            $sqlTasks = "UPDATE tarefas SET deleted_at = NULL WHERE kanban_coluna_id = :id";
+            $stmtTasks = $pdo->prepare($sqlTasks);
+            $stmtTasks->bindParam(":id", $id, PDO::PARAM_INT);
+            $stmtTasks->execute();
+
+            $pdo->commit();
+            return true;
+        } catch (PDOException $e) {
+            if (isset($pdo) && $pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            error_log("Erro ao restaurar coluna Kanban ID {$id} e tarefas em cascata: " . $e->getMessage());
             return false;
         }
     }
 }
-

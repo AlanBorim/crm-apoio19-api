@@ -180,4 +180,29 @@ class ClientController extends BaseController
             return $this->errorResponse(500, 'Failed to promote lead');
         }
     }
+
+    /**
+     * Delete a client (soft delete).
+     *
+     * @param array $headers
+     * @param int $id
+     * @return array
+     */
+    public function destroy(array $headers, int $id): array
+    {
+        $userData = $this->authMiddleware->handle($headers);
+        if (!$userData) {
+            return $this->errorResponse(401, "Autenticação necessária.");
+        }
+
+        $this->requirePermission($userData, 'clients', 'delete');
+
+        if (Client::delete((int)$id)) {
+            // Audit log
+            $this->logAudit($userData->id, 'delete', 'clients', $id, null, null);
+            return $this->successResponse(null, 'Client deleted successfully');
+        } else {
+            return $this->errorResponse(500, 'Failed to delete client');
+        }
+    }
 }

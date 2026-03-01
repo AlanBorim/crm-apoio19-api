@@ -63,7 +63,7 @@ class WhatsappContact
             FROM whatsapp_contacts wc
             LEFT JOIN leads l ON wc.lead_id = l.id
             LEFT JOIN contacts c ON wc.contact_id = c.id
-            WHERE wc.id = ?
+            WHERE wc.id = ? AND wc.deleted_at IS NULL
         ');
         $stmt->execute([$id]);
         $contact = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -77,7 +77,7 @@ class WhatsappContact
 
     public function findByPhoneNumber(string $phoneNumber): ?array
     {
-        $stmt = $this->db->prepare('SELECT * FROM whatsapp_contacts WHERE phone_number = ?');
+        $stmt = $this->db->prepare('SELECT * FROM whatsapp_contacts WHERE phone_number = ? AND deleted_at IS NULL');
         $stmt->execute([$phoneNumber]);
         $contact = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -108,7 +108,7 @@ class WhatsappContact
                 LEFT JOIN leads l ON wc.lead_id = l.id
                 LEFT JOIN contacts c ON wc.contact_id = c.id
                 $joinType JOIN whatsapp_chat_messages wcm ON wc.id = wcm.contact_id
-                WHERE 1=1";
+                WHERE wc.deleted_at IS NULL";
         $params = [];
 
         if (!empty($filters['lead_id'])) {
@@ -163,7 +163,7 @@ class WhatsappContact
                 FROM whatsapp_contacts wc
                 LEFT JOIN leads l ON wc.lead_id = l.id
                 LEFT JOIN contacts c ON wc.contact_id = c.id
-                WHERE 1=1";
+                WHERE wc.deleted_at IS NULL";
         $params = [];
 
         if (!empty($filters['search'])) {
@@ -191,7 +191,14 @@ class WhatsappContact
 
     public function delete(int $id): bool
     {
-        $stmt = $this->db->prepare('DELETE FROM whatsapp_contacts WHERE id = ?');
+        $stmt = $this->db->prepare('UPDATE whatsapp_contacts SET deleted_at = NOW() WHERE id = ?');
+        return $stmt->execute([$id]);
+    }
+
+    public static function restore(int $id): bool
+    {
+        $db = Database::getInstance();
+        $stmt = $db->prepare('UPDATE whatsapp_contacts SET deleted_at = NULL WHERE id = ?');
         return $stmt->execute([$id]);
     }
 

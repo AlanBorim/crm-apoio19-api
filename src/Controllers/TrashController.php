@@ -35,8 +35,9 @@ class TrashController extends BaseController
             return ["error" => "Autenticação do CRM necessária."];
         }
 
-        // Only admins can access the trash
-        if ($userData->role !== 'admin') {
+        // Permite acesso para admin, gestor ou diretoria
+        $allowedRoles = ['admin', 'gestor', 'diretoria'];
+        if (!in_array($userData->funcao, $allowedRoles)) {
             http_response_code(403);
             return ["error" => "Acesso negado."];
         }
@@ -63,6 +64,38 @@ class TrashController extends BaseController
 
             // Tasks
             $stmt = $pdo->query("SELECT id, titulo AS title, 'task' AS type, deleted_at FROM tarefas WHERE deleted_at IS NOT NULL");
+            $deletedItems = array_merge($deletedItems, $stmt->fetchAll(PDO::FETCH_ASSOC));
+
+            // Campaigns
+            $stmt = $pdo->query("SELECT id, name AS title, 'campaign' AS type, deleted_at FROM whatsapp_campaigns WHERE deleted_at IS NOT NULL");
+            $deletedItems = array_merge($deletedItems, $stmt->fetchAll(PDO::FETCH_ASSOC));
+
+            // Users
+            $stmt = $pdo->query("SELECT id, name AS title, 'user' AS type, deleted_at FROM users WHERE deleted_at IS NOT NULL");
+            $deletedItems = array_merge($deletedItems, $stmt->fetchAll(PDO::FETCH_ASSOC));
+
+            // Kanban Columns
+            $stmt = $pdo->query("SELECT id, nome AS title, 'kanban_column' AS type, deleted_at FROM kanban_colunas WHERE deleted_at IS NOT NULL");
+            $deletedItems = array_merge($deletedItems, $stmt->fetchAll(PDO::FETCH_ASSOC));
+
+            // User Tasks
+            $stmt = $pdo->query("SELECT id, titulo AS title, 'user_task' AS type, deleted_at FROM tarefas_usuario WHERE deleted_at IS NOT NULL");
+            $deletedItems = array_merge($deletedItems, $stmt->fetchAll(PDO::FETCH_ASSOC));
+
+            // Client Projects
+            $stmt = $pdo->query("SELECT id, name AS title, 'client_project' AS type, deleted_at FROM client_projects WHERE deleted_at IS NOT NULL");
+            $deletedItems = array_merge($deletedItems, $stmt->fetchAll(PDO::FETCH_ASSOC));
+
+            // Clients
+            $stmt = $pdo->query("SELECT c.id, COALESCE(c.fantasy_name, c.corporate_name, l.name, comp.name, 'Cliente sem nome') AS title, 'client' AS type, c.deleted_at FROM clients c LEFT JOIN leads l ON c.lead_id = l.id LEFT JOIN companies comp ON c.company_id = comp.id WHERE c.deleted_at IS NOT NULL");
+            $deletedItems = array_merge($deletedItems, $stmt->fetchAll(PDO::FETCH_ASSOC));
+
+            // Whatsapp Templates
+            $stmt = $pdo->query("SELECT id, name AS title, 'whatsapp_template' AS type, deleted_at FROM whatsapp_templates WHERE deleted_at IS NOT NULL");
+            $deletedItems = array_merge($deletedItems, $stmt->fetchAll(PDO::FETCH_ASSOC));
+
+            // Whatsapp Contacts
+            $stmt = $pdo->query("SELECT id, name AS title, 'whatsapp_contact' AS type, deleted_at FROM whatsapp_contacts WHERE deleted_at IS NOT NULL");
             $deletedItems = array_merge($deletedItems, $stmt->fetchAll(PDO::FETCH_ASSOC));
 
             // Sort items by deleted_at descending
@@ -95,8 +128,9 @@ class TrashController extends BaseController
             return ["error" => "Autenticação do CRM necessária."];
         }
 
-        // Only admins can restore items
-        if ($userData->role !== 'admin') {
+        // Check permissions
+        $allowedRoles = ['admin', 'gestor', 'diretoria'];
+        if (!in_array($userData->funcao, $allowedRoles)) {
             http_response_code(403);
             return ["error" => "Acesso negado."];
         }
@@ -118,6 +152,31 @@ class TrashController extends BaseController
                 break;
             case 'task':
                 $success = Tarefa::restore($id);
+                break;
+            case 'campaign':
+                // Uses explicit namespace because it might not be imported at the top
+                $success = \Apoio19\Crm\Models\WhatsappCampaign::restore($id);
+                break;
+            case 'user':
+                $success = \Apoio19\Crm\Models\User::restore($id);
+                break;
+            case 'kanban_column':
+                $success = \Apoio19\Crm\Models\KanbanColuna::restore($id);
+                break;
+            case 'user_task':
+                $success = \Apoio19\Crm\Models\TarefaUsuario::restore($id);
+                break;
+            case 'client':
+                $success = \Apoio19\Crm\Models\Client::restore($id);
+                break;
+            case 'client_project':
+                $success = \Apoio19\Crm\Models\ClientProject::restore($id);
+                break;
+            case 'whatsapp_template':
+                $success = \Apoio19\Crm\Models\WhatsappTemplate::restore($id);
+                break;
+            case 'whatsapp_contact':
+                $success = \Apoio19\Crm\Models\WhatsappContact::restore($id);
                 break;
             default:
                 http_response_code(400);

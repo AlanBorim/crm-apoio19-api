@@ -83,7 +83,7 @@ class WhatsappCampaign
                 FROM whatsapp_campaigns wc 
                 LEFT JOIN users u ON wc.user_id = u.id 
                 LEFT JOIN whatsapp_phone_numbers wpn ON wc.phone_number_id = wpn.id
-                WHERE 1=1';
+                WHERE wc.deleted_at IS NULL';
         $params = [];
 
         if (!empty($filters['user_id'])) {
@@ -126,7 +126,14 @@ class WhatsappCampaign
 
     public function delete(int $id): bool
     {
-        $stmt = $this->db->prepare('DELETE FROM whatsapp_campaigns WHERE id = ?');
+        $stmt = $this->db->prepare('UPDATE whatsapp_campaigns SET deleted_at = NOW() WHERE id = ?');
+        return $stmt->execute([$id]);
+    }
+
+    public static function restore(int $id): bool
+    {
+        $db = Database::getInstance();
+        $stmt = $db->prepare('UPDATE whatsapp_campaigns SET deleted_at = NULL WHERE id = ?');
         return $stmt->execute([$id]);
     }
 

@@ -18,6 +18,7 @@ class TarefaUsuario
     public ?int $lead_id;
     public string $created_at;
     public string $updated_at;
+    public ?string $deleted_at = null;
 
     /**
      * Listar todas as tarefas (para admin)
@@ -126,13 +127,20 @@ class TarefaUsuario
         return $stmt->execute($params);
     }
 
-    /**
-     * Excluir tarefa
-     */
     public static function delete(int $id)
     {
         $pdo = Database::getInstance();
-        $stmt = $pdo->prepare("DELETE FROM tarefas_usuario WHERE id = :id");
+        $stmt = $pdo->prepare("UPDATE tarefas_usuario SET deleted_at = NOW() WHERE id = :id");
+        return $stmt->execute([':id' => $id]);
+    }
+
+    /**
+     * Restaurar tarefa
+     */
+    public static function restore(int $id)
+    {
+        $pdo = Database::getInstance();
+        $stmt = $pdo->prepare("UPDATE tarefas_usuario SET deleted_at = NULL WHERE id = :id");
         return $stmt->execute([':id' => $id]);
     }
 }

@@ -23,6 +23,7 @@ class User
     public ?string $last_login;
     public ?string $telefone;
     public ?string $permissions;
+    public ?string $deleted_at = null;
 
 
     /**
@@ -216,23 +217,38 @@ class User
         }
     }
 
-    /**
-     * Excluir usuário (hard delete)
-     *
-     * @param int $id ID do usuário
-     * @return bool Sucesso da operação
-     */
     public static function delete(int $id): bool
     {
         try {
             $pdo = Database::getInstance();
 
-            $sql = "DELETE FROM users WHERE id = :id";
+            $sql = "UPDATE users SET deleted_at = NOW() WHERE id = :id";
             $stmt = $pdo->prepare($sql);
 
             return $stmt->execute([':id' => $id]);
         } catch (PDOException $e) {
-            error_log("Erro ao excluir usuário: " . $e->getMessage());
+            error_log("Erro ao excluir (soft delete) usuário: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Restaurar usuário (soft delete restore)
+     *
+     * @param int $id ID do usuário
+     * @return bool Sucesso da operação
+     */
+    public static function restore(int $id): bool
+    {
+        try {
+            $pdo = Database::getInstance();
+
+            $sql = "UPDATE users SET deleted_at = NULL WHERE id = :id";
+            $stmt = $pdo->prepare($sql);
+
+            return $stmt->execute([':id' => $id]);
+        } catch (PDOException $e) {
+            error_log("Erro ao restaurar usuário: " . $e->getMessage());
             return false;
         }
     }
