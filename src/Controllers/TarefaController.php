@@ -20,6 +20,35 @@ class TarefaController extends BaseController
     }
 
     /**
+     * List tasks.
+     *
+     * @param array $headers Request headers.
+     * @param array $queryParams Query parameters for filtering.
+     * @return array JSON response.
+     */
+    public function index(array $headers, array $queryParams = []): array
+    {
+        $userData = $this->authMiddleware->handle($headers);
+        if (!$userData) {
+            http_response_code(401);
+            return ["error" => "Autenticação do CRM necessária."];
+        }
+
+        // Check permission
+        $this->requirePermission($userData, 'tasks', 'view');
+
+        try {
+            $tarefas = Tarefa::findBy($queryParams);
+            http_response_code(200);
+            return ["tarefas" => $tarefas];
+        } catch (\Exception $e) {
+            error_log("Erro em TarefaController->index: " . $e->getMessage());
+            http_response_code(500);
+            return ["error" => "Erro ao listar tarefas."];
+        }
+    }
+
+    /**
      * Create a new task.
      *
      * @param array $headers Request headers.

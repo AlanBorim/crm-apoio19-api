@@ -2990,7 +2990,7 @@ if (preg_match('#^/client-projects/(\d+)$#', $requestPath, $matches) && $request
     exit;
 }
 
-// Se nenhuma rota corresponder ap�s verificar todas as rotas definidas
+// Se nenhuma rota corresponder após verificar todas as rotas definidas
 http_response_code(404);
-echo json_encode(["error" => "Endpoint n�o encontrado: " . $requestMethod . " " . $requestPath]);
+echo json_encode(["error" => "Endpoint não encontrado: " . $requestMethod . " " . $requestPath]);
 exit;

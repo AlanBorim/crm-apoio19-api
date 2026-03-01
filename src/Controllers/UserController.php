@@ -137,6 +137,38 @@ class UserController extends BaseController
     }
 
     /**
+     * Obter usuário específico
+     *
+     * @param array $headers Cabeçalhos da requisição
+     * @param int $userId ID do usuário
+     * @return array Resposta JSON
+     */
+    public function show(array $headers, int $userId): array
+    {
+        $traceId = bin2hex(random_bytes(8));
+        $userData = $this->authMiddleware->handle($headers);
+        if (!$userData) {
+            return $this->errorResponse(401, "Autenticação necessária ou permissão insuficiente.");
+        }
+
+        $this->requirePermission($userData, 'usuarios', 'view');
+
+        try {
+            $user = User::findById($userId);
+            if (!$user || $user->deleted_at) {
+                return $this->errorResponse(404, "Usuário não encontrado.", "NOT_FOUND", $traceId);
+            }
+
+            return $this->successResponse($this->formatUserForResponse($user), "Usuário obtido com sucesso.", 200, $traceId);
+        } catch (\PDOException $e) {
+            $mapped = $this->mapPdoError($e);
+            return $this->errorResponse($mapped['status'], $mapped['message'], $mapped['code'], $traceId, $this->debugDetails($e));
+        } catch (\Throwable $e) {
+            return $this->errorResponse(500, "Erro interno ao obter usuário.", "UNEXPECTED_ERROR", $traceId, $this->debugDetails($e));
+        }
+    }
+
+    /**
      * Criar novo usuário
      * 
      * @param array $headers Cabeçalhos da requisição

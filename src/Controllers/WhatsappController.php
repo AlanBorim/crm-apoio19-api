@@ -50,6 +50,62 @@ class WhatsappController extends BaseController
         }
     }
 
+    /**
+     * Save/Update WhatsApp configuration
+     */
+    public function saveConfig(array $headers, array $requestData): array
+    {
+        $traceId = bin2hex(random_bytes(8));
+        $userData = $this->authMiddleware->handle($headers);
+
+        if (!$userData) {
+            return $this->errorResponse(401, "Autenticação necessária.", "UNAUTHORIZED", $traceId);
+        }
+
+        $this->requirePermission($userData, 'configuracoes', 'edit');
+
+        try {
+            $db = \Apoio19\Crm\Models\Database::getInstance();
+            $stmt = $db->query('SELECT id FROM whatsapp_phone_numbers WHERE status = "active" LIMIT 1');
+            $existing = $stmt->fetch(\PDO::FETCH_ASSOC);
+
+            if ($existing) {
+                // Update existing
+                $sql = "UPDATE whatsapp_phone_numbers SET ";
+                $fields = [];
+                $params = [];
+
+                if (isset($requestData['business_account_id'])) {
+                    $fields[] = "business_account_id = ?";
+                    $params[] = $requestData['business_account_id'];
+                }
+                if (isset($requestData['access_token'])) {
+                    $fields[] = "access_token = ?";
+                    $params[] = $requestData['access_token'];
+                }
+                if (isset($requestData['webhook_verify_token'])) {
+                    $fields[] = "webhook_verify_token = ?";
+                    $params[] = $requestData['webhook_verify_token'];
+                }
+
+                if (count($fields) > 0) {
+                    $sql .= implode(", ", $fields) . ", updated_at = NOW() WHERE id = ?";
+                    $params[] = $existing['id'];
+                    $updateStmt = $db->prepare($sql);
+                    $updateStmt->execute($params);
+                }
+            } else {
+                return $this->errorResponse(404, "Nenhuma configuração ativa encontrada para atualizar. Por favor, cadastre um número primeiro.", "NOT_FOUND", $traceId);
+            }
+
+            $config = Whatsapp::getConfig();
+            return $this->successResponse($config, "Configuração atualizada com sucesso", 200, $traceId);
+        } catch (\Exception $e) {
+            error_log("Save config error: " . $e->getMessage());
+            return $this->errorResponse(500, "Erro ao salvar configuração", "ERROR", $traceId);
+        }
+    }
+
 
     /**
      * Verify webhook token
