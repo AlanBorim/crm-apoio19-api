@@ -185,7 +185,7 @@ class WhatsappCampaignController extends BaseController
                 'phone_number_id' => $requestData['phone_number_id'] ?? null,
                 'name' => $requestData['name'],
                 'description' => $requestData['description'] ?? null,
-                'status' => 'draft',
+                'status' => !empty($requestData['scheduled_at']) ? 'scheduled' : 'draft',
                 'scheduled_at' => $requestData['scheduled_at'] ?? null
             ];
 
@@ -426,6 +426,90 @@ class WhatsappCampaignController extends BaseController
             error_log("Erro ao iniciar campanha: " . $e->getMessage());
             http_response_code(500);
             return ["error" => "Erro ao iniciar campanha"];
+        }
+    }
+
+    /**
+     * Processa todas as campanhas agendadas que devem ser executadas neste momento.
+     * Idealmente executado via CRON.
+     */
+    public function processScheduled(): array
+    {
+        try {
+            $campaignsToRun = $this->campaignModel->getScheduledCampaignsToRun();
+            $results = [
+                'total_processed' => 0,
+                'campaigns' => []
+            ];
+
+            $messageModel = new \Apoio19\Crm\Models\WhatsappCampaignMessage();
+            $whatsappService = new \Apoio19\Crm\Services\WhatsappService();
+
+            foreach ($campaignsToRun as $campaign) {
+                // Marca a campanha em processamento temporariamente
+                $this->campaignModel->markAsStarted($campaign['id']);
+
+                $pendingMessages = $messageModel->getByStatus($campaign['id'], 'pending');
+                $sentCount = 0;
+                $failedCount = 0;
+
+                error_log("CRON: Processing Scheduled Campaign ID: " . $campaign['id'] . " - Pending Messages: " . count($pendingMessages));
+
+                foreach ($pendingMessages as $msg) {
+                    if (empty($msg['contact_phone']) || empty($msg['template_name']) || empty($msg['template_language'])) {
+                        $messageModel->updateStatus($msg['id'], 'failed', null, 'Dados incompletos do contato ou template');
+                        $failedCount++;
+                        continue;
+                    }
+
+                    $components = isset($msg['template_params']) ? json_decode($msg['template_params'], true) : [];
+
+                    $result = $whatsappService->sendTemplateMessage(
+                        $msg['contact_phone'],
+                        $msg['template_name'],
+                        $msg['template_language'],
+                        $components ?: [],
+                        $campaign['user_id'], // Atribuir ao usuário que criou a campanha
+                        $campaign['phone_number_id']
+                    );
+
+                    if ($result['success']) {
+                        $messageModel->updateStatus($msg['id'], 'sent', $result['message_id'] ?? null, null, $result['phone_number_id'] ?? null);
+                        $sentCount++;
+                    } else {
+                        $messageModel->updateStatus($msg['id'], 'failed', null, $result['error'] ?? 'Erro desconhecido');
+                        $failedCount++;
+                    }
+
+                    // Aguarda levemente para não estourar rate limit
+                    if (count($pendingMessages) > 10) {
+                        usleep(100000); // 100ms
+                    }
+                }
+
+                // Finaliza campanha
+                $this->campaignModel->markAsCompleted($campaign['id']);
+
+                $results['campaigns'][] = [
+                    'id' => $campaign['id'],
+                    'name' => $campaign['name'],
+                    'sent' => $sentCount,
+                    'failed' => $failedCount
+                ];
+                $results['total_processed']++;
+            }
+
+            error_log("CRON: Scheduled campaigns processed: " . $results['total_processed']);
+            return [
+                "success" => true,
+                "data" => $results
+            ];
+
+        } catch (\Exception $e) {
+            error_log("CRON: Erro inesperado ao processar campanhas agendadas: " . $e->getMessage() . "\n" . $e->getTraceAsString());
+            return [
+                "error" => "Falha no processamento das campanhas agendadas: " . $e->getMessage()
+            ];
         }
     }
 

@@ -137,6 +137,31 @@ class WhatsappCampaign
         return $stmt->execute([$id]);
     }
 
+    /**
+     * Retorna todas as campanhas agendadas cuja data/hora programada
+     * seja menor ou igual à data atual (NOW()) e que ainda estejam
+     * com status 'scheduled'.
+     *
+     * @return array
+     */
+    public function getScheduledCampaignsToRun(): array
+    {
+        $sql = "
+            SELECT wc.*
+            FROM whatsapp_campaigns wc
+            WHERE wc.deleted_at IS NULL
+              AND wc.status = 'scheduled'
+              AND wc.scheduled_at IS NOT NULL
+              AND wc.scheduled_at <= NOW()
+            ORDER BY wc.scheduled_at ASC
+        ";
+
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute();
+
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
     public function getStats(int $campaignId): array
     {
         $stmt = $this->db->prepare('

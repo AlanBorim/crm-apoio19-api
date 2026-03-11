@@ -663,7 +663,7 @@ class WhatsappController extends BaseController
                 'name' => $requestData['name'],
                 'description' => $requestData['description'] ?? null,
                 'phone_number_id' => $requestData['phone_number_id'] ?? null,
-                'status' => $requestData['status'] ?? 'draft',
+                'status' => !empty($requestData['scheduled_at']) ? 'scheduled' : ($requestData['status'] ?? 'draft'),
                 'scheduled_at' => $requestData['scheduled_at'] ?? null
             ];
 
