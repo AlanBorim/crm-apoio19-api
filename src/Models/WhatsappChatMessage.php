@@ -92,7 +92,7 @@ class WhatsappChatMessage
                         wcm.sent_at,
                         wcm.delivered_at,
                         wcm.read_at,
-                        wcm.created_at,
+                        COALESCE(wcm.sent_at, wcm.created_at) as created_at,
                         wcm.updated_at,
                         u.name as user_name,
                         'chat' as source_table,
@@ -119,7 +119,7 @@ class WhatsappChatMessage
                         cm.sent_at,
                         cm.delivered_at,
                         cm.read_at,
-                        cm.created_at,
+                        COALESCE(cm.sent_at, cm.created_at) as created_at,
                         cm.updated_at,
                         u.name as user_name,
                         'campaign' as source_table,
@@ -290,7 +290,7 @@ class WhatsappChatMessage
                 SELECT wcm.*
                 FROM whatsapp_chat_messages wcm
                 WHERE wcm.contact_id = ?
-                ORDER BY wcm.created_at DESC
+                ORDER BY COALESCE(wcm.sent_at, wcm.created_at) DESC
                 LIMIT 1
             ');
 
