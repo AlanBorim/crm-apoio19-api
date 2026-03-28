@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 
 ini_set('display_errors', 1);
 ini_set('display_startup_errors', 1);
@@ -43,6 +43,7 @@ use Apoio19\Crm\Controllers\ClientProjectController;
 use Apoio19\Crm\Controllers\ProposalTemplateController;
 use Apoio19\Crm\Controllers\ConfiguracoesController;
 use Apoio19\Crm\Controllers\TrashController;
+use Apoio19\Crm\Controllers\FinanceiroController;
 
 // --- Lógica de Extração de Caminho Corrigida ---
 $requestUri = $_SERVER['REQUEST_URI']; // ex: /api/login?param=1
@@ -798,6 +799,27 @@ if ($requestPath === '/notifications' && $requestMethod === 'DELETE') {
         $response = $notificationController->deleteAll($headers);
         if (is_array($response)) {
             http_response_code(200);
+
+// Rota básica para o financeiro
+if ($requestPath === '/financeiro' && $requestMethod === 'GET') {
+    try {
+        $headers = getallheaders();
+        $controller = new FinanceiroController();
+        $response = $controller->index($headers);
+        if (is_array($response)) {
+            http_response_code(200);
+            echo json_encode($response);
+        } else {
+            http_response_code(500);
+            echo json_encode(["error" => "Erro interno. Resposta inesperada do servidor."]);
+        }
+    } catch (\Throwable $th) {
+        error_log("Erro em /financeiro: " . $th->getMessage());
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno."]);
+    }
+    exit;
+}
             echo json_encode($response);
         } else {
             // Resposta inesperada
