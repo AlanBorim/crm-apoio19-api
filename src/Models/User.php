@@ -49,8 +49,8 @@ class User
                 ':active' => $data['active'] ?? 1,
                 ':phone' => $data['phone'] ?? null,
                 ':permissions' => $data['permissions'] ?? null,
-                ':created_at' => $data['created_at'],
-                ':updated_at' => $data['updated_at']
+                ':created_at' => $data['created_at'] ?? date('Y-m-d H:i:s'),
+                ':updated_at' => $data['updated_at'] ?? date('Y-m-d H:i:s')
             ]);
 
             return $pdo->lastInsertId();

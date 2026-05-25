@@ -56,6 +56,38 @@ class AuthMiddleware
             return null;
         }
 
+        // Verificação se é um token de sistema de longa duração (ex: n8n)
+        if (str_starts_with($token, 'crm_sys_')) {
+            $systemToken = \Apoio19\Crm\Models\SystemToken::findByToken($token);
+            if (!$systemToken) {
+                $this->lastError = "Token de sistema inválido ou inativo.";
+                error_log("Middleware: Token de sistema inválido ou inativo.");
+                return null;
+            }
+
+            // Buscar usuário associado ao token
+            $user = User::findById((int)$systemToken['user_id']);
+            if (!$user) {
+                $this->lastError = "Usuário associado ao token de sistema não encontrado.";
+                error_log("Middleware: Usuário associado ao token de sistema não encontrado.");
+                return null;
+            }
+
+            if (!$user->active) {
+                $this->lastError = "Usuário associado ao token de sistema está inativo.";
+                error_log("Middleware: Usuário associado ao token de sistema está inativo.");
+                return null;
+            }
+
+            // Sobrescrever as permissões do usuário com as permissões restritas do token de sistema
+            $user->permissions = $systemToken['permissions'];
+
+            // Atualizar carimbo de data/hora do último uso do token
+            \Apoio19\Crm\Models\SystemToken::updateLastUsed((int)$systemToken['id']);
+
+            return $user;
+        }
+
         $decodedPayload = $this->authService->validateToken($token);
 
         if (!$decodedPayload) {

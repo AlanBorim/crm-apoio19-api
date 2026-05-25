@@ -80,7 +80,7 @@ class LeadController extends BaseController
             // Adicionar restrição de responsável para usuários que não têm permissão de ver todos
             if (!$this->can($userData, "leads", "view")) {
                 $conditions[] = "assigned_to = :user_id";
-                $params[':user_id'] = $userData->userId;
+                $params[':user_id'] = $userData->id;
             }
 
             //adicionando a parte onde indica que só os leads ativos devem ser retornados
@@ -261,7 +261,7 @@ class LeadController extends BaseController
             // Verificar mudança de responsável para notificação
             $oldAssigneeId = $lead->responsavel_id;
             $newAssigneeId = isset($requestData["responsavel_id"]) ? (int)$requestData["responsavel_id"] : $oldAssigneeId;
-            $notifyAssignee = ($newAssigneeId !== $oldAssigneeId && $newAssigneeId !== null && $newAssigneeId !== $userData->userId);
+            $notifyAssignee = ($newAssigneeId !== $oldAssigneeId && $newAssigneeId !== null && $newAssigneeId !== $userData->id);
 
             $requestData["atualizado_por"] = $userData->id;
             $requestData["data_atualizacao"] = date('Y-m-d H:i:s');
@@ -400,7 +400,7 @@ class LeadController extends BaseController
                     $leadData["responsavel_id"] = $defaultResponsavelId;
                 }
 
-                $leadData["criado_por"] = $userData->userId;
+                $leadData["criado_por"] = $userData->id;
                 $leadData["data_criacao"] = date('Y-m-d H:i:s');
 
                 // Tentar criar o lead
@@ -412,13 +412,13 @@ class LeadController extends BaseController
                     HistoricoInteracoes::logAction(
                         $leadId,
                         null,
-                        $userData->userId,
+                        $userData->id,
                         "Lead Importado",
                         "Lead importado via CSV."
                     );
 
                     // Notificar responsável se diferente do importador
-                    if (isset($leadData["responsavel_id"]) && $leadData["responsavel_id"] !== $userData->userId) {
+                    if (isset($leadData["responsavel_id"]) && $leadData["responsavel_id"] !== $userData->id) {
                         $newLead = Lead::findById($leadId);
                         if ($newLead) {
                             $this->notifyLeadAssignment($newLead, $userData, "lead_importado_atribuido");
@@ -454,7 +454,7 @@ class LeadController extends BaseController
         // Check permission
         $this->requirePermission($userData, 'leads', 'edit'); // Batch update requires edit permission
 
-        $ids = $requestData["ids"] ?? [];
+        $ids = $requestData["ids"] ?? $requestData["leadIds"] ?? [];
         $status = $requestData["status"] ?? null;
 
         if (empty($ids) || !$status) {
@@ -477,7 +477,7 @@ class LeadController extends BaseController
                     HistoricoInteracoes::logAction(
                         $id,
                         null,
-                        $userData->userId,
+                        $userData->id,
                         "Status Atualizado",
                         "Status alterado para '$status' em lote."
                     );
@@ -498,13 +498,16 @@ class LeadController extends BaseController
      */
     public function batchAssignResponsible(array $headers, array $requestData): array
     {
-        $userData = $this->authMiddleware->handle($headers, ["Admin"]);
+        $userData = $this->authMiddleware->handle($headers);
         if (!$userData) {
-            return $this->errorResponse(401, "Autenticação necessária ou permissão insuficiente.");
+            return $this->errorResponse(401, "Autenticação necessária.");
         }
 
-        $ids = $requestData["ids"] ?? [];
-        $responsavelId = $requestData["responsavel_id"] ?? null;
+        // Check permission
+        $this->requirePermission($userData, 'leads', 'edit');
+
+        $ids = $requestData["ids"] ?? $requestData["leadIds"] ?? [];
+        $responsavelId = $requestData["responsavel_id"] ?? $requestData["responsavelId"] ?? null;
 
         if (empty($ids) || !$responsavelId) {
             return $this->errorResponse(400, "IDs e ID do responsável são obrigatórios.");
@@ -521,7 +524,7 @@ class LeadController extends BaseController
                     HistoricoInteracoes::logAction(
                         $id,
                         null,
-                        $userData->userId,
+                        $userData->id,
                         "Responsável Atribuído",
                         "Lead atribuído ao usuário ID $responsavelId em lote."
                     );
@@ -542,12 +545,15 @@ class LeadController extends BaseController
      */
     public function batchDelete(array $headers, array $requestData): array
     {
-        $userData = $this->authMiddleware->handle($headers, ["Admin"]);
+        $userData = $this->authMiddleware->handle($headers);
         if (!$userData) {
-            return $this->errorResponse(401, "Autenticação necessária ou permissão insuficiente.");
+            return $this->errorResponse(401, "Autenticação necessária.");
         }
 
-        $ids = $requestData["ids"] ?? [];
+        // Check permission
+        $this->requirePermission($userData, 'leads', 'delete');
+
+        $ids = $requestData["ids"] ?? $requestData["leadIds"] ?? [];
         if (empty($ids)) {
             return $this->errorResponse(400, "IDs obrigatórios.");
         }
@@ -563,7 +569,7 @@ class LeadController extends BaseController
                     HistoricoInteracoes::logAction(
                         $id,
                         null,
-                        $userData->userId,
+                        $userData->id,
                         "Lead Excluído",
                         "Lead excluído em lote."
                     );

@@ -44,6 +44,7 @@ use Apoio19\Crm\Controllers\ProposalTemplateController;
 use Apoio19\Crm\Controllers\ConfiguracoesController;
 use Apoio19\Crm\Controllers\TrashController;
 use Apoio19\Crm\Controllers\FinanceiroController;
+use Apoio19\Crm\Controllers\SystemTokenController;
 
 // --- Lógica de Extração de Caminho Corrigida ---
 $requestUri = $_SERVER['REQUEST_URI']; // ex: /api/login?param=1
@@ -570,6 +571,72 @@ if (preg_match('#^/leads/(\d+)$#', $requestPath, $matches) && $requestMethod ===
             "error" => "Erro interno no servidor.",
             "detalhes" => $e->getMessage()
         ]);
+    }
+    exit;
+}
+
+// Rota de atualização de status em lote (leads)
+if ($requestPath === '/leads/batch/status' && $requestMethod === 'PATCH') {
+    try {
+        $input = json_decode(file_get_contents('php://input'), true) ?? [];
+        $headers = getallheaders();
+        $leadsController = new LeadController();
+        $response = $leadsController->batchUpdateStatus($headers, $input);
+        if (is_array($response)) {
+            http_response_code(200);
+            echo json_encode($response);
+        } else {
+            http_response_code(500);
+            echo json_encode(["error" => "Erro interno. Resposta inesperada do servidor."]);
+        }
+    } catch (\Throwable $th) {
+        error_log("Erro em PATCH /leads/batch/status: " . $th->getMessage());
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno ao atualizar status em lote."]);
+    }
+    exit;
+}
+
+// Rota de atribuição de responsável em lote (leads)
+if ($requestPath === '/leads/batch/assign' && $requestMethod === 'PATCH') {
+    try {
+        $input = json_decode(file_get_contents('php://input'), true) ?? [];
+        $headers = getallheaders();
+        $leadsController = new LeadController();
+        $response = $leadsController->batchAssignResponsible($headers, $input);
+        if (is_array($response)) {
+            http_response_code(200);
+            echo json_encode($response);
+        } else {
+            http_response_code(500);
+            echo json_encode(["error" => "Erro interno. Resposta inesperada do servidor."]);
+        }
+    } catch (\Throwable $th) {
+        error_log("Erro em PATCH /leads/batch/assign: " . $th->getMessage());
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno ao atribuir responsável em lote."]);
+    }
+    exit;
+}
+
+// Rota de exclusão de leads em lote
+if ($requestPath === '/leads/batch/delete' && $requestMethod === 'DELETE') {
+    try {
+        $input = json_decode(file_get_contents('php://input'), true) ?? [];
+        $headers = getallheaders();
+        $leadsController = new LeadController();
+        $response = $leadsController->batchDelete($headers, $input);
+        if (is_array($response)) {
+            http_response_code(200);
+            echo json_encode($response);
+        } else {
+            http_response_code(500);
+            echo json_encode(["error" => "Erro interno. Resposta inesperada do servidor."]);
+        }
+    } catch (\Throwable $th) {
+        error_log("Erro em DELETE /leads/batch/delete: " . $th->getMessage());
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno ao excluir leads em lote."]);
     }
     exit;
 }
@@ -1131,6 +1198,66 @@ if ($requestPath === '/settings/upload-logo-icon' && $requestMethod === 'POST') 
     } catch (\Exception $e) {
         http_response_code(500);
         echo json_encode(["error" => "Erro interno.", "detalhes" => $e->getMessage()]);
+    }
+    exit;
+}
+
+// GET /settings/system-tokens - Listar tokens de sistema
+if ($requestPath === '/settings/system-tokens' && $requestMethod === 'GET') {
+    try {
+        $headers = getallheaders();
+        $controller = new SystemTokenController();
+        $response = $controller->index($headers);
+        echo json_encode($response);
+    } catch (\Exception $e) {
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno.", "details" => $e->getMessage()]);
+    }
+    exit;
+}
+
+// POST /settings/system-tokens - Criar token de sistema
+if ($requestPath === '/settings/system-tokens' && $requestMethod === 'POST') {
+    try {
+        $headers = getallheaders();
+        $input = json_decode(file_get_contents('php://input'), true) ?? [];
+        $controller = new SystemTokenController();
+        $response = $controller->store($headers, $input);
+        echo json_encode($response);
+    } catch (\Exception $e) {
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno.", "details" => $e->getMessage()]);
+    }
+    exit;
+}
+
+// PUT /settings/system-tokens/{id} - Atualizar token de sistema
+if (preg_match('#^/settings/system-tokens/(\d+)$#', $requestPath, $matches) && $requestMethod === 'PUT') {
+    $tokenId = (int)$matches[1];
+    try {
+        $headers = getallheaders();
+        $input = json_decode(file_get_contents('php://input'), true) ?? [];
+        $controller = new SystemTokenController();
+        $response = $controller->update($headers, $tokenId, $input);
+        echo json_encode($response);
+    } catch (\Exception $e) {
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno.", "details" => $e->getMessage()]);
+    }
+    exit;
+}
+
+// DELETE /settings/system-tokens/{id} - Excluir/revogar token de sistema
+if (preg_match('#^/settings/system-tokens/(\d+)$#', $requestPath, $matches) && $requestMethod === 'DELETE') {
+    $tokenId = (int)$matches[1];
+    try {
+        $headers = getallheaders();
+        $controller = new SystemTokenController();
+        $response = $controller->destroy($headers, $tokenId);
+        echo json_encode($response);
+    } catch (\Exception $e) {
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno.", "details" => $e->getMessage()]);
     }
     exit;
 }

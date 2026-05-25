@@ -1184,21 +1184,21 @@ class UserController extends BaseController
     private function formatUserForResponse($user): array
     {
         $permissions = [];
-        if (!empty($user->permissions)) {
+        if (isset($user->permissions) && !empty($user->permissions)) {
             $permissions = is_string($user->permissions) ? json_decode($user->permissions, true) : $user->permissions;
         }
 
         return [
-            'id' => (string) $user->id,
-            'nome' => $user->name ?? $user->nome,
-            'email' => $user->email,
-            'funcao' => $user->role ?? $user->funcao,
-            'ativo' => (bool) $user->active ?? (bool) $user->ativo,
-            'telefone' => $user->phone ?? $user->telefone,
+            'id' => (string) ($user->id ?? ''),
+            'nome' => $user->name ?? $user->nome ?? '',
+            'email' => $user->email ?? '',
+            'funcao' => $user->role ?? $user->funcao ?? '',
+            'ativo' => (bool) ($user->active ?? $user->ativo ?? false),
+            'telefone' => $user->phone ?? $user->telefone ?? null,
             'permissoes' => $permissions ?? [],
-            'dataCriacao' => $user->created_at ?? $user->criado_em,
-            'dataAtualizacao' => $user->updated_at ?? $user->atualizado_em,
-            'ultimoLogin' => $user->last_login
+            'dataCriacao' => $user->created_at ?? $user->criado_em ?? null,
+            'dataAtualizacao' => $user->updated_at ?? $user->atualizado_em ?? null,
+            'ultimoLogin' => $user->last_login ?? null
         ];
     }
 
