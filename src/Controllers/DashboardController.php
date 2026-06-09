@@ -31,6 +31,16 @@ class DashboardController extends BaseController
             // Get monthly revenue data
             $monthlyRevenue = $this->getMonthlyRevenue($pdo);
 
+            // Get active clients count
+            $activeClients = $this->getActiveClients($pdo);
+
+            // Get real revenue (stub for financial module)
+            $realRevenue = [
+                "revenue" => 0.00,
+                "goal" => 200000.00,
+                "percentage" => 0
+            ];
+
             http_response_code(200);
             return [
                 "success" => true,
@@ -38,7 +48,9 @@ class DashboardController extends BaseController
                     "activeProposals" => $activeProposals,
                     "monthlyPerformance" => $monthlyPerformance,
                     "salesFunnel" => $salesFunnel,
-                    "monthlyRevenue" => $monthlyRevenue
+                    "monthlyRevenue" => $monthlyRevenue,
+                    "activeClients" => $activeClients,
+                    "realRevenue" => $realRevenue
                 ]
             ];
         } catch (PDOException $e) {
@@ -48,6 +60,26 @@ class DashboardController extends BaseController
                 "success" => false,
                 "message" => "Erro ao carregar métricas do dashboard"
             ];
+        }
+    }
+
+    /**
+     * Get active clients count
+     * 
+     * @param PDO $pdo
+     * @return int
+     */
+    private function getActiveClients(PDO $pdo): int
+    {
+        $sql = "SELECT COUNT(*) as count FROM clients WHERE status = 'active'";
+        try {
+            $stmt = $pdo->prepare($sql);
+            $stmt->execute();
+            $result = $stmt->fetch(PDO::FETCH_ASSOC);
+            return (int)$result['count'];
+        } catch (PDOException $e) {
+            error_log("Erro ao buscar clientes ativos: " . $e->getMessage());
+            return 0;
         }
     }
 

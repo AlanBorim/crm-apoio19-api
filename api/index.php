@@ -531,6 +531,95 @@ if (preg_match('#^/leads/(\d+)$#', $requestPath, $matches) && $requestMethod ===
 
     exit;
 }
+// Rota de auditoria e cálculo de score sob demanda para um lead específico
+if (preg_match('#^/leads/(\d+)/audit-and-score$#', $requestPath, $matches) && $requestMethod === 'POST') {
+    $leadId = $matches[1];
+
+    try {
+        $headers = getallheaders();
+        $leadsController = new LeadController();
+
+        $response = $leadsController->auditAndScore($headers, $leadId);
+
+        if (is_array($response)) {
+            http_response_code(200);
+            echo json_encode($response);
+        } else {
+            http_response_code(500);
+            echo json_encode([
+                "error" => "Erro interno. Resposta inesperada do servidor.",
+                "detalhes" => $response
+            ]);
+        }
+    } catch (\Throwable $th) {
+        error_log("Erro no LeadController->auditAndScore: " . $th->getMessage() . "\n" . $th->getTraceAsString());
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno ao auditar lead e calcular score.", "detalhes" => $th->getMessage()]);
+    }
+
+    exit;
+}
+
+// Rota para obter o template de e-mail de primeiro contato pré-preenchido
+if (preg_match('#^/leads/(\d+)/first-contact-template$#', $requestPath, $matches) && $requestMethod === 'GET') {
+    $leadId = $matches[1];
+
+    try {
+        $headers = getallheaders();
+        $leadsController = new LeadController();
+
+        $response = $leadsController->getFirstContactTemplate($headers, $leadId);
+
+        if (is_array($response)) {
+            http_response_code(200);
+            echo json_encode($response);
+        } else {
+            http_response_code(500);
+            echo json_encode([
+                "error" => "Erro interno. Resposta inesperada do servidor.",
+                "detalhes" => $response
+            ]);
+        }
+    } catch (\Throwable $th) {
+        error_log("Erro no LeadController->getFirstContactTemplate: " . $th->getMessage() . "\n" . $th->getTraceAsString());
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno ao obter template de primeiro contato.", "detalhes" => $th->getMessage()]);
+    }
+
+    exit;
+}
+
+// Rota para enviar o e-mail de primeiro contato
+if (preg_match('#^/leads/(\d+)/send-first-contact-email$#', $requestPath, $matches) && $requestMethod === 'POST') {
+    $leadId = $matches[1];
+
+    try {
+        $headers = getallheaders();
+        $leadsController = new LeadController();
+
+        // Obter corpo da requisição (assunto e corpo do e-mail)
+        $input = json_decode(file_get_contents('php://input'), true) ?? [];
+        $response = $leadsController->sendFirstContactEmail($headers, $leadId, $input);
+
+        if (is_array($response)) {
+            http_response_code(200);
+            echo json_encode($response);
+        } else {
+            http_response_code(500);
+            echo json_encode([
+                "error" => "Erro interno. Resposta inesperada do servidor.",
+                "detalhes" => $response
+            ]);
+        }
+    } catch (\Throwable $th) {
+        error_log("Erro no LeadController->sendFirstContactEmail: " . $th->getMessage() . "\n" . $th->getTraceAsString());
+        http_response_code(500);
+        echo json_encode(["error" => "Erro interno ao enviar e-mail de primeiro contato.", "detalhes" => $th->getMessage()]);
+    }
+
+    exit;
+}
+
 // Rota de exclusão de um lead específico
 if (preg_match('#^/leads/(\d+)$#', $requestPath, $matches) && $requestMethod === 'DELETE') {
     $leadId = $matches[1];
@@ -866,27 +955,6 @@ if ($requestPath === '/notifications' && $requestMethod === 'DELETE') {
         $response = $notificationController->deleteAll($headers);
         if (is_array($response)) {
             http_response_code(200);
-
-// Rota básica para o financeiro
-if ($requestPath === '/financeiro' && $requestMethod === 'GET') {
-    try {
-        $headers = getallheaders();
-        $controller = new FinanceiroController();
-        $response = $controller->index($headers);
-        if (is_array($response)) {
-            http_response_code(200);
-            echo json_encode($response);
-        } else {
-            http_response_code(500);
-            echo json_encode(["error" => "Erro interno. Resposta inesperada do servidor."]);
-        }
-    } catch (\Throwable $th) {
-        error_log("Erro em /financeiro: " . $th->getMessage());
-        http_response_code(500);
-        echo json_encode(["error" => "Erro interno."]);
-    }
-    exit;
-}
             echo json_encode($response);
         } else {
             // Resposta inesperada
@@ -901,6 +969,159 @@ if ($requestPath === '/financeiro' && $requestMethod === 'GET') {
         http_response_code(500);
         echo json_encode(["error" => "Erro interno ao excluir notificações"]);
     }
+    exit;
+}
+
+// ---------------------------------------------------------
+// Rotas do Módulo Financeiro
+// ---------------------------------------------------------
+if ($requestPath === '/financeiro/config' && $requestMethod === 'GET') {
+    $headers = getallheaders();
+    $controller = new FinanceiroController();
+    echo json_encode($controller->getConfig($headers));
+    exit;
+}
+if ($requestPath === '/financeiro/config' && $requestMethod === 'PUT') {
+    $headers = getallheaders();
+    $input = json_decode(file_get_contents('php://input'), true) ?? [];
+    $controller = new FinanceiroController();
+    echo json_encode($controller->updateConfig($headers, $input));
+    exit;
+}
+if ($requestPath === '/financeiro/config/test' && $requestMethod === 'POST') {
+    $headers = getallheaders();
+    $input = json_decode(file_get_contents('php://input'), true) ?? [];
+    $controller = new FinanceiroController();
+    echo json_encode($controller->testConnection($headers, $input));
+    exit;
+}
+
+// Rotas de NfeTaxRules
+if ($requestPath === '/financeiro/nfe/rules' && $requestMethod === 'GET') {
+    $headers = getallheaders();
+    $controller = new FinanceiroController();
+    echo json_encode($controller->getNfeTaxRules($headers));
+    exit;
+}
+if ($requestPath === '/financeiro/nfe/rules' && $requestMethod === 'POST') {
+    $headers = getallheaders();
+    $input = json_decode(file_get_contents('php://input'), true) ?? [];
+    $controller = new FinanceiroController();
+    echo json_encode($controller->createNfeTaxRule($headers, $input));
+    exit;
+}
+if (preg_match('/^\/financeiro\/nfe\/rules\/(\d+)$/', $requestPath, $matches) && $requestMethod === 'PUT') {
+    $id = $matches[1];
+    $headers = getallheaders();
+    $input = json_decode(file_get_contents('php://input'), true) ?? [];
+    $controller = new FinanceiroController();
+    echo json_encode($controller->updateNfeTaxRule($headers, $id, $input));
+    exit;
+}
+if (preg_match('/^\/financeiro\/nfe\/rules\/(\d+)$/', $requestPath, $matches) && $requestMethod === 'DELETE') {
+    $id = $matches[1];
+    $headers = getallheaders();
+    $controller = new FinanceiroController();
+    echo json_encode($controller->deleteNfeTaxRule($headers, $id));
+    exit;
+}
+if ($requestPath === '/financeiro/nfe/webhook' && $requestMethod === 'POST') {
+    $input = json_decode(file_get_contents('php://input'), true) ?? [];
+    $controller = new FinanceiroController();
+    echo json_encode($controller->handleNfeWebhook($input));
+    exit;
+}
+if (preg_match('/^\/financeiro\/invoices\/(\d+)\/emit-nfe\/preview$/', $requestPath, $matches) && $requestMethod === 'GET') {
+    $id = $matches[1];
+    $headers = getallheaders();
+    $controller = new FinanceiroController();
+    echo json_encode($controller->previewNfeForInvoice($headers, $id));
+    exit;
+}
+if (preg_match('/^\/financeiro\/invoices\/(\d+)\/emit-nfe$/', $requestPath, $matches) && $requestMethod === 'POST') {
+    $id = $matches[1];
+    $headers = getallheaders();
+    $controller = new FinanceiroController();
+    echo json_encode($controller->emitNfeForInvoice($headers, $id));
+    exit;
+}
+
+if ($requestPath === '/financeiro/invoices' && $requestMethod === 'GET') {
+    $headers = getallheaders();
+    $filters = $_GET ?? [];
+    $controller = new FinanceiroController();
+    echo json_encode($controller->getInvoices($headers, $filters));
+    exit;
+}
+if ($requestPath === '/financeiro/invoices' && $requestMethod === 'POST') {
+    $headers = getallheaders();
+    $input = json_decode(file_get_contents('php://input'), true) ?? [];
+    $controller = new FinanceiroController();
+    echo json_encode($controller->generateInvoice($headers, $input));
+    exit;
+}
+
+if ($requestPath === '/financeiro/invoices/boleto' && $requestMethod === 'POST') {
+    $input = json_decode(file_get_contents('php://input'), true);
+    $controller = new FinanceiroController();
+    echo json_encode($controller->generateBoleto(getallheaders(), $input));
+    exit;
+}
+
+if (preg_match('/^\/financeiro\/invoices\/(\d+)\/send-email$/', $requestPath, $matches) && $requestMethod === 'POST') {
+    $id = $matches[1];
+    $controller = new FinanceiroController();
+    echo json_encode($controller->sendInvoiceEmail(getallheaders(), $id));
+    exit;
+}
+
+if (preg_match('/^\/financeiro\/check-status\/(\d+)$/', $requestPath, $matches) && $requestMethod === 'POST') {
+    $id = $matches[1];
+    $input = json_decode(file_get_contents('php://input'), true) ?? [];
+    $controller = new FinanceiroController();
+    echo json_encode($controller->checkStatus(getallheaders(), $id, $input));
+    exit;
+}
+
+if ($requestPath === '/financeiro/subscriptions' && $requestMethod === 'POST') {
+    $headers = getallheaders();
+    $input = json_decode(file_get_contents('php://input'), true) ?? [];
+    $controller = new FinanceiroController();
+    echo json_encode($controller->generateSubscription($headers, $input));
+    exit;
+}
+if ($requestPath === '/financeiro/scheduled-payments' && $requestMethod === 'POST') {
+    $headers = getallheaders();
+    $input = json_decode(file_get_contents('php://input'), true) ?? [];
+    $controller = new FinanceiroController();
+    echo json_encode($controller->createScheduledPayment($headers, $input));
+    exit;
+}
+if ($requestPath === '/financeiro/scheduled-payments' && $requestMethod === 'GET') {
+    $headers = getallheaders();
+    $filters = $_GET;
+    $controller = new FinanceiroController();
+    echo json_encode($controller->getScheduledPayments($headers, $filters));
+    exit;
+}
+if ($requestPath === '/financeiro/withdrawals' && $requestMethod === 'GET') {
+    $headers = getallheaders();
+    $controller = new FinanceiroController();
+    echo json_encode($controller->getWithdrawals($headers));
+    exit;
+}
+if ($requestPath === '/financeiro/withdrawals' && $requestMethod === 'POST') {
+    $headers = getallheaders();
+    $input = json_decode(file_get_contents('php://input'), true) ?? [];
+    $controller = new FinanceiroController();
+    echo json_encode($controller->requestWithdrawal($headers, $input, 1));
+    exit;
+}
+if (($requestPath === '/webhook/pagarme' || $requestPath === '/webhooks/pagarme') && $requestMethod === 'POST') {
+    $headers = getallheaders();
+    $payload = file_get_contents('php://input');
+    $controller = new FinanceiroController();
+    echo json_encode($controller->webhook($headers, $payload));
     exit;
 }
 

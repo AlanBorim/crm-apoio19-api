@@ -11,19 +11,21 @@ use Apoio19\Crm\Models\Database;
 class User
 {
     public int $id;
-    public string $nome;
-    public string $email;
-    public string $senha_hash;
-    public string $funcao;
+    public ?string $nome = null;
+    public ?string $name = null;
+    public ?string $email = null;
+    public ?string $senha_hash = null;
+    public ?string $funcao = null;
     public ?string $active = null;
     public ?string $ativo = null;
-    public ?string $token_2fa_secreto;
-    public string $criado_em;
-    public string $atualizado_em;
-    public ?string $last_login;
-    public ?string $telefone;
-    public ?string $permissions;
+    public ?string $token_2fa_secreto = null;
+    public ?string $criado_em = null;
+    public ?string $atualizado_em = null;
+    public ?string $last_login = null;
+    public ?string $telefone = null;
+    public ?string $permissions = null;
     public ?string $deleted_at = null;
+    public ?string $booking_link = null;
 
 
     /**
@@ -80,6 +82,7 @@ class User
             $user = new self();
             $user->id = (int)$result["id"];
             $user->nome = $result["name"];
+            $user->name = $result["name"];
             $user->email = $result["email"];
             $user->telefone = $result["phone"];
             $user->permissions = $result["permissions"];
@@ -88,8 +91,9 @@ class User
             $user->active = $result["active"];
             $user->criado_em = $result["created_at"];
             $user->atualizado_em = $result["updated_at"];
-            $user->token_2fa_secreto = $result["2fa_secret"];
-            $user->last_login = $result["last_login"];
+            $user->token_2fa_secreto = $result["2fa_secret"] ?? null;
+            $user->last_login = $result["last_login"] ?? null;
+            $user->booking_link = $result["booking_link"] ?? null;
         }
         return $user ?? null;
         // } catch (PDOException $e) {
@@ -118,6 +122,7 @@ class User
                 $user = new self();
                 $user->id = (int)$userData["id"];
                 $user->nome = $userData["name"];
+                $user->name = $userData["name"];
                 $user->email = $userData["email"];
                 $user->senha_hash = $userData["password"];
                 $user->funcao  = $userData["role"];
@@ -127,6 +132,7 @@ class User
                 $user->criado_em = $userData["created_at"];
                 $user->atualizado_em = $userData["updated_at"];
                 $user->last_login = $userData["last_login"] ?? null;
+                $user->booking_link = $userData["booking_link"] ?? null;
             }
             return $user ?? null;
         } catch (PDOException $e) {

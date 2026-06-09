@@ -864,6 +864,60 @@ class LeadController extends BaseController
     }
 
     /**
+     * Realiza a auditoria do site e calcula o score do lead sob demanda
+     *
+     * @param array $headers
+     * @param int $leadId
+     * @return array
+     */
+    public function auditAndScore(array $headers, int $leadId): array
+    {
+        $traceId = bin2hex(random_bytes(8));
+        $userData = $this->authMiddleware->handle($headers);
+        if (!$userData) {
+            return $this->errorResponse(401, "Autenticação necessária.", "UNAUTHENTICATED", $traceId);
+        }
+
+        // Check permission
+        $this->requirePermission($userData, 'leads', 'edit');
+
+        try {
+            $lead = Lead::findById($leadId);
+            if (!$lead) {
+                return $this->errorResponse(404, "Lead não encontrado.", "NOT_FOUND", $traceId);
+            }
+
+            // Verificar autorização
+            if (!$this->can($userData, "leads", "edit", $lead->assigned_to)) {
+                return $this->forbidden("Você não tem permissão para auditar este lead.");
+            }
+
+            // Instanciar o WebsiteAuditor
+            $auditor = new \Apoio19\Crm\Services\WebsiteAuditor();
+            $result = $auditor->auditAndScore($lead);
+
+            // Carregar lead atualizado para retornar
+            $updatedLead = Lead::findById($leadId);
+
+            // Registrar histórico da ação de auditoria
+            \Apoio19\Crm\Models\HistoricoInteracoes::logAction(
+                $leadId,
+                null,
+                $userData->id,
+                "Auditoria Realizada",
+                "Auditoria técnica de site e score recalculado sob demanda: Score obtido = " . $result['score']
+            );
+
+            return $this->successResponse($updatedLead, "Auditoria do lead realizada com sucesso.", 200, $traceId);
+        } catch (\PDOException $e) {
+            $mapped = $this->mapPdoError($e);
+            return $this->errorResponse($mapped['status'], $mapped['message'], $mapped['code'], $traceId, $this->debugDetails($e));
+        } catch (\Throwable $e) {
+            return $this->errorResponse(500, "Erro ao processar auditoria.", "UNEXPECTED_ERROR", $traceId, $this->debugDetails($e));
+        }
+    }
+
+    /**
      * Validar dados de configuração
      *
      * @param array $data Dados a serem validados
@@ -914,5 +968,212 @@ class LeadController extends BaseController
         }
 
         return ["valid" => true, "message" => ""];
+    }
+
+    /**
+     * Obtém o template de e-mail de primeiro contato pré-preenchido
+     *
+     * @param array $headers Headers da requisição
+     * @param int $leadId ID do lead
+     * @return array
+     */
+    public function getFirstContactTemplate(array $headers, int $leadId): array
+    {
+        $traceId = bin2hex(random_bytes(8));
+        $userData = $this->authMiddleware->handle($headers);
+        if (!$userData) {
+            return $this->errorResponse(401, "Autenticação necessária.", "UNAUTHENTICATED", $traceId);
+        }
+
+        // Check permission
+        $this->requirePermission($userData, 'leads', 'view');
+
+        try {
+            $lead = Lead::findById($leadId);
+            if (!$lead) {
+                return $this->errorResponse(404, "Lead não encontrado.", "NOT_FOUND", $traceId);
+            }
+
+            // Buscar usuário completo para pegar o link de agendamento se existir
+            $currentUser = \Apoio19\Crm\Models\User::findById($userData->id);
+            $bookingLink = ($currentUser && !empty($currentUser->booking_link)) 
+                ? $currentUser->booking_link 
+                : 'https://apoio19.com.br/agendar'; // Fallback para link corporativo da Apoio19
+
+            // Preparar a lista de dores mapeadas no formato HTML
+            $painPoints = [];
+            if (!empty($lead->site_pain_points)) {
+                $painPoints = is_string($lead->site_pain_points) 
+                    ? json_decode($lead->site_pain_points, true) 
+                    : $lead->site_pain_points;
+            }
+            if (!is_array($painPoints)) {
+                $painPoints = [];
+            }
+
+            $painHtml = "";
+            $hasRelevantPains = false;
+            foreach ($painPoints as $pain) {
+                if (isset($pain['type']) && ($pain['type'] === 'danger' || $pain['type'] === 'warning')) {
+                    $hasRelevantPains = true;
+                    $color = $pain['type'] === 'danger' ? '#ef4444' : '#f59e0b';
+                    $painHtml .= "<div style='margin-bottom: 12px; font-family: sans-serif;'>";
+                    $painHtml .= "<span style='color: {$color}; font-weight: bold; font-size: 14px;'>⚠️ " . htmlspecialchars($pain['title']) . "</span>";
+                    $painHtml .= "<p style='color: #64748b; font-size: 13px; margin: 3px 0 0 0;'>" . htmlspecialchars($pain['description']) . "</p>";
+                    $painHtml .= "</div>";
+                }
+            }
+
+            // Fallback se não houver dores escaneadas
+            if (!$hasRelevantPains) {
+                $painHtml = "<div style='margin-bottom: 12px; font-family: sans-serif;'>";
+                $painHtml .= "<span style='color: #3b82f6; font-weight: bold; font-size: 14px;'>ℹ️ Análise de Presença Digital</span>";
+                $painHtml .= "<p style='color: #64748b; font-size: 13px; margin: 3px 0 0 0;'>Identificamos excelentes oportunidades para alavancar a conversão de novos clientes, otimizar a velocidade de resposta e estruturar canais automatizados de vendas integrados no seu site.</p>";
+                $painHtml .= "</div>";
+            }
+
+            // Nome da empresa
+            $companyName = !empty($lead->company) ? $lead->company : 'sua empresa';
+            $leadName = !empty($lead->name) ? $lead->name : 'Prezado Cliente';
+            $siteUrl = !empty($lead->source_extra) ? $lead->source_extra : '';
+
+            $subject = "Diagnóstico de Performance e Oportunidades Digitais - " . ($lead->company ? $lead->company : $lead->name);
+
+            // Gerar o e-mail HTML usando o template premium
+            $body = <<<HTML
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; background-color: #f4f6fc; }
+        .container { max-width: 600px; margin: 20px auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.05); border: 1px solid #e2e8f0; }
+        .header { background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%); color: #ffffff; padding: 35px 25px; text-align: center; }
+        .header h1 { margin: 0; font-size: 22px; font-weight: 700; letter-spacing: -0.5px; color: #ffffff; }
+        .header p { margin: 8px 0 0 0; opacity: 0.9; font-size: 14px; color: #ffffff; }
+        .content { padding: 30px 25px; background-color: #ffffff; }
+        .content p { font-size: 15px; color: #475569; margin-bottom: 20px; }
+        .pain-list { background-color: #f8fafc; border-left: 4px solid #ef4444; border-radius: 4px; padding: 15px; margin: 20px 0; }
+        .solution-box { background-color: #f0fdf4; border-left: 4px solid #22c55e; border-radius: 4px; padding: 15px; margin: 20px 0; font-family: sans-serif; }
+        .btn-container { text-align: center; margin: 35px 0 20px 0; }
+        .btn { background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%); color: #ffffff !important; padding: 14px 28px; text-align: center; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 15px; display: inline-block; box-shadow: 0 4px 10px rgba(37,99,235,0.2); }
+        .footer { text-align: center; padding: 25px; background-color: #f8fafc; border-top: 1px solid #e2e8f0; color: #94a3b8; font-size: 12px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Diagnóstico de Presença Digital & Performance</h1>
+            <p>Oportunidades de Conversão para {$companyName}</p>
+        </div>
+        <div class="content">
+            <p>Olá, <strong>{$leadName}</strong>,</p>
+            <p>Espero que este e-mail o encontre bem.</p>
+            <p>Eu sou <strong>{$userData->nome}</strong> da <strong>Apoio19</strong>. Analisei detalhadamente a presença digital da <strong>{$companyName}</strong> e elaborei um diagnóstico técnico diretamente sobre o site da sua empresa (<strong>{$siteUrl}</strong>).</p>
+            
+            <p>Identificamos alguns pontos importantes que podem estar afetando o tempo de carregamento do seu site, o posicionamento orgânico no Google (SEO) e, principalmente, <strong>a taxa de conversão e atração de novos clientes</strong>. Veja abaixo o diagnóstico resumido das principais dores:</p>
+            
+            <div class="pain-list">
+                {$painHtml}
+            </div>
+
+            <div class="solution-box">
+                <strong style="color: #15803d; font-size: 14px; display: block; margin-bottom: 4px;">Como a Apoio19 resolve isso?</strong>
+                <p style="color: #166534; font-size: 13px; margin: 0;">Nós da Apoio19 somos especialistas em aceleração e otimização de infraestrutura web, bem como na integração de canais de conversão imediata (como canais automatizados de WhatsApp e CRM de Atendimento). Conseguimos acelerar a velocidade do seu site, corrigir falhas de SEO e implementar fluxos integrados de atração e engajamento que aumentam suas conversões em até 40% já nas primeiras semanas.</p>
+            </div>
+            
+            <p>Gostaria de propor uma breve conversa de 10 minutos para lhe apresentar os detalhes deste diagnóstico e soluções práticas aplicadas.</p>
+            
+            <div class="btn-container">
+                <a href="{$bookingLink}" class="btn" target="_blank">Agendar Reunião Sem Compromisso</a>
+            </div>
+            
+            <p style="margin-top: 30px;">Fico à total disposição e aguardo seu agendamento!</p>
+            
+            <p>Atenciosamente,<br>
+            <strong>{$userData->nome}</strong><br>
+            Apoio19 CRM</p>
+        </div>
+        <div class="footer">
+            <p>Este e-mail foi gerado e enviado de forma personalizada através do Apoio19 CRM.<br>
+            Apoio19 - Soluções de CRM e Integração WhatsApp. Todos os direitos reservados.</p>
+        </div>
+    </div>
+</body>
+</html>
+HTML;
+
+            return $this->successResponse([
+                'subject' => $subject,
+                'body' => $body,
+                'to_email' => $lead->email,
+                'to_name' => $lead->name
+            ], "Template carregado com sucesso.", 200, $traceId);
+
+        } catch (\Throwable $e) {
+            return $this->errorResponse(500, "Erro ao obter template de primeiro contato.", "UNEXPECTED_ERROR", $traceId, $this->debugDetails($e));
+        }
+    }
+
+    /**
+     * Envia o e-mail de primeiro contato
+     *
+     * @param array $headers Headers da requisição
+     * @param int $leadId ID do lead
+     * @param array $input Payload com subject e body
+     * @return array
+     */
+    public function sendFirstContactEmail(array $headers, int $leadId, array $input): array
+    {
+        $traceId = bin2hex(random_bytes(8));
+        $userData = $this->authMiddleware->handle($headers);
+        if (!$userData) {
+            return $this->errorResponse(401, "Autenticação necessária.", "UNAUTHENTICATED", $traceId);
+        }
+
+        // Check permission
+        $this->requirePermission($userData, 'leads', 'edit');
+
+        if (empty($input['subject']) || empty($input['body'])) {
+            return $this->errorResponse(400, "Os campos 'subject' (assunto) e 'body' (conteúdo) são obrigatórios.", "BAD_REQUEST", $traceId);
+        }
+
+        try {
+            $lead = Lead::findById($leadId);
+            if (!$lead) {
+                return $this->errorResponse(404, "Lead não encontrado.", "NOT_FOUND", $traceId);
+            }
+
+            if (empty($lead->email)) {
+                return $this->errorResponse(400, "O lead não possui e-mail cadastrado.", "BAD_REQUEST", $traceId);
+            }
+
+            // Instanciar o EmailService e disparar o e-mail por SMTP
+            $emailService = new \Apoio19\Crm\Services\EmailService();
+            $sent = $emailService->send(
+                $lead->email,
+                $lead->name,
+                $input['subject'],
+                $input['body']
+            );
+
+            if ($sent) {
+                // Registrar log de histórico
+                \Apoio19\Crm\Models\HistoricoInteracoes::logAction(
+                    $leadId,
+                    null,
+                    $userData->id,
+                    "E-mail Enviado",
+                    "E-mail de Primeiro Contato com diagnóstico de site enviado.\nAssunto: " . $input['subject']
+                );
+
+                return $this->successResponse(null, "E-mail enviado com sucesso!", 200, $traceId);
+            } else {
+                return $this->errorResponse(500, "Não foi possível disparar o e-mail por SMTP. Verifique as credenciais no .env.", "SEND_ERROR", $traceId);
+            }
+
+        } catch (\Throwable $e) {
+            return $this->errorResponse(500, "Erro inesperado ao enviar o e-mail.", "UNEXPECTED_ERROR", $traceId, $this->debugDetails($e));
+        }
     }
 }

@@ -36,6 +36,13 @@ class Lead
     public ?string $responsavelNome; // Nullable for optional updates
     public string $atualizado_em;
     public int $active; // Default to active if not set
+    
+    // Novos campos para auditoria de site e lead scoring
+    public int $score = 0;
+    public string $site_audit_status = 'Pendente';
+    public ?string $site_performance = null;
+    public ?string $site_technologies = null;
+    public ?string $site_pain_points = null;
 
     /**
      * Find a lead by ID.
@@ -130,7 +137,7 @@ class Lead
             // Bind values using bindValue (avoids reference issues with mocks)
             foreach ($data as $key => $value) {
                 $paramType = PDO::PARAM_STR;
-                if ($key === 'assigned_to') {
+                if ($key === 'assigned_to' || $key === 'score') {
                     $paramType = PDO::PARAM_INT;
                 }
 
@@ -168,12 +175,12 @@ class Lead
         $params = [":id" => $id];
         foreach ($data as $key => $value) {
             // Allow updating only specific fields
-            if (in_array($key, ['name', 'company', 'address', 'cep', 'city', 'state', 'position', 'stage', 'email', 'phone', 'source', 'source_extra', 'interest', 'next_contact', 'temperature', 'assigned_to', 'value'])) {
+            if (in_array($key, ['name', 'company', 'address', 'cep', 'city', 'state', 'position', 'stage', 'email', 'phone', 'source', 'source_extra', 'interest', 'next_contact', 'temperature', 'assigned_to', 'value', 'score', 'site_audit_status', 'site_performance', 'site_technologies', 'site_pain_points'])) {
                 $fields[] = "`{$key}` = :{$key}";
                 $paramType = PDO::PARAM_STR;
-                if ($key === 'assigned_to' || $key === 'value') {
+                if ($key === 'assigned_to' || $key === 'value' || $key === 'score') {
                     $paramType = PDO::PARAM_INT;
-                    $value = empty($value) ? null : (int)$value;
+                    $value = empty($value) && $value !== 0 && $value !== '0' ? null : (int)$value;
                 }
                 // Add other type checks if necessary
                 $params[":{$key}"] = $value; // Store value for execute
@@ -563,6 +570,14 @@ class Lead
         $lead->created_at = $data["created_at"] ?? date('Y-m-d H:i:s'); // Provide default
         $lead->updated_at = $data["updated_at"] ?? date('Y-m-d H:i:s'); // Provide default
         $lead->active = $data["active"] ?? 1; // Default to active if not set
+        
+        // Hidratar campos de score e auditoria
+        $lead->score = isset($data["score"]) ? (int)$data["score"] : 0;
+        $lead->site_audit_status = $data["site_audit_status"] ?? 'Pendente';
+        $lead->site_performance = $data["site_performance"] ?? null;
+        $lead->site_technologies = $data["site_technologies"] ?? null;
+        $lead->site_pain_points = $data["site_pain_points"] ?? null;
+        
         return $lead;
     }
 }

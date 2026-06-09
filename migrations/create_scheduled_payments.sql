@@ -1,0 +1,13 @@
+CREATE TABLE IF NOT EXISTS scheduled_payments (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    client_id INT NOT NULL,
+    amount DECIMAL(10,2) NOT NULL,
+    description VARCHAR(255) NULL,
+    schedule_date DATE NOT NULL,
+    due_date DATE NOT NULL,
+    send_email TINYINT(1) DEFAULT 0,
+    status VARCHAR(50) DEFAULT "pending",
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE
+);

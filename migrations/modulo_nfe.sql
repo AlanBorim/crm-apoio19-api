@@ -1,0 +1,23 @@
+CREATE TABLE IF NOT EXISTS `nfe_tax_rules` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `name` VARCHAR(100) NOT NULL,
+  `iss_rate` DECIMAL(5,2) DEFAULT 0.00,
+  `pis_rate` DECIMAL(5,2) DEFAULT 0.00,
+  `cofins_rate` DECIMAL(5,2) DEFAULT 0.00,
+  `inss_rate` DECIMAL(5,2) DEFAULT 0.00,
+  `ir_rate` DECIMAL(5,2) DEFAULT 0.00,
+  `csll_rate` DECIMAL(5,2) DEFAULT 0.00,
+  `cnae` VARCHAR(20) DEFAULT NULL,
+  `lc116_code` VARCHAR(20) DEFAULT NULL,
+  `city_tax_code` VARCHAR(50) DEFAULT NULL,
+  `is_default` TINYINT(1) DEFAULT 0,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+ALTER TABLE `invoices`
+ADD COLUMN `nfe_id` VARCHAR(100) NULL AFTER `pagarme_charge_id`,
+ADD COLUMN `nfe_status` VARCHAR(50) NULL AFTER `nfe_id`,
+ADD COLUMN `nfe_url` TEXT NULL AFTER `nfe_status`,
+ADD COLUMN `nfe_xml` TEXT NULL AFTER `nfe_url`,
+ADD COLUMN `nfe_pdf` TEXT NULL AFTER `nfe_xml`;
